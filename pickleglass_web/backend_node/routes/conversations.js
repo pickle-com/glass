@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 const crypto = require('crypto');
+const validator = require('validator');
 
 router.get('/', (req, res) => {
     try {
@@ -81,12 +82,16 @@ router.delete('/:session_id', (req, res) => {
 
 router.get('/search', (req, res) => {
     const { q } = req.query;
-    if (!q) {
+    if (!q || !validator.isLength(q, { min: 3 })) {
         return res.status(400).json({ error: 'Query parameter "q" is required' });
     }
-
+    // Sanitize and validate input
+    const sanitizedQuery = validator.escape(q.trim()); // Escapes HTML and special chars
+    if (sanitizedQuery.length === 0 || sanitizedQuery.length > 255) {
+        return res.status(400).json({ error: 'Query parameter "q" must be between 3 and 255 characters' });
+    }
     try {
-        const searchQuery = `%${q}%`;
+        const searchQuery = `%${sanitizedQuery}%`;
         const sessionIds = db.prepare(`
             SELECT DISTINCT session_id FROM (
                 SELECT session_id FROM transcripts WHERE text LIKE ?
