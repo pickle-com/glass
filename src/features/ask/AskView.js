@@ -955,6 +955,16 @@ export class AskView extends LitElement {
     handleToggleTextInput() {
         this.showTextInput = !this.showTextInput;
         this.requestUpdate();
+        
+        // If we just showed the text input, focus it after the DOM updates
+        if (this.showTextInput) {
+            this.updateComplete.then(() => {
+                const textInput = this.shadowRoot?.getElementById('textInput');
+                if (textInput) {
+                    textInput.focus();
+                }
+            });
+        }
     }
 
     requestWindowResize(targetHeight) {
