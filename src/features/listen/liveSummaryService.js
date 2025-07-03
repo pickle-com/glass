@@ -685,9 +685,36 @@ async function startMacOSAudioCapture() {
 
     const { app } = require('electron');
     const path = require('path');
+    // ---------------------------------------------------------
+    // Pick the correct SystemAudioDump binary based on macOS
+    // version.  We keep two builds in the repo:
+    //   • SystemAudioDump14 – built with deployment target 14
+    //   • SystemAudioDump15 – built with deployment target 15
+    // ---------------------------------------------------------
+    let binaryName = 'SystemAudioDump14';
+    try {
+        // Electron exposes the actual macOS version via
+        // process.getSystemVersion() (e.g. '14.2').  If that
+        // isn't available fall back to `os.release()` parsing.
+        const versionString = typeof process.getSystemVersion === 'function'
+            ? process.getSystemVersion()
+            : require('os').release(); // Darwin kernel version
+
+        const major = parseInt(versionString.split('.')[0], 10);
+
+        // Use the 15-targeted build on macOS 15 and above.
+        if (!isNaN(major) && major >= 15) {
+            binaryName = 'SystemAudioDump15';
+        }
+    } catch (err) {
+        console.warn('⚠️  Unable to detect macOS version, defaulting to SystemAudioDump14');
+    }
+
+    console.log(`Using ${binaryName} for loop-back capture`);
+
     const systemAudioPath = app.isPackaged
-        ? path.join(process.resourcesPath, 'SystemAudioDump')
-        : path.join(app.getAppPath(), 'src', 'assets', 'SystemAudioDump');
+        ? path.join(process.resourcesPath, binaryName)
+        : path.join(app.getAppPath(), 'src', 'assets', binaryName);
 
     console.log('SystemAudioDump path:', systemAudioPath);
 

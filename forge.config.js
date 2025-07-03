@@ -9,7 +9,11 @@ module.exports = {
                 '**/*.node,**/*.dylib,' +
                 '**/node_modules/{sharp,@img}/**/*'
         },
-        extraResource: ['./src/assets/SystemAudioDump', './pickleglass_web/out'],
+        extraResource: [
+            './src/assets/SystemAudioDump14',
+            './src/assets/SystemAudioDump15',
+            './pickleglass_web/out'
+        ],
         name: 'Glass',
         icon: 'src/assets/logo',
         appBundleId: 'com.pickle.glass',
