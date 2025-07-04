@@ -29,6 +29,7 @@
     },
     "license": "Apache-2.0",
     "dependencies": {
+        "@google/generative-ai": "^0.21.0",
         "axios": "^1.10.0",
         "better-sqlite3": "^9.4.3",
         "cors": "^2.8.5",

@@ -5,6 +5,8 @@ export class ApiKeyHeader extends LitElement {
         apiKey: { type: String },
         isLoading: { type: Boolean },
         errorMessage: { type: String },
+        selectedProvider: { type: String },
+        availableProviders: { type: Array },
     };
 
     static styles = css`
@@ -44,12 +46,12 @@ export class ApiKeyHeader extends LitElement {
         }
 
         .container {
-            width: 285px;
-            height: 220px;
-            padding: 18px 20px;
+            width: 280px;
+            height: 240px;
+            padding: 16px 18px;
             background: rgba(0, 0, 0, 0.3);
-            border-radius: 16px;
-            overflow: hidden;
+            border-radius: 12px;
+            overflow: scroll;
             position: relative;
             display: flex;
             flex-direction: column;
@@ -63,7 +65,7 @@ export class ApiKeyHeader extends LitElement {
             left: 0;
             right: 0;
             bottom: 0;
-            border-radius: 16px;
+            border-radius: 12px;
             padding: 1px;
             background: linear-gradient(169deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 50%, rgba(255, 255, 255, 0.5) 100%);
             -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -116,29 +118,30 @@ export class ApiKeyHeader extends LitElement {
             flex-direction: column;
             align-items: center;
             width: 100%;
-            margin-top: auto; /* 이 속성이 제목과 폼 사이의 공간을 만듭니다. */
+            margin-top: 12px;
+            gap: 6px;
         }
 
         .error-message {
             color: rgba(239, 68, 68, 0.9);
             font-weight: 500;
             font-size: 11px;
-            height: 14px; /* Reserve space to prevent layout shift */
+            min-height: 14px; /* Reserve space to prevent layout shift */
             text-align: center;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .api-input {
             width: 100%;
-            height: 34px;
+            height: 32px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             border: none;
-            padding: 0 10px;
+            padding: 0 12px;
             color: white;
             font-size: 12px;
             font-weight: 400; /* Regular */
-            margin-bottom: 6px;
+            margin-bottom: 2px;
             text-align: center;
             user-select: text;
             cursor: text;
@@ -154,7 +157,7 @@ export class ApiKeyHeader extends LitElement {
 
         .action-button {
             width: 100%;
-            height: 34px;
+            height: 32px;
             background: rgba(255, 255, 255, 0.2);
             border: none;
             border-radius: 10px;
@@ -196,7 +199,54 @@ export class ApiKeyHeader extends LitElement {
             color: rgba(255, 255, 255, 0.5);
             font-size: 12px;
             font-weight: 500; /* Medium */
-            margin: 10px 0;
+            margin: 6px 0;
+        }
+
+        .provider-selection {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 6px;
+            width: 100%;
+        }
+
+        .provider-button {
+            flex: 1;
+            height: 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .provider-button:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .provider-button.selected {
+            background: rgba(255, 255, 255, 0.25);
+            color: white;
+        }
+
+        .provider-button.selected::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: 8px;
+            padding: 1px;
+            background: linear-gradient(169deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 50%, rgba(255, 255, 255, 0.3) 100%);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: destination-out;
+            mask-composite: exclude;
+            pointer-events: none;
         }
     `;
 
@@ -208,6 +258,11 @@ export class ApiKeyHeader extends LitElement {
         this.isLoading = false;
         this.errorMessage = '';
         this.validatedApiKey = null;
+        this.selectedProvider = 'openai';
+        this.availableProviders = [
+            { id: 'openai', name: 'OpenAI' },
+            { id: 'gemini', name: 'Gemini' }
+        ];
 
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.handleMouseUp = this.handleMouseUp.bind(this);
@@ -216,6 +271,7 @@ export class ApiKeyHeader extends LitElement {
         this.handleInput = this.handleInput.bind(this);
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this);
+        this.handleProviderChange = this.handleProviderChange.bind(this);
     }
 
     reset() {
@@ -224,6 +280,16 @@ export class ApiKeyHeader extends LitElement {
         this.errorMessage = '';
         this.validatedApiKey = null;
         this.requestUpdate();
+    }
+
+    handleProviderChange(providerId) {
+        if (this.selectedProvider !== providerId) {
+            this.selectedProvider = providerId;
+            this.errorMessage = '';
+            this.apiKey = ''; // Clear API key when switching providers
+            this.requestUpdate();
+            console.log(`Provider changed to: ${providerId}`);
+        }
     }
 
     async handleMouseDown(e) {
@@ -349,6 +415,7 @@ export class ApiKeyHeader extends LitElement {
                 console.log('API key valid - starting slide out animation');
                 this.startSlideOutAnimation();
                 this.validatedApiKey = this.apiKey.trim();
+                this.validatedProvider = this.selectedProvider;
             } else {
                 this.errorMessage = 'Invalid API key - please check and try again';
                 console.log('API key validation failed');
@@ -364,10 +431,21 @@ export class ApiKeyHeader extends LitElement {
 
     async validateApiKey(apiKey) {
         if (!apiKey || apiKey.length < 15) return false;
+
+        if (this.selectedProvider === 'openai') {
+            return await this.validateOpenAIKey(apiKey);
+        } else if (this.selectedProvider === 'gemini') {
+            return await this.validateGeminiKey(apiKey);
+        }
+        
+        return false;
+    }
+
+    async validateOpenAIKey(apiKey) {
         if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false;
 
         try {
-            console.log('Validating API key with openai models endpoint...');
+            console.log('Validating OpenAI API key...');
 
             const response = await fetch('https://api.openai.com/v1/models', {
                 headers: {
@@ -378,23 +456,62 @@ export class ApiKeyHeader extends LitElement {
 
             if (response.ok) {
                 const data = await response.json();
-
                 const hasGPTModels = data.data && data.data.some(m => m.id.startsWith('gpt-'));
                 if (hasGPTModels) {
-                    console.log('API key validation successful - GPT models available');
+                    console.log('OpenAI API key validation successful');
                     return true;
                 } else {
-                    console.log('API key valid but no GPT models available');
+                    console.log('OpenAI API key valid but no GPT models available');
                     return false;
                 }
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                console.log('API key validation failed:', response.status, errorData.error?.message || 'Unknown error');
+                console.log('OpenAI API key validation failed:', response.status, errorData.error?.message || 'Unknown error');
                 return false;
             }
         } catch (error) {
-            console.error('API key validation network error:', error);
+            console.error('OpenAI API key validation network error:', error);
             return apiKey.length >= 20; // Fallback for network issues
+        }
+    }
+
+    async validateGeminiKey(apiKey) {
+        // Gemini API keys typically start with 'AIza' and are base64-like
+        if (!apiKey.match(/^AIza[A-Za-z0-9_-]+$/) && !apiKey.match(/^[A-Za-z0-9_-]{39}$/)) {
+            console.log('Gemini API key format validation failed');
+            return false;
+        }
+
+        try {
+            console.log('Validating Gemini API key...');
+
+            // Use a simple test request to validate the Gemini API key
+            const testUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+            
+            const response = await fetch(testUrl, {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const hasGeminiModels = data.models && data.models.some(m => m.name.includes('gemini'));
+                if (hasGeminiModels) {
+                    console.log('Gemini API key validation successful');
+                    return true;
+                } else {
+                    console.log('Gemini API key valid but no models available');
+                    return false;
+                }
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                console.log('Gemini API key validation failed:', response.status, errorData.error?.message || 'Unknown error');
+                return false;
+            }
+        } catch (error) {
+            console.error('Gemini API key validation network error:', error);
+            return apiKey.length >= 30; // Fallback for network issues
         }
     }
 
@@ -428,9 +545,13 @@ export class ApiKeyHeader extends LitElement {
 
             if (this.validatedApiKey) {
                 if (window.require) {
-                    window.require('electron').ipcRenderer.invoke('api-key-validated', this.validatedApiKey);
+                    window.require('electron').ipcRenderer.invoke('api-key-validated', {
+                        apiKey: this.validatedApiKey,
+                        provider: this.validatedProvider || this.selectedProvider
+                    });
                 }
                 this.validatedApiKey = null;
+                this.validatedProvider = null;
             }
         }
     }
@@ -458,6 +579,28 @@ export class ApiKeyHeader extends LitElement {
 
     render() {
         const isButtonDisabled = this.isLoading || !this.apiKey || !this.apiKey.trim();
+        
+        const getPlaceholder = () => {
+            switch (this.selectedProvider) {
+                case 'openai':
+                    return 'Enter your OpenAI API key';
+                case 'gemini':
+                    return 'Enter your Google Gemini API key';
+                default:
+                    return 'Enter your API key';
+            }
+        };
+
+        const getProviderInstructions = () => {
+            switch (this.selectedProvider) {
+                case 'openai':
+                    return 'Get your key from platform.openai.com';
+                case 'gemini':
+                    return 'Get your key from makersuite.google.com';
+                default:
+                    return '';
+            }
+        };
 
         return html`
             <div class="container" @mousedown=${this.handleMouseDown}>
@@ -469,11 +612,24 @@ export class ApiKeyHeader extends LitElement {
                 <h1 class="title">Choose how to power your AI</h1>
 
                 <div class="form-content">
+                    <div class="provider-selection">
+                        ${this.availableProviders.map(provider => html`
+                            <button 
+                                class="provider-button ${this.selectedProvider === provider.id ? 'selected' : ''}"
+                                @click=${() => this.handleProviderChange(provider.id)}
+                                ?disabled=${this.isLoading}
+                                tabindex="0"
+                            >
+                                ${provider.name}
+                            </button>
+                        `)}
+                    </div>
+
                     <div class="error-message">${this.errorMessage}</div>
                     <input
                         type="password"
                         class="api-input"
-                        placeholder="Enter your OpenAI API key"
+                        placeholder="${getPlaceholder()}"
                         .value=${this.apiKey || ''}
                         @input=${this.handleInput}
                         @keypress=${this.handleKeyPress}

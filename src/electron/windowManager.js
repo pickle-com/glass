@@ -1808,10 +1808,14 @@ function setupIpcHandlers(openaiSessionRef) {
 }
 
 let storedApiKey = null;
+let storedProvider = 'openai'; // default provider
 
-async function setApiKey(apiKey) {
+async function setApiKey(apiKey, provider = null) {
     storedApiKey = apiKey;
-    console.log('[WindowManager] API key stored (and will be persisted to DB)');
+    if (provider) {
+        storedProvider = provider;
+    }
+    console.log(`[WindowManager] API key stored for provider ${storedProvider} (and will be persisted to DB)`);
 
     try {
         await sqliteClient.saveApiKey(apiKey);
@@ -1820,12 +1824,55 @@ async function setApiKey(apiKey) {
         console.error('[WindowManager] Failed to save API key to SQLite:', err);
     }
 
+    // Initialize AI provider manager
+    try {
+        const aiProviderManager = require('../common/services/aiProviderManager');
+        if (provider) {
+            aiProviderManager.setProvider(provider);
+        }
+        if (apiKey) {
+            await aiProviderManager.initialize(apiKey);
+        }
+        console.log(`[WindowManager] AI provider manager initialized with ${storedProvider}`);
+    } catch (err) {
+        console.error('[WindowManager] Failed to initialize AI provider manager:', err);
+    }
+
     windowPool.forEach(win => {
         if (win && !win.isDestroyed()) {
-            const js = apiKey ? `localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});` : `localStorage.removeItem('openai_api_key');`;
+            const js = apiKey 
+                ? `localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)}); localStorage.setItem('ai_provider', ${JSON.stringify(storedProvider)});` 
+                : `localStorage.removeItem('openai_api_key'); localStorage.removeItem('ai_provider');`;
             win.webContents.executeJavaScript(js).catch(() => {});
         }
     });
+}
+
+function getStoredProvider() {
+    return storedProvider;
+}
+
+async function setProvider(provider) {
+    storedProvider = provider;
+    console.log(`[WindowManager] Provider set to: ${provider}`);
+    
+    try {
+        const aiProviderManager = require('../common/services/aiProviderManager');
+        aiProviderManager.setProvider(provider);
+        
+        if (storedApiKey) {
+            await aiProviderManager.initialize(storedApiKey);
+        }
+        
+        windowPool.forEach(win => {
+            if (win && !win.isDestroyed()) {
+                const js = `localStorage.setItem('ai_provider', ${JSON.stringify(provider)});`;
+                win.webContents.executeJavaScript(js).catch(() => {});
+            }
+        });
+    } catch (err) {
+        console.error('[WindowManager] Failed to set provider:', err);
+    }
 }
 
 async function loadApiKeyFromDb() {
@@ -1872,13 +1919,25 @@ function setupApiKeyIPC() {
         return storedApiKey;
     });
 
-    ipcMain.handle('api-key-validated', async (event, apiKey) => {
+    ipcMain.handle('api-key-validated', async (event, data) => {
         console.log('[WindowManager] API key validation completed, saving...');
-        await setApiKey(apiKey);
+        
+        let apiKey, provider;
+        if (typeof data === 'string') {
+            // Backward compatibility - old format was just the API key
+            apiKey = data;
+            provider = 'openai';
+        } else {
+            // New format with both API key and provider
+            apiKey = data.apiKey;
+            provider = data.provider || 'openai';
+        }
+        
+        await setApiKey(apiKey, provider);
 
         windowPool.forEach((win, name) => {
             if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-validated', apiKey);
+                win.webContents.send('api-key-validated', { apiKey, provider });
             }
         });
 
@@ -1914,7 +1973,30 @@ function setupApiKeyIPC() {
         return storedApiKey;
     });
 
-    console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
+    ipcMain.handle('get-current-provider', async () => {
+        return storedProvider;
+    });
+
+    ipcMain.handle('set-provider', async (event, provider) => {
+        console.log(`[WindowManager] Provider change requested: ${provider}`);
+        await setProvider(provider);
+        return { success: true };
+    });
+
+    ipcMain.handle('get-available-providers', async () => {
+        try {
+            const aiProviderManager = require('../common/services/aiProviderManager');
+            return aiProviderManager.getAvailableProviders();
+        } catch (err) {
+            console.error('[WindowManager] Failed to get available providers:', err);
+            return [
+                { id: 'openai', name: 'OpenAI', capabilities: {} },
+                { id: 'gemini', name: 'Google Gemini', capabilities: {} }
+            ];
+        }
+    });
+
+    console.log('[WindowManager] API key and provider related IPC handlers registered (SQLite-backed)');
 }
 
 function createWindow(sendToRenderer, openaiSessionRef) {
@@ -2365,6 +2447,8 @@ module.exports = {
     fixedYPosition,
     setApiKey,
     getStoredApiKey,
+    getStoredProvider,
+    setProvider,
     clearApiKey,
     getCurrentFirebaseUser,
     isFirebaseLoggedIn,
