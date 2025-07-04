@@ -542,7 +542,10 @@ export const updatePreset = async (id: string, data: { title: string, prompt: st
         method: 'PUT',
         body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to update preset');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update preset: ${response.status} ${errorText}`);
+    }
   }
 };
 
