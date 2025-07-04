@@ -2,7 +2,7 @@
     "name": "pickle-glass",
     "productName": "Glass",
     "version": "0.1.1",
-    "description": "Cl*ely for Free",
+    "description": "Cluely for Free",
     "main": "src/index.js",
     "scripts": {
         "setup": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
