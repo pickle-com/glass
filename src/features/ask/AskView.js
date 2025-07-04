@@ -858,12 +858,7 @@ export class AskView extends LitElement {
             ipcRenderer.on('window-blur', this.handleWindowBlur);
             ipcRenderer.on('window-did-show', () => {
                 if (!this.currentResponse && !this.isLoading && !this.isStreaming) {
-                    setTimeout(() => {
-                        const textInput = this.shadowRoot?.getElementById('textInput');
-                        if (textInput) {
-                            textInput.focus();
-                        }
-                    }, 100);
+                    this.focusTextInput();
                 }
             });
 
@@ -1292,6 +1287,19 @@ export class AskView extends LitElement {
         if (changedProperties.has('showTextInput') || changedProperties.has('isLoading')) {
             this.adjustWindowHeightThrottled();
         }
+
+        if (changedProperties.has('showTeextInput') && this.showTextInput) {
+            this.focusTextInput();
+        }
+    }
+
+    focusTextInput(){
+        requestAnimationFrame(() => {
+            const textInput = this.shadowRoot?.getElementById('textInput');
+            if (textInput){
+                textInput.focus();
+            }
+        });
     }
 
     firstUpdated() {
