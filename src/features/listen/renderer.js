@@ -1,5 +1,6 @@
 // renderer.js
 const { ipcRenderer } = require('electron');
+const { makeStreamingChatCompletionWithPortkey } = require('../../common/services/aiProviderService.js');
 
 let mediaStream = null;
 let screenshotInterval = null;
@@ -972,39 +973,21 @@ async function sendMessage(userPrompt, options = {}) {
         }
 
         const { isLoggedIn } = await queryLoginState();
-        const keyType = isLoggedIn ? 'vKey' : 'apiKey';
+        const provider = await ipcRenderer.invoke('get-ai-provider');
+        const usePortkey = isLoggedIn && provider === 'openai';
 
-        console.log('🚀 Sending request to OpenAI...');
-        const { url, headers } =
-            keyType === 'apiKey'
-                ? {
-                      url: 'https://api.openai.com/v1/chat/completions',
-                      headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-                  }
-                : {
-                      url: 'https://api.portkey.ai/v1/chat/completions',
-                      headers: {
-                          'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                          'x-portkey-virtual-key': API_KEY,
-                          'Content-Type': 'application/json',
-                      },
-                  };
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-            }),
+        console.log(`🚀 Sending request to ${provider} AI...`);
+        
+        const response = await makeStreamingChatCompletionWithPortkey({
+            apiKey: API_KEY,
+            provider: provider,
+            messages: messages,
+            temperature: 0.7,
+            maxTokens: 2048,
+            model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
+            usePortkey: usePortkey,
+            portkeyVirtualKey: usePortkey ? API_KEY : null
         });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
 
         // --- 스트리밍 응답 처리 ---
         const reader = response.body.getReader();

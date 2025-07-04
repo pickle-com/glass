@@ -1826,21 +1826,29 @@ function setupIpcHandlers(openaiSessionRef) {
 }
 
 let storedApiKey = null;
+let storedProvider = 'openai';
 
-async function setApiKey(apiKey) {
+async function setApiKey(apiKey, provider = 'openai') {
     storedApiKey = apiKey;
-    console.log('[WindowManager] API key stored (and will be persisted to DB)');
+    storedProvider = provider;
+    console.log('[WindowManager] API key and provider stored (and will be persisted to DB)');
 
     try {
-        await sqliteClient.saveApiKey(apiKey);
-        console.log('[WindowManager] API key saved to SQLite');
+        await sqliteClient.saveApiKey(apiKey, sqliteClient.defaultUserId, provider);
+        console.log('[WindowManager] API key and provider saved to SQLite');
     } catch (err) {
         console.error('[WindowManager] Failed to save API key to SQLite:', err);
     }
 
     windowPool.forEach(win => {
         if (win && !win.isDestroyed()) {
-            const js = apiKey ? `localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});` : `localStorage.removeItem('openai_api_key');`;
+            const js = apiKey ? `
+                localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});
+                localStorage.setItem('ai_provider', ${JSON.stringify(provider)});
+            ` : `
+                localStorage.removeItem('openai_api_key');
+                localStorage.removeItem('ai_provider');
+            `;
             win.webContents.executeJavaScript(js).catch(() => {});
         }
     });
@@ -1850,7 +1858,9 @@ async function loadApiKeyFromDb() {
     try {
         const user = await sqliteClient.getUser(sqliteClient.defaultUserId);
         if (user && user.api_key) {
-            console.log('[WindowManager] API key loaded from SQLite for default user.');
+            console.log('[WindowManager] API key and provider loaded from SQLite for default user.');
+            storedApiKey = user.api_key;
+            storedProvider = user.provider || 'openai';
             return user.api_key;
         }
         return null;
@@ -1877,6 +1887,10 @@ function getStoredApiKey() {
     return storedApiKey;
 }
 
+function getStoredProvider() {
+    return storedProvider || 'openai';
+}
+
 function setupApiKeyIPC() {
     const { ipcMain } = require('electron');
 
@@ -1884,19 +1898,24 @@ function setupApiKeyIPC() {
         if (storedApiKey === null) {
             const dbKey = await loadApiKeyFromDb();
             if (dbKey) {
-                await setApiKey(dbKey);
+                await setApiKey(dbKey, storedProvider);
             }
         }
         return storedApiKey;
     });
 
-    ipcMain.handle('api-key-validated', async (event, apiKey) => {
+    ipcMain.handle('api-key-validated', async (event, data) => {
         console.log('[WindowManager] API key validation completed, saving...');
-        await setApiKey(apiKey);
+        
+        // Support both old format (string) and new format (object)
+        const apiKey = typeof data === 'string' ? data : data.apiKey;
+        const provider = typeof data === 'string' ? 'openai' : (data.provider || 'openai');
+        
+        await setApiKey(apiKey, provider);
 
         windowPool.forEach((win, name) => {
             if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-validated', apiKey);
+                win.webContents.send('api-key-validated', { apiKey, provider });
             }
         });
 
@@ -1926,10 +1945,15 @@ function setupApiKeyIPC() {
         if (storedApiKey === null) {
             const dbKey = await loadApiKeyFromDb();
             if (dbKey) {
-                await setApiKey(dbKey);
+                await setApiKey(dbKey, storedProvider);
             }
         }
         return storedApiKey;
+    });
+    
+    ipcMain.handle('get-ai-provider', async () => {
+        console.log('[WindowManager] AI provider requested from renderer');
+        return storedProvider || 'openai';
     });
 
     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
@@ -2383,6 +2407,7 @@ module.exports = {
     fixedYPosition,
     setApiKey,
     getStoredApiKey,
+    getStoredProvider,
     clearApiKey,
     getCurrentFirebaseUser,
     isFirebaseLoggedIn,
