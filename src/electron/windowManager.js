@@ -15,10 +15,28 @@ let currentFirebaseUser = null;
 let isContentProtectionOn = true;
 let currentDisplayId = null;
 
+// DevTools configuration
+const devToolsConfig = {
+    openHeaderDevTools: false,           // Don't open header DevTools by default
+    openAskDevTools: false,              // Don't open ask DevTools by default
+    openListenDevTools: false,           // Don't open listen DevTools by default
+    openSettingsDevTools: false          // Don't open settings DevTools by default
+};
+
 let mouseEventsIgnored = false;
 let lastVisibleWindows = new Set(['header']);
 const HEADER_HEIGHT = 60;
 const DEFAULT_WINDOW_WIDTH = 345;
+const TOLERANCE = 5; // Increased tolerance to prevent micro-adjustments
+
+// Track last correction time to prevent looping
+const lastCorrection = {
+    header: 0,
+    ask: 0,
+    listen: 0
+};
+// Minimum time between corrections (ms)
+const CORRECTION_COOLDOWN = 1000;
 
 let currentHeaderState = 'apikey';
 const windowPool = new Map();
@@ -48,7 +66,7 @@ function preserveWindowDimensions() {
     originalWindowDimensions.width = initialBounds.width;
     originalWindowDimensions.height = initialBounds.height;
     
-    // Check dimensions periodically and fix if they've changed
+    // Check dimensions less frequently to reduce "shaking"
     const dimensionWatcher = setInterval(() => {
         try {
             if (!header || header.isDestroyed()) {
@@ -56,11 +74,19 @@ function preserveWindowDimensions() {
                 return;
             }
             
+            const now = Date.now();
+            // Skip if we've corrected recently
+            if (now - lastCorrection.header < CORRECTION_COOLDOWN) {
+                return;
+            }
+            
             const currentBounds = header.getBounds();
-            if (currentBounds.width !== originalWindowDimensions.width || 
-                currentBounds.height !== originalWindowDimensions.height) {
-                
-                console.log(`[WindowManager] Fixing dimensions: ${currentBounds.width}x${currentBounds.height} -> ${originalWindowDimensions.width}x${originalWindowDimensions.height}`);
+            const widthDiff = Math.abs(currentBounds.width - originalWindowDimensions.width);
+            const heightDiff = Math.abs(currentBounds.height - originalWindowDimensions.height);
+            
+            // Only adjust if the difference is more than our tolerance
+            if (widthDiff > TOLERANCE || heightDiff > TOLERANCE) {
+                console.log(`[WindowManager] Fixing dimensions: ${currentBounds.width}x${currentBounds.height} -> ${originalWindowDimensions.width}x${originalWindowDimensions.height} (diff: ${widthDiff}x${heightDiff}px)`);
                 
                 // Preserve position but reset dimensions
                 header.setBounds({
@@ -68,12 +94,15 @@ function preserveWindowDimensions() {
                     y: currentBounds.y,
                     width: originalWindowDimensions.width,
                     height: originalWindowDimensions.height
-                });
+                }, false); // false = don't animate, to prevent shaking
+                
+                // Update last correction time
+                lastCorrection.header = now;
             }
         } catch (e) {
             console.error('[WindowManager] Error in dimension watcher:', e);
         }
-    }, 100); // Check every 100ms
+    }, 1000); // Check every second - much less frequently to avoid continuous corrections
 }
 const windowDefinitions = {
     header: {
@@ -108,47 +137,8 @@ const windowDefinitions = {
 
 const featureWindows = ['listen','ask','settings'];
 
-// Preserve window dimensions to prevent unwanted resizing
-function preserveWindowDimensions() {
-    // Only run this once
-    if (isPreservingBounds) return;
-    isPreservingBounds = true;
-    
-    const header = windowPool.get('header');
-    if (!header) return;
-    
-    // Store original dimensions once
-    const initialBounds = header.getBounds();
-    originalWindowDimensions.width = initialBounds.width;
-    originalWindowDimensions.height = initialBounds.height;
-    
-    // Check dimensions periodically and fix if they've changed
-    const dimensionWatcher = setInterval(() => {
-        try {
-            if (!header || header.isDestroyed()) {
-                clearInterval(dimensionWatcher);
-                return;
-            }
-            
-            const currentBounds = header.getBounds();
-            if (currentBounds.width !== originalWindowDimensions.width || 
-                currentBounds.height !== originalWindowDimensions.height) {
-                
-                console.log(`[WindowManager] Fixing dimensions: ${currentBounds.width}x${currentBounds.height} -> ${originalWindowDimensions.width}x${originalWindowDimensions.height}`);
-                
-                // Preserve position but reset dimensions
-                header.setBounds({
-                    x: currentBounds.x,
-                    y: currentBounds.y,
-                    width: originalWindowDimensions.width,
-                    height: originalWindowDimensions.height
-                });
-            }
-        } catch (e) {
-            console.error('[WindowManager] Error in dimension watcher:', e);
-        }
-    }, 100); // Check every 100ms
-}
+// The preserveWindowDimensions function is now defined at the top level of the file
+// with tolerance and less frequent checking
 
 function createFeatureWindows(header) {
     if (windowPool.has('listen')) return;
@@ -172,6 +162,32 @@ function createFeatureWindows(header) {
     listen.setContentProtection(isContentProtectionOn);
     listen.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     listen.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'listen'}});
+    
+    // Add resize event handler to preserve width
+    listen.on('resize', () => {
+        const now = Date.now();
+        // Skip if we've corrected recently to prevent correction loops
+        if (now - lastCorrection.listen < CORRECTION_COOLDOWN) {
+            return;
+        }
+        
+        const bounds = listen.getBounds();
+        const targetWidth = 400;
+        // Use the global tolerance value
+        const widthDiff = Math.abs(bounds.width - targetWidth);
+        
+        if (widthDiff > TOLERANCE) {
+            console.log('[WindowManager] Fixing listen window width:', bounds.width, '→', targetWidth, `(diff: ${widthDiff}px)`);
+            listen.setBounds({
+                ...bounds,
+                width: targetWidth
+            }, false); // false = don't animate, to prevent shaking
+            
+            // Record this correction
+            lastCorrection.listen = now;
+        }
+    });
+    
     windowPool.set('listen', listen);
 
     // ask
@@ -181,10 +197,33 @@ function createFeatureWindows(header) {
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
     ask.on('blur',()=>ask.webContents.send('window-blur'));
     
-    // Open DevTools in development
-    if (!app.isPackaged) {
-        ask.webContents.openDevTools({ mode: 'detach' });
-    }
+    // Add resize event handler to preserve width
+    ask.on('resize', () => {
+        const now = Date.now();
+        // Skip if we've corrected recently to prevent correction loops
+        if (now - lastCorrection.ask < CORRECTION_COOLDOWN) {
+            return;
+        }
+        
+        const bounds = ask.getBounds();
+        const targetWidth = 600;
+        // Use the global tolerance value
+        const widthDiff = Math.abs(bounds.width - targetWidth);
+        
+        if (widthDiff > TOLERANCE) {
+            console.log('[WindowManager] Fixing ask window width:', bounds.width, '→', targetWidth, `(diff: ${widthDiff}px)`);
+            ask.setBounds({
+                ...bounds,
+                width: targetWidth
+            }, false); // false = don't animate, to prevent shaking
+            
+            // Record this correction
+            lastCorrection.ask = now;
+        }
+    });
+    
+    // DevTools are already opened for the header window in development mode
+    // We don't need to open DevTools for the ask window as well
     windowPool.set('ask', ask);
 
     // settings
@@ -1119,33 +1158,59 @@ function createWindows() {
     
     // Add event handlers to prevent resizing during drag
     header.on('will-move', (event, newBounds) => {
+        const now = Date.now();
+        // Skip if we've corrected recently to prevent correction loops
+        if (now - lastCorrection.header < CORRECTION_COOLDOWN) {
+            return;
+        }
+        
         const currentBounds = header.getBounds();
-        if (newBounds.width !== originalWindowDimensions.width || 
-            newBounds.height !== originalWindowDimensions.height) {
+        const widthDiff = Math.abs(newBounds.width - originalWindowDimensions.width);
+        const heightDiff = Math.abs(newBounds.height - originalWindowDimensions.height);
+        
+        // Only adjust if the difference is more than our tolerance
+        if (widthDiff > TOLERANCE || heightDiff > TOLERANCE) {
             event.preventDefault();
             header.setBounds({
                 x: newBounds.x,
                 y: newBounds.y,
                 width: originalWindowDimensions.width,
                 height: originalWindowDimensions.height
-            });
+            }, false); // false = don't animate, to prevent shaking
+            
+            // Record this correction
+            lastCorrection.header = now;
         }
     });
     
     header.on('moved', () => {
+        const now = Date.now();
+        // Skip if we've corrected recently to prevent correction loops
+        if (now - lastCorrection.header < CORRECTION_COOLDOWN) {
+            return;
+        }
+        
         const bounds = header.getBounds();
-        if (bounds.width !== originalWindowDimensions.width || 
-            bounds.height !== originalWindowDimensions.height) {
+        const widthDiff = Math.abs(bounds.width - originalWindowDimensions.width);
+        const heightDiff = Math.abs(bounds.height - originalWindowDimensions.height);
+        
+        // Only adjust if the difference is more than our tolerance
+        if (widthDiff > TOLERANCE || heightDiff > TOLERANCE) {
+            console.log(`[WindowManager] Fixing dimensions after move: ${bounds.width}x${bounds.height} -> ${originalWindowDimensions.width}x${originalWindowDimensions.height} (diff: ${widthDiff}x${heightDiff}px)`);
+            
             header.setBounds({
                 ...bounds,
                 width: originalWindowDimensions.width,
                 height: originalWindowDimensions.height
-            });
+            }, false); // false = don't animate, to prevent shaking
+            
+            // Record this correction
+            lastCorrection.header = now;
         }
     });
     
     // Open DevTools in development
-    if (!app.isPackaged) {
+    if (devToolsConfig.openHeaderDevTools) {
         header.webContents.openDevTools({ mode: 'detach' });
     }
 
@@ -1303,6 +1368,21 @@ function createWindows() {
                     }, 250);
                 } else {
                     try {
+                        // Fix dimensions before showing
+                        const originalWidth = featureName === 'ask' ? 600 : 
+                                            featureName === 'listen' ? 400 : 
+                                            windowToToggle.getBounds().width;
+                        
+                        const bounds = windowToToggle.getBounds();
+                        if (bounds.width !== originalWidth) {
+                            console.log(`[WindowManager] Fixing ${featureName} window width before show:`, 
+                                       bounds.width, '→', originalWidth);
+                            windowToToggle.setBounds({
+                                ...bounds,
+                                width: originalWidth
+                            });
+                        }
+                        
                         windowToToggle.show();
                         updateLayout();
 
@@ -1337,6 +1417,22 @@ function createWindows() {
     ipcMain.handle('adjust-window-height', (event, targetHeight) => {
         const senderWindow = BrowserWindow.fromWebContents(event.sender);
         if (senderWindow) {
+            // Determine the window type
+            let windowType = '';
+            for (const [name, window] of windowPool.entries()) {
+                if (window === senderWindow) {
+                    windowType = name;
+                    break;
+                }
+            }
+            
+            // Skip if we've corrected recently
+            const now = Date.now();
+            if (windowType && now - lastCorrection[windowType] < CORRECTION_COOLDOWN) {
+                console.log(`[WindowManager] Skipping adjustment for ${windowType} (too soon after last correction)`);
+                return;
+            }
+            
             const wasResizable = senderWindow.isResizable();
             if (!wasResizable) {
                 senderWindow.setResizable(true);
@@ -1353,7 +1449,33 @@ function createWindows() {
                 adjustedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
             }
             
-            senderWindow.setSize(currentBounds.width, adjustedHeight, false);
+            // Get the original width based on window type
+            let originalWidth = currentBounds.width; // Default to current width
+            
+            if (windowType === 'ask') {
+                originalWidth = 600; // Original width defined for ask window
+            } else if (windowType === 'listen') {
+                originalWidth = 400; // Original width defined for listen window
+            }
+            
+            // Only adjust width if it's significantly different (using the global tolerance value)
+            const widthDiff = Math.abs(currentBounds.width - originalWidth);
+            const shouldAdjustWidth = widthDiff > TOLERANCE;
+            
+            console.log(`[WindowManager] Adjusting ${windowType} window height to ${adjustedHeight}px, preserving width at ${originalWidth}px (current: ${currentBounds.width}px, diff: ${widthDiff}px, adjusting: ${shouldAdjustWidth})`);
+            
+            // Use setBounds to ensure width is preserved when needed
+            senderWindow.setBounds({
+                x: currentBounds.x,
+                y: currentBounds.y,
+                width: shouldAdjustWidth ? originalWidth : currentBounds.width,
+                height: adjustedHeight
+            }, false); // false = don't animate, to prevent shaking
+            
+            // Record this correction
+            if (windowType) {
+                lastCorrection[windowType] = now;
+            }
 
             if (!wasResizable) {
                 senderWindow.setResizable(false);
@@ -1563,14 +1685,28 @@ function setupIpcHandlers(openaiSessionRef) {
     ipcMain.handle('fix-window-dimensions', () => {
         const header = windowPool.get('header');
         if (header) {
+            const now = Date.now();
+            // Skip if we've corrected recently to prevent correction loops
+            if (now - lastCorrection.header < CORRECTION_COOLDOWN) {
+                return false;
+            }
+            
             const bounds = header.getBounds();
-            if (bounds.width !== originalWindowDimensions.width || 
-                bounds.height !== originalWindowDimensions.height) {
+            const widthDiff = Math.abs(bounds.width - originalWindowDimensions.width);
+            const heightDiff = Math.abs(bounds.height - originalWindowDimensions.height);
+            
+            // Only adjust if the difference is more than our tolerance
+            if (widthDiff > TOLERANCE || heightDiff > TOLERANCE) {
+                console.log(`[WindowManager] IPC fix-window-dimensions: correcting from ${bounds.width}x${bounds.height} to ${originalWindowDimensions.width}x${originalWindowDimensions.height} (diff: ${widthDiff}x${heightDiff})`);
+                
                 header.setBounds({
                     ...bounds,
                     width: originalWindowDimensions.width,
                     height: originalWindowDimensions.height
-                });
+                }, false); // false = don't animate, to prevent shaking
+                
+                // Record this correction
+                lastCorrection.header = now;
                 return true;
             }
         }
