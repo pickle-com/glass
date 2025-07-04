@@ -6,9 +6,17 @@ const validator = require('validator');
 
 router.get('/', (req, res) => {
     try {
-        const sessions = db.prepare(
-            "SELECT id, uid, title, started_at, ended_at, sync_state, updated_at FROM sessions WHERE uid = ? ORDER BY started_at DESC"
-        ).all(req.uid);
+        // Only return sessions that have transcripts or AI messages (filter out empty sessions)
+        const sessions = db.prepare(`
+            SELECT DISTINCT s.id, s.uid, s.title, s.started_at, s.ended_at, s.sync_state, s.updated_at 
+            FROM sessions s 
+            WHERE s.uid = ? 
+            AND (
+                EXISTS (SELECT 1 FROM transcripts t WHERE t.session_id = s.id) 
+                OR EXISTS (SELECT 1 FROM ai_messages a WHERE a.session_id = s.id)
+            )
+            ORDER BY s.started_at DESC
+        `).all(req.uid);
         res.json(sessions);
     } catch (error) {
         console.error('Failed to get sessions:', error);

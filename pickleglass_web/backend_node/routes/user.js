@@ -125,9 +125,18 @@ async function getUserBatchData(req, res) {
     }
     
         if (includes.includes('sessions')) {
-        const recent_sessions = db.prepare(
-                "SELECT id, title, started_at, updated_at FROM sessions WHERE uid = ? ORDER BY updated_at DESC LIMIT 10"
-            ).all(req.uid);
+        // Only return sessions that have transcripts or AI messages (filter out empty sessions)
+        const recent_sessions = db.prepare(`
+            SELECT DISTINCT s.id, s.title, s.started_at, s.updated_at 
+            FROM sessions s 
+            WHERE s.uid = ? 
+            AND (
+                EXISTS (SELECT 1 FROM transcripts t WHERE t.session_id = s.id) 
+                OR EXISTS (SELECT 1 FROM ai_messages a WHERE a.session_id = s.id)
+            )
+            ORDER BY s.updated_at DESC 
+            LIMIT 10
+        `).all(req.uid);
             result.sessions = recent_sessions || [];
     }
     

@@ -346,7 +346,22 @@ export const getSessions = async (): Promise<Session[]> => {
   if (isFirebaseMode()) {
     const uid = firebaseAuth.currentUser!.uid;
     const firestoreSessions = await FirestoreSessionService.getSessions(uid);
-    return firestoreSessions.map(session => convertFirestoreSession(session, uid));
+    
+    // Filter out empty sessions (sessions with no transcripts or AI messages)
+    const filteredSessions = [];
+    for (const session of firestoreSessions) {
+      const [transcripts, aiMessages] = await Promise.all([
+        FirestoreTranscriptService.getTranscripts(uid, session.id),
+        FirestoreAiMessageService.getAiMessages(uid, session.id)
+      ]);
+      
+      // Only include sessions that have transcripts or AI messages
+      if (transcripts.length > 0 || aiMessages.length > 0) {
+        filteredSessions.push(session);
+      }
+    }
+    
+    return filteredSessions.map(session => convertFirestoreSession(session, uid));
   } else {
     const response = await apiCall(`/api/conversations`, { method: 'GET' });
     if (!response.ok) throw new Error('Failed to fetch sessions');
