@@ -255,10 +255,18 @@ class HeaderTransitionManager {
                 .ipcRenderer.invoke('resize-header-window', { width: 353, height: 60 })
                 .catch(() => {});
         }
+        
+        _resizeForApiKey() {
+            if (!window.require) return;
+            return window
+                .require('electron')
+                .ipcRenderer.invoke('resize-header-window', { width: 285, height: 300 })
+                .catch(() => {});
+        }
 
         async transitionToApiKeyHeader() {
                 await window.require('electron')
-                    .ipcRenderer.invoke('resize-header-window', { width: 285, height: 220 });
+                    .ipcRenderer.invoke('resize-header-window', { width: 285, height: 300 });
             
                 if (this.currentHeaderType !== 'apikey') {
                     this.ensureHeader('apikey');
