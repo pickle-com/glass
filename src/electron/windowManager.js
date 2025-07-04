@@ -90,6 +90,11 @@ function createFeatureWindows(header) {
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
     ask.on('blur',()=>ask.webContents.send('window-blur'));
+    
+    // Open DevTools in development
+    if (!app.isPackaged) {
+        ask.webContents.openDevTools({ mode: 'detach' });
+    }
     windowPool.set('ask', ask);
 
     // settings
@@ -970,6 +975,11 @@ function createWindows() {
     header.setContentProtection(isContentProtectionOn);
     header.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     header.loadFile(path.join(__dirname, '../app/header.html'));
+    
+    // Open DevTools in development
+    if (!app.isPackaged) {
+        header.webContents.openDevTools({ mode: 'detach' });
+    }
 
     header.on('focus', () => {
         console.log('[WindowManager] Header gained focus');

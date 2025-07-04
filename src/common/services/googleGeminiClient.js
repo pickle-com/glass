@@ -89,7 +89,7 @@ function createGeminiChat(client, model = 'gemini-2.5-flash', config = {}) {
         history: config.history || [],
         generationConfig: {
             temperature: config.temperature || 0.7,
-            maxOutputTokens: config.maxOutputTokens || 2048,
+            maxOutputTokens: config.maxOutputTokens || 8192,
         }
     });
     
