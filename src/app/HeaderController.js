@@ -373,3 +373,10 @@ class HeaderTransitionManager {
 window.addEventListener('DOMContentLoaded', () => {
     new HeaderTransitionManager();
 });
+
+window.addEventListener('mouseup', () => {
+  // Force refresh bounds after drag ends
+  if (window.electron && window.electron.ipcRenderer) {
+    window.electron.ipcRenderer.invoke('fix-window-dimensions');
+  }
+});

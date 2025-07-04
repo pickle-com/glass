@@ -18,19 +18,36 @@ files:
   - src/**/*
   - package.json
   - pickleglass_web/backend_node/**/*
-  - '!**/node_modules/electron/**'
   - public/build/**/*
+  - public/assets/**/*
 
 # Additional resources to be copied into the app's resources directory
 extraResources:
   - from: src/assets/SystemAudioDump
-    to: SystemAudioDump
-  - from: pickleglass_web/out
-    to: out
 
 # macOS specific configuration
 mac:
-  # The application category type
-  category: public.app-category.utilities
-  # Path to the .icns icon file
-  icon: src/assets/logo.icns 
+  icon: src/assets/logo.icns
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+# Windows specific configuration
+win:
+  icon: src/assets/logo.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  certificateSubjectName: Pickle
+  verifyUpdateCodeSignature: false
+
+# NSIS installer configuration for Windows
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  shortcutName: Glass

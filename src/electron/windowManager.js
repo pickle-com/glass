@@ -8,6 +8,9 @@ const sharp = require('sharp');
 const sqliteClient = require('../common/services/sqliteClient');
 const fetch = require('node-fetch');
 
+const isWindows = process.platform === 'win32';
+const isMacOS = process.platform === 'darwin';
+
 let currentFirebaseUser = null;
 let isContentProtectionOn = true;
 let currentDisplayId = null;
@@ -25,7 +28,53 @@ let lastScreenshot = null;
 let settingsHideTimer = null;
 
 let selectedCaptureSourceId = null;
+let isPreservingBounds = false;
+const originalWindowDimensions = {
+    width: DEFAULT_WINDOW_WIDTH,
+    height: HEADER_HEIGHT
+};
 
+// Add this function to your file at the top level
+function preserveWindowDimensions() {
+    // Only run this once
+    if (isPreservingBounds) return;
+    isPreservingBounds = true;
+    
+    const header = windowPool.get('header');
+    if (!header) return;
+    
+    // Store original dimensions once
+    const initialBounds = header.getBounds();
+    originalWindowDimensions.width = initialBounds.width;
+    originalWindowDimensions.height = initialBounds.height;
+    
+    // Check dimensions periodically and fix if they've changed
+    const dimensionWatcher = setInterval(() => {
+        try {
+            if (!header || header.isDestroyed()) {
+                clearInterval(dimensionWatcher);
+                return;
+            }
+            
+            const currentBounds = header.getBounds();
+            if (currentBounds.width !== originalWindowDimensions.width || 
+                currentBounds.height !== originalWindowDimensions.height) {
+                
+                console.log(`[WindowManager] Fixing dimensions: ${currentBounds.width}x${currentBounds.height} -> ${originalWindowDimensions.width}x${originalWindowDimensions.height}`);
+                
+                // Preserve position but reset dimensions
+                header.setBounds({
+                    x: currentBounds.x,
+                    y: currentBounds.y,
+                    width: originalWindowDimensions.width,
+                    height: originalWindowDimensions.height
+                });
+            }
+        } catch (e) {
+            console.error('[WindowManager] Error in dimension watcher:', e);
+        }
+    }, 100); // Check every 100ms
+}
 const windowDefinitions = {
     header: {
         file: 'header.html',
@@ -59,6 +108,48 @@ const windowDefinitions = {
 
 const featureWindows = ['listen','ask','settings'];
 
+// Preserve window dimensions to prevent unwanted resizing
+function preserveWindowDimensions() {
+    // Only run this once
+    if (isPreservingBounds) return;
+    isPreservingBounds = true;
+    
+    const header = windowPool.get('header');
+    if (!header) return;
+    
+    // Store original dimensions once
+    const initialBounds = header.getBounds();
+    originalWindowDimensions.width = initialBounds.width;
+    originalWindowDimensions.height = initialBounds.height;
+    
+    // Check dimensions periodically and fix if they've changed
+    const dimensionWatcher = setInterval(() => {
+        try {
+            if (!header || header.isDestroyed()) {
+                clearInterval(dimensionWatcher);
+                return;
+            }
+            
+            const currentBounds = header.getBounds();
+            if (currentBounds.width !== originalWindowDimensions.width || 
+                currentBounds.height !== originalWindowDimensions.height) {
+                
+                console.log(`[WindowManager] Fixing dimensions: ${currentBounds.width}x${currentBounds.height} -> ${originalWindowDimensions.width}x${originalWindowDimensions.height}`);
+                
+                // Preserve position but reset dimensions
+                header.setBounds({
+                    x: currentBounds.x,
+                    y: currentBounds.y,
+                    width: originalWindowDimensions.width,
+                    height: originalWindowDimensions.height
+                });
+            }
+        } catch (e) {
+            console.error('[WindowManager] Error in dimension watcher:', e);
+        }
+    }, 100); // Check every 100ms
+}
+
 function createFeatureWindows(header) {
     if (windowPool.has('listen')) return;
 
@@ -73,7 +164,6 @@ function createFeatureWindows(header) {
         resizable: false,
         webPreferences: { nodeIntegration: true, contextIsolation: false },
     };
-
     // listen
     const listen = new BrowserWindow({
         ...commonChildOptions, width:400,height:300,minWidth:400,maxWidth:400,
@@ -524,11 +614,16 @@ class SmoothMovementManager {
                 return;
             }
         
-            // Safely call setPosition
+            // Safely call setBounds instead of setPosition to preserve dimensions
             try {
-                header.setPosition(Math.round(currentX), Math.round(currentY));
+                header.setBounds({
+                    x: Math.round(currentX),
+                    y: Math.round(currentY),
+                    width: originalWindowDimensions.width,
+                    height: originalWindowDimensions.height
+                });
             } catch (err) {
-                console.error('[Movement] Failed to set position:', err);
+                console.error('[Movement] Failed to set bounds:', err);
                 this.isAnimating = false;
                 return;
             }
@@ -540,9 +635,14 @@ class SmoothMovementManager {
         
                 if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
                     try {
-                        header.setPosition(Math.round(targetX), Math.round(targetY));
+                        header.setBounds({
+                            x: Math.round(targetX),
+                            y: Math.round(targetY),
+                            width: originalWindowDimensions.width,
+                            height: originalWindowDimensions.height
+                        });
                     } catch (err) {
-                        console.error('[Movement] Failed to set final position:', err);
+                        console.error('[Movement] Failed to set final bounds:', err);
                     }
                 }
         
@@ -569,7 +669,13 @@ class SmoothMovementManager {
 
         console.log(`[Movement] Showing from ${this.hiddenPosition.edge} edge`);
 
-        header.setPosition(this.hiddenPosition.x, this.hiddenPosition.y);
+        // Use setBounds instead of setPosition to preserve dimensions
+        header.setBounds({
+            x: this.hiddenPosition.x,
+            y: this.hiddenPosition.y,
+            width: originalWindowDimensions.width,
+            height: originalWindowDimensions.height
+        });
         this.headerPosition = { x: this.hiddenPosition.x, y: this.hiddenPosition.y };
 
         const targetX = this.lastVisiblePosition.x;
@@ -603,7 +709,12 @@ class SmoothMovementManager {
                 return;
             }
 
-            header.setPosition(Math.round(currentX), Math.round(currentY));
+            header.setBounds({
+                x: Math.round(currentX),
+                y: Math.round(currentY),
+                width: originalWindowDimensions.width,
+                height: originalWindowDimensions.height
+            });
 
             if (progress < 1) {
                 setTimeout(animate, 8);
@@ -611,7 +722,12 @@ class SmoothMovementManager {
                 this.headerPosition = { x: targetX, y: targetY };
                 this.headerPosition = { x: targetX, y: targetY };
                 if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
+                    header.setBounds({
+                        x: Math.round(targetX),
+                        y: Math.round(targetY),
+                        width: originalWindowDimensions.width,
+                        height: originalWindowDimensions.height
+                    });
                 }
                 this.isAnimating = false;
 
@@ -719,16 +835,28 @@ class SmoothMovementManager {
                 return;
             }
 
-            header.setPosition(Math.round(currentX), Math.round(currentY));
+            // Use setBounds instead of setPosition to preserve dimensions
+            header.setBounds({
+                x: Math.round(currentX),
+                y: Math.round(currentY),
+                width: originalWindowDimensions.width,
+                height: originalWindowDimensions.height
+            });
 
             if (progress < 1) {
                 setTimeout(animate, 8);
             } else {
                 this.headerPosition = { x: targetX, y: targetY };
                 if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
+                    // Use setBounds for final position as well
+                    header.setBounds({
+                        x: Math.round(targetX),
+                        y: Math.round(targetY),
+                        width: originalWindowDimensions.width,
+                        height: originalWindowDimensions.height
+                    });
                 } else {
-                    console.warn('[Movement] Final position invalid, skip setPosition:', { targetX, targetY });
+                    console.warn('[Movement] Final position invalid, skip setBounds:', { targetX, targetY });
                 }
                 this.isAnimating = false;
 
@@ -805,13 +933,23 @@ class SmoothMovementManager {
                 return;
             }
 
-            header.setPosition(Math.round(currentX), Math.round(currentY));
+            header.setBounds({
+                x: Math.round(currentX),
+                y: Math.round(currentY),
+                width: originalWindowDimensions.width,
+                height: originalWindowDimensions.height
+            });
 
             if (progress < 1) {
                 setTimeout(animate, 8);
             } else {
                 if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
+                    header.setBounds({
+                        x: Math.round(targetX),
+                        y: Math.round(targetY),
+                        width: originalWindowDimensions.width,
+                        height: originalWindowDimensions.height
+                    });
                 }
                 this.headerPosition = { x: targetX, y: targetY };
                 this.isAnimating = false;
@@ -975,6 +1113,36 @@ function createWindows() {
     header.setContentProtection(isContentProtectionOn);
     header.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     header.loadFile(path.join(__dirname, '../app/header.html'));
+    
+    // Add dimension preservation
+    preserveWindowDimensions();
+    
+    // Add event handlers to prevent resizing during drag
+    header.on('will-move', (event, newBounds) => {
+        const currentBounds = header.getBounds();
+        if (newBounds.width !== originalWindowDimensions.width || 
+            newBounds.height !== originalWindowDimensions.height) {
+            event.preventDefault();
+            header.setBounds({
+                x: newBounds.x,
+                y: newBounds.y,
+                width: originalWindowDimensions.width,
+                height: originalWindowDimensions.height
+            });
+        }
+    });
+    
+    header.on('moved', () => {
+        const bounds = header.getBounds();
+        if (bounds.width !== originalWindowDimensions.width || 
+            bounds.height !== originalWindowDimensions.height) {
+            header.setBounds({
+                ...bounds,
+                width: originalWindowDimensions.width,
+                height: originalWindowDimensions.height
+            });
+        }
+    });
     
     // Open DevTools in development
     if (!app.isPackaged) {
@@ -1390,6 +1558,23 @@ function setupIpcHandlers(openaiSessionRef) {
 
     ipcMain.handle('get-content-protection-status', () => {
         return isContentProtectionOn;
+    });
+
+    ipcMain.handle('fix-window-dimensions', () => {
+        const header = windowPool.get('header');
+        if (header) {
+            const bounds = header.getBounds();
+            if (bounds.width !== originalWindowDimensions.width || 
+                bounds.height !== originalWindowDimensions.height) {
+                header.setBounds({
+                    ...bounds,
+                    width: originalWindowDimensions.width,
+                    height: originalWindowDimensions.height
+                });
+                return true;
+            }
+        }
+        return false;
     });
 
     ipcMain.on('header-state-changed', (event, state) => {
@@ -2409,6 +2594,57 @@ async function captureScreenshotInternal(options = {}) {
     } catch (error) {
         throw error;
     }
+}
+
+async function captureScreen() {
+  try {
+    if (isWindows) {
+      // Windows-specific screen capture
+      const sources = await desktopCapturer.getSources({ 
+        types: ['screen'], 
+        thumbnailSize: { width: 0, height: 0 } 
+      });
+      
+      if (!sources || sources.length === 0) {
+        console.error('No screen sources found');
+        return null;
+      }
+      
+      const source = sources.find(s => currentDisplayId ? 
+        s.display_id === currentDisplayId : true) || sources[0];
+      
+      // Windows needs specific handling
+      return await takeWindowsScreenshot(source.id);
+    } else {
+      // macOS specific capture
+      return await takeMacOSScreenshot();
+    }
+  } catch (error) {
+    console.error('Error capturing screen:', error);
+    return null;
+  }
+}
+
+// Add this Windows-specific function
+async function takeWindowsScreenshot(sourceId) {
+  try {
+    // Windows specific implementation
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: screen.getPrimaryDisplay().workAreaSize
+    });
+    
+    const source = sources.find(s => s.id === sourceId) || sources[0];
+    if (!source) return null;
+    
+    const img = source.thumbnail.toPNG();
+    return await sharp(img)
+      .resize({ width: 1200, height: 800, fit: 'inside' })
+      .toBuffer();
+  } catch (err) {
+    console.error('Windows screenshot error:', err);
+    return null;
+  }
 }
 
 module.exports = {

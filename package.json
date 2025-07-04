@@ -5,16 +5,19 @@
     "description": "Cluely for Free",
     "main": "src/index.js",
     "scripts": {
-        "setup": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
+        "postinstall": "electron-builder install-app-deps && npm run rebuild-native",
+        "rebuild-native": "electron-rebuild -f -w better-sqlite3",
+        "setup:win": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
+        "setup:mac": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
         "start": "npm run build:renderer && electron-forge start",
         "package": "npm run build:renderer && electron-forge package",
         "make": "npm run build:renderer && electron-forge make",
         "build": "npm run build:renderer && electron-builder --config electron-builder.yml --publish never",
         "publish": "npm run build:renderer && electron-builder --config electron-builder.yml --publish always",
         "lint": "eslint --ext .ts,.tsx,.js .",
-        "postinstall": "electron-builder install-app-deps",
         "build:renderer": "node build.js",
-        "watch:renderer": "node build.js --watch"
+        "watch:renderer": "node build.js --watch",
+        "fix-native": "node scripts/fix-native-modules.js"
     },
     "keywords": [
         "glass",
@@ -41,7 +44,9 @@
         "express": "^4.18.2",
         "firebase": "^11.10.0",
         "firebase-admin": "^13.4.0",
+        "highlight.js": "^11.11.1",
         "jsonwebtoken": "^9.0.2",
+        "marked": "^16.0.0",
         "node-fetch": "^2.7.0",
         "openai": "^4.70.0",
         "react-hot-toast": "^2.5.2",
