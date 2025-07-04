@@ -280,7 +280,7 @@ export class ApiKeyHeader extends LitElement {
     }
 
     async handleMouseDown(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') {
             return;
         }
 
