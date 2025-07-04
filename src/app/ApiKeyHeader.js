@@ -5,6 +5,7 @@ export class ApiKeyHeader extends LitElement {
         apiKey: { type: String },
         isLoading: { type: Boolean },
         errorMessage: { type: String },
+        selectedProvider: { type: String },
     };
 
     static styles = css`
@@ -45,11 +46,11 @@ export class ApiKeyHeader extends LitElement {
 
         .container {
             width: 285px;
-            height: 220px;
+            min-height: 260px;
             padding: 18px 20px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 16px;
-            overflow: hidden;
+            overflow: visible;
             position: relative;
             display: flex;
             flex-direction: column;
@@ -152,6 +153,46 @@ export class ApiKeyHeader extends LitElement {
             outline: none;
         }
 
+        .provider-select {
+            width: 100%;
+            height: 34px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0 10px;
+            color: white;
+            font-size: 12px;
+            font-weight: 400;
+            margin-bottom: 6px;
+            text-align: center;
+            cursor: pointer;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2714%27%20height%3D%278%27%20viewBox%3D%270%200%2014%208%27%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%3E%3Cpath%20d%3D%27M1%201l6%206%206-6%27%20stroke%3D%27%23ffffff%27%20stroke-width%3D%271.5%27%20fill%3D%27none%27%20fill-rule%3D%27evenodd%27/%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 12px;
+            padding-right: 30px;
+        }
+
+        .provider-select:hover {
+            background-color: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .provider-select:focus {
+            outline: none;
+            background-color: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .provider-select option {
+            background: #1a1a1a;
+            color: white;
+            padding: 5px;
+        }
+
         .action-button {
             width: 100%;
             height: 34px;
@@ -164,7 +205,7 @@ export class ApiKeyHeader extends LitElement {
             cursor: pointer;
             transition: background 0.15s ease;
             position: relative;
-            overflow: hidden;
+            overflow: visible;
         }
 
         .action-button::after {
@@ -198,6 +239,15 @@ export class ApiKeyHeader extends LitElement {
             font-weight: 500; /* Medium */
             margin: 10px 0;
         }
+        
+        .provider-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+            font-weight: 400;
+            margin-bottom: 4px;
+            width: 100%;
+            text-align: left;
+        }
     `;
 
     constructor() {
@@ -208,6 +258,7 @@ export class ApiKeyHeader extends LitElement {
         this.isLoading = false;
         this.errorMessage = '';
         this.validatedApiKey = null;
+        this.selectedProvider = 'openai';
 
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.handleMouseUp = this.handleMouseUp.bind(this);
@@ -216,6 +267,7 @@ export class ApiKeyHeader extends LitElement {
         this.handleInput = this.handleInput.bind(this);
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this);
+        this.handleProviderChange = this.handleProviderChange.bind(this);
     }
 
     reset() {
@@ -223,11 +275,12 @@ export class ApiKeyHeader extends LitElement {
         this.isLoading = false;
         this.errorMessage = '';
         this.validatedApiKey = null;
+        this.selectedProvider = 'openai';
         this.requestUpdate();
     }
 
     async handleMouseDown(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') {
             return;
         }
 
@@ -295,6 +348,13 @@ export class ApiKeyHeader extends LitElement {
         });
     }
 
+    handleProviderChange(e) {
+        this.selectedProvider = e.target.value;
+        this.errorMessage = '';
+        console.log('Provider changed to:', this.selectedProvider);
+        this.requestUpdate();
+    }
+
     handlePaste(e) {
         e.preventDefault();
         this.errorMessage = '';
@@ -343,21 +403,13 @@ export class ApiKeyHeader extends LitElement {
         const apiKey = this.apiKey.trim();
         let isValid = false;
         try {
-            const isValid = await this.validateApiKey(this.apiKey.trim());
+            const isValid = await this.validateApiKey(this.apiKey.trim(), this.selectedProvider);
 
             if (isValid) {
-                console.log('API key valid - checking system permissions...');
-                
-                const permissionResult = await this.checkAndRequestPermissions();
-                
-                if (permissionResult.success) {
-                    console.log('All permissions granted - starting slide out animation');
-                    this.startSlideOutAnimation();
-                    this.validatedApiKey = this.apiKey.trim();
-                } else {
-                    this.errorMessage = permissionResult.error || 'Permission setup required';
-                    console.log('Permission setup incomplete:', permissionResult);
-                }
+                console.log('API key valid - starting slide out animation');
+                this.startSlideOutAnimation();
+                this.validatedApiKey = this.apiKey.trim();
+                this.validatedProvider = this.selectedProvider;
             } else {
                 this.errorMessage = 'Invalid API key - please check and try again';
                 console.log('API key validation failed');
@@ -371,92 +423,69 @@ export class ApiKeyHeader extends LitElement {
         }
     }
 
-    async validateApiKey(apiKey) {
+    async validateApiKey(apiKey, provider = 'openai') {
         if (!apiKey || apiKey.length < 15) return false;
-        if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false;
+        
+        if (provider === 'openai') {
+            if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false;
+            
+            try {
+                console.log('Validating OpenAI API key...');
 
-        try {
-            console.log('Validating API key with openai models endpoint...');
+                const response = await fetch('https://api.openai.com/v1/models', {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${apiKey}`,
+                    },
+                });
 
-            const response = await fetch('https://api.openai.com/v1/models', {
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${apiKey}`,
-                },
-            });
+                if (response.ok) {
+                    const data = await response.json();
 
-            if (response.ok) {
-                const data = await response.json();
-
-                const hasGPTModels = data.data && data.data.some(m => m.id.startsWith('gpt-'));
-                if (hasGPTModels) {
-                    console.log('API key validation successful - GPT models available');
-                    return true;
+                    const hasGPTModels = data.data && data.data.some(m => m.id.startsWith('gpt-'));
+                    if (hasGPTModels) {
+                        console.log('OpenAI API key validation successful');
+                        return true;
+                    } else {
+                        console.log('API key valid but no GPT models available');
+                        return false;
+                    }
                 } else {
-                    console.log('API key valid but no GPT models available');
+                    const errorData = await response.json().catch(() => ({}));
+                    console.log('API key validation failed:', response.status, errorData.error?.message || 'Unknown error');
                     return false;
                 }
-            } else {
-                const errorData = await response.json().catch(() => ({}));
-                console.log('API key validation failed:', response.status, errorData.error?.message || 'Unknown error');
-                return false;
+            } catch (error) {
+                console.error('API key validation network error:', error);
+                return apiKey.length >= 20; // Fallback for network issues
             }
-        } catch (error) {
-            console.error('API key validation network error:', error);
-            return apiKey.length >= 20; // Fallback for network issues
-        }
-    }
-
-    async checkAndRequestPermissions() {
-        if (!window.require) {
-            return { success: true };
-        }
-
-        const { ipcRenderer } = window.require('electron');
-        
-        try {
-            const permissions = await ipcRenderer.invoke('check-system-permissions');
-            console.log('[Permissions] Current status:', permissions);
+        } else if (provider === 'gemini') {
+            // Gemini API keys typically start with 'AIza'
+            if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false;
             
-            if (!permissions.needsSetup) {
-                return { success: true };
-            }
-
-            if (!permissions.microphone) {
-                console.log('[Permissions] Requesting microphone permission...');
-                const micResult = await ipcRenderer.invoke('request-microphone-permission');
+            try {
+                console.log('Validating Gemini API key...');
                 
-                if (!micResult.success) {
-                    console.log('[Permissions] Microphone permission denied');
-                    await ipcRenderer.invoke('open-system-preferences', 'microphone');
-                    return { 
-                        success: false, 
-                        error: 'Please grant microphone access in System Preferences' 
-                    };
+                // Test the API key with a simple models list request
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.models && data.models.length > 0) {
+                        console.log('Gemini API key validation successful');
+                        return true;
+                    }
                 }
-            }
-
-            if (!permissions.screen) {
-                console.log('[Permissions] Screen recording permission needed');
-                await ipcRenderer.invoke('open-system-preferences', 'screen-recording');
                 
-                this.errorMessage = 'Please grant screen recording permission and try again';
-                this.requestUpdate();
-                
-                return { 
-                    success: false, 
-                    error: 'Please grant screen recording access in System Preferences' 
-                };
+                console.log('Gemini API key validation failed');
+                return false;
+            } catch (error) {
+                console.error('Gemini API key validation network error:', error);
+                return apiKey.length >= 20; // Fallback
             }
-
-            return { success: true };
-        } catch (error) {
-            console.error('[Permissions] Error checking/requesting permissions:', error);
-            return { 
-                success: false, 
-                error: 'Failed to check permissions' 
-            };
         }
+        
+        return false;
     }
 
     startSlideOutAnimation() {
@@ -489,9 +518,13 @@ export class ApiKeyHeader extends LitElement {
 
             if (this.validatedApiKey) {
                 if (window.require) {
-                    window.require('electron').ipcRenderer.invoke('api-key-validated', this.validatedApiKey);
+                    window.require('electron').ipcRenderer.invoke('api-key-validated', {
+                        apiKey: this.validatedApiKey,
+                        provider: this.validatedProvider || 'openai'
+                    });
                 }
                 this.validatedApiKey = null;
+                this.validatedProvider = null;
             }
         }
     }
@@ -510,6 +543,7 @@ export class ApiKeyHeader extends LitElement {
 
     render() {
         const isButtonDisabled = this.isLoading || !this.apiKey || !this.apiKey.trim();
+        console.log('Rendering with provider:', this.selectedProvider);
 
         return html`
             <div class="container" @mousedown=${this.handleMouseDown}>
@@ -522,10 +556,21 @@ export class ApiKeyHeader extends LitElement {
 
                 <div class="form-content">
                     <div class="error-message">${this.errorMessage}</div>
+                    <div class="provider-label">Select AI Provider:</div>
+                    <select
+                        class="provider-select"
+                        .value=${this.selectedProvider || 'openai'}
+                        @change=${this.handleProviderChange}
+                        ?disabled=${this.isLoading}
+                        tabindex="0"
+                    >
+                        <option value="openai" ?selected=${this.selectedProvider === 'openai'}>OpenAI</option>
+                        <option value="gemini" ?selected=${this.selectedProvider === 'gemini'}>Google Gemini</option>
+                    </select>
                     <input
                         type="password"
                         class="api-input"
-                        placeholder="Enter your OpenAI API key"
+                        placeholder=${this.selectedProvider === 'openai' ? "Enter your OpenAI API key" : "Enter your Gemini API key"}
                         .value=${this.apiKey || ''}
                         @input=${this.handleInput}
                         @keypress=${this.handleKeyPress}

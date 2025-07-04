@@ -43,7 +43,8 @@ class SQLiteClient {
                   display_name  TEXT NOT NULL,
                   email         TEXT NOT NULL,
                   created_at    INTEGER,
-                  api_key       TEXT
+                  api_key       TEXT,
+                  provider      TEXT DEFAULT 'openai'
                 );
 
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -110,7 +111,14 @@ class SQLiteClient {
                     return reject(err);
                 }
                 console.log('All tables are ready.');
-                            this.initDefaultData().then(resolve).catch(reject);
+                
+                // Add provider column to existing databases
+                this.db.run("ALTER TABLE users ADD COLUMN provider TEXT DEFAULT 'openai'", (alterErr) => {
+                    if (alterErr && !alterErr.message.includes('duplicate column')) {
+                        console.log('Note: Could not add provider column (may already exist)');
+                    }
+                    this.initDefaultData().then(resolve).catch(reject);
+                });
             });
         });
     }
@@ -190,17 +198,17 @@ class SQLiteClient {
         });
     }
 
-    async saveApiKey(apiKey, uid = this.defaultUserId) {
+    async saveApiKey(apiKey, uid = this.defaultUserId, provider = 'openai') {
         return new Promise((resolve, reject) => {
             this.db.run(
-                'UPDATE users SET api_key = ? WHERE uid = ?',
-                [apiKey, uid],
+                'UPDATE users SET api_key = ?, provider = ? WHERE uid = ?',
+                [apiKey, provider, uid],
                 function(err) {
                     if (err) {
                         console.error('SQLite: Failed to save API key:', err);
                         reject(err);
                     } else {
-                        console.log(`SQLite: API key saved for user ${uid}.`);
+                        console.log(`SQLite: API key saved for user ${uid} with provider ${provider}.`);
                         resolve({ changes: this.changes });
                     }
                 }

@@ -4,10 +4,11 @@ const { spawn } = require('child_process');
 const { saveDebugAudio } = require('./audioUtils.js');
 const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
 const { connectToOpenAiSession, createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../../common/services/openAiClient.js');
+const { makeChatCompletionWithPortkey } = require('../../common/services/aiProviderService.js');
 const sqliteClient = require('../../common/services/sqliteClient');
 const dataService = require('../../common/services/dataService');
 
-const { isFirebaseLoggedIn, getCurrentFirebaseUser } = require('../../electron/windowManager.js');
+const { isFirebaseLoggedIn, getCurrentFirebaseUser, getStoredProvider } = require('../../electron/windowManager.js');
 
 function getApiKey() {
     const { getStoredApiKey } = require('../../electron/windowManager.js');
@@ -26,6 +27,18 @@ function getApiKey() {
 
     console.error('[LiveSummaryService] No API key found in storage or environment');
     return null;
+}
+
+async function getAiProvider() {
+    try {
+        const { ipcRenderer } = require('electron');
+        const provider = await ipcRenderer.invoke('get-ai-provider');
+        return provider || 'openai';
+    } catch (error) {
+        // If we're in the main process, get it directly
+        const { getStoredProvider } = require('../../electron/windowManager.js');
+        return getStoredProvider ? getStoredProvider() : 'openai';
+    }
 }
 
 let currentSessionId = null;
@@ -206,41 +219,25 @@ Keep all points concise and build upon previous analysis if provided.`,
         if (!API_KEY) {
             throw new Error('No API key available');
         }
+        
+        const provider = getStoredProvider ? getStoredProvider() : 'openai';
         const loggedIn = isFirebaseLoggedIn(); // true ➜ vKey, false ➜ apiKey
-        const keyType = loggedIn ? 'vKey' : 'apiKey';
-        console.log(`[LiveSummary] keyType: ${keyType}`);
+        const usePortkey = loggedIn && provider === 'openai'; // Only use Portkey for OpenAI with Firebase
+        
+        console.log(`[LiveSummary] provider: ${provider}, usePortkey: ${usePortkey}`);
 
-        const fetchUrl = keyType === 'apiKey' ? 'https://api.openai.com/v1/chat/completions' : 'https://api.portkey.ai/v1/chat/completions';
-
-        const headers =
-            keyType === 'apiKey'
-                ? {
-                      Authorization: `Bearer ${API_KEY}`,
-                      'Content-Type': 'application/json',
-                  }
-                : {
-                      'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                      'x-portkey-virtual-key': API_KEY,
-                      'Content-Type': 'application/json',
-                  };
-
-        const response = await fetch(fetchUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 1024,
-            }),
+        const completion = await makeChatCompletionWithPortkey({
+            apiKey: API_KEY,
+            provider: provider,
+            messages: messages,
+            temperature: 0.7,
+            maxTokens: 1024,
+            model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
+            usePortkey: usePortkey,
+            portkeyVirtualKey: usePortkey ? API_KEY : null
         });
 
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        const responseText = result.choices[0].message.content.trim();
+        const responseText = completion.content;
         console.log(`✅ Analysis response received: ${responseText}`);
         const structuredData = parseResponseText(responseText, previousAnalysisResult);
 
