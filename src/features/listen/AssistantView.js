@@ -913,7 +913,7 @@ export class AssistantView extends LitElement {
                 const result = await ipcRenderer.invoke('send-question-to-ask', requestText);
 
                 if (result.success) {
-                    console.log('✅ Question sent to AskView successfully');
+                    console.log(' Question sent to AskView successfully');
                 } else {
                     console.error('❌ Failed to send question to AskView:', result.error);
                 }

@@ -765,7 +765,7 @@ export class AskView extends LitElement {
 
             ipcRenderer.on('ask-response-chunk', this.handleStreamChunk);
             ipcRenderer.on('ask-response-stream-end', this.handleStreamEnd);
-            console.log('✅ AskView: IPC 이벤트 리스너 등록 완료');
+            console.log(' AskView: IPC 이벤트 리스너 등록 완료');
         }
     }
 
@@ -804,7 +804,7 @@ export class AskView extends LitElement {
 
             ipcRenderer.removeListener('ask-response-chunk', this.handleStreamChunk);
             ipcRenderer.removeListener('ask-response-stream-end', this.handleStreamEnd);
-            console.log('✅ AskView: IPC 이벤트 리스너 제거 완료');
+            console.log(' AskView: IPC 이벤트 리스너 제거 완료');
         }
     }
 
@@ -934,7 +934,7 @@ export class AskView extends LitElement {
             responseContainer.innerHTML = `<p>${basicHtml}</p>`;
         }
 
-        // 🚀 After updating content, recalculate window height
+        //  After updating content, recalculate window height
         this.adjustWindowHeightThrottled();
     }
 

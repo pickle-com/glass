@@ -4,8 +4,10 @@ const { spawn } = require('child_process');
 const { saveDebugAudio } = require('./audioUtils.js');
 const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
 const { connectToOpenAiSession, createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../../common/services/openAiClient.js');
+const { connectToLocalWhisperSession } = require('../../common/services/localWhisperClient.js');
 const sqliteClient = require('../../common/services/sqliteClient');
 const dataService = require('../../common/services/dataService');
+const config = require('../../common/config/config');
 
 const { isFirebaseLoggedIn, getCurrentFirebaseUser } = require('../../electron/windowManager.js');
 
@@ -132,6 +134,123 @@ let systemAudioProc = null;
 let analysisIntervalId = null;
 
 /**
+ * Checks if Ollama is available and running
+ * @returns {Promise<boolean>} Promise that resolves to true if Ollama is available
+ */
+async function isOllamaAvailable() {
+    try {
+        console.log("Checking ollama availability");
+        const ollamaBaseUrl = config.get('ollamaBaseUrl');
+        const response = await fetch(`${ollamaBaseUrl}/api/tags`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (response.ok) {
+            console.log('[LiveSummary] Ollama is available and running');
+            return true;
+        } else {
+            console.log(`[LiveSummary] Ollama responded with status: ${response.status}`);
+            return false;
+        }
+    } catch (error) {
+        console.log('[LiveSummary] Ollama not available:', error.message);
+        return false;
+    }
+}
+
+/**
+ * Checks if a specific model is available in Ollama
+ * @param {string} modelName - The name of the model to check
+ * @returns {Promise<boolean>} Promise that resolves to true if the model is available
+ */
+async function isOllamaModelAvailable(modelName) {
+    try {
+        console.log(`checking if ${modelName} is avilable`)
+        const ollamaBaseUrl = config.get('ollamaBaseUrl');
+        const response = await fetch(`${ollamaBaseUrl}/api/tags`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (!response.ok) {
+            return false;
+        }
+        
+        const data = await response.json();
+        const availableModels = data.models || [];
+        
+        // Check if the model exists (handle both exact match and tag variations)
+        const modelExists = availableModels.some(model => {
+            const modelFullName = model.name || model.model;
+            return modelFullName === modelName || 
+                   modelFullName.startsWith(modelName + ':') ||
+                   modelFullName === modelName + ':latest';
+        });
+        
+        if (!modelExists) {
+            console.log(`[LiveSummary] Model '${modelName}' not found in Ollama. Available models:`, 
+                availableModels.map(m => m.name || m.model));
+        }
+        
+        return modelExists;
+    } catch (error) {
+        console.log('[LiveSummary] Error checking Ollama model availability:', error.message);
+        return false;
+    }
+}
+
+/**
+ * Makes a request to Ollama's chat completion API
+ * @param {Array} messages - Array of message objects
+ * @param {string} model - Model name to use
+ * @returns {Promise<Object>} Response from Ollama
+ */
+async function makeOllamaRequest(messages, model) {
+    const ollamaBaseUrl = config.get('ollamaBaseUrl');
+    const requestUrl = `${ollamaBaseUrl}/api/chat`;
+    
+    console.log(`🦙 [SUMMARY] Making Ollama request to: ${requestUrl} with model: ${model}`);
+    
+    const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: model,
+            messages: messages,
+            stream: false,
+            options: {
+                temperature: 0.7,
+                num_predict: 1024,
+            }
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        
+        // Handle specific Ollama errors
+        if (response.status === 404) {
+            throw new Error(`Ollama model '${model}' not found. Please run 'ollama pull ${model}' to download it.`);
+        }
+        
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log(` [SUMMARY] Ollama request successful to: ${requestUrl}`);
+    
+    // Transform Ollama response to match OpenAI format for consistency
+    return {
+        choices: [{
+            message: {
+                content: result.message.content
+            }
+        }]
+    };
+}
+
+/**
  * Converts conversation history into text to include in the prompt.
  * @param {Array<string>} conversationTexts - Array of conversation texts ["me: ~~~", "them: ~~~", ...]
  * @param {number} maxTurns - Maximum number of recent turns to include
@@ -152,7 +271,7 @@ async function makeOutlineAndRequests(conversationTexts, maxTurns = 30) {
 
     const recentConversation = formatConversationForPrompt(conversationTexts, maxTurns);
 
-    // 이전 분석 결과를 프롬프트에 포함
+    // Previous analysis context
     let contextualPrompt = '';
     if (previousAnalysisResult) {
         contextualPrompt = `
@@ -200,51 +319,41 @@ Keep all points concise and build upon previous analysis if provided.`,
             },
         ];
 
-        console.log('🤖 Sending analysis request to OpenAI...');
+        console.log('🤖 Sending analysis request...');
 
-        const API_KEY = getApiKey();
-        if (!API_KEY) {
-            throw new Error('No API key available');
-        }
-        const loggedIn = isFirebaseLoggedIn(); // true ➜ vKey, false ➜ apiKey
-        const keyType = loggedIn ? 'vKey' : 'apiKey';
-        console.log(`[LiveSummary] keyType: ${keyType}`);
+        // Determine which model provider to use
+        const modelProvider = config.get('modelProvider');
+        let result;
 
-        const fetchUrl = keyType === 'apiKey' ? 'https://api.openai.com/v1/chat/completions' : 'https://api.portkey.ai/v1/chat/completions';
-
-        const headers =
-            keyType === 'apiKey'
-                ? {
-                      Authorization: `Bearer ${API_KEY}`,
-                      'Content-Type': 'application/json',
-                  }
-                : {
-                      'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                      'x-portkey-virtual-key': API_KEY,
-                      'Content-Type': 'application/json',
-                  };
-
-        const response = await fetch(fetchUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 1024,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        if (modelProvider === 'ollama') {
+            // Check if Ollama is available first
+            const ollamaAvailable = await isOllamaAvailable();
+            if (ollamaAvailable) {
+                const ollamaModel = config.get('ollamaModel');
+                const modelAvailable = await isOllamaModelAvailable(ollamaModel);
+                
+                if (modelAvailable) {
+                    console.log(`🦙 Using Ollama for analysis with model: ${ollamaModel}`);
+                    result = await makeOllamaRequest(messages, ollamaModel);
+                } else {
+                    console.log(`⚠️ Ollama model '${ollamaModel}' not available, falling back to OpenAI`);
+                    result = await makeOpenAIRequest(messages);
+                }
+            } else {
+                console.log('⚠️ Ollama not available, falling back to OpenAI');
+                result = await makeOpenAIRequest(messages);
+            }
+        } else {
+            // Default to OpenAI or if explicitly set to 'openai'
+            console.log('🤖 Using OpenAI for analysis');
+            result = await makeOpenAIRequest(messages);
         }
 
-        const result = await response.json();
         const responseText = result.choices[0].message.content.trim();
-        console.log(`✅ Analysis response received: ${responseText}`);
+        console.log(` Analysis response received: ${responseText}`);
         const structuredData = parseResponseText(responseText, previousAnalysisResult);
 
-        // 분석 결과 저장
+        // Store analysis result
         previousAnalysisResult = structuredData;
         analysisHistory.push({
             timestamp: Date.now(),
@@ -252,7 +361,7 @@ Keep all points concise and build upon previous analysis if provided.`,
             conversationLength: conversationTexts.length,
         });
 
-        // 히스토리 크기 제한 (최근 10개만 유지)
+        // Limit history size (keep last 10 entries)
         if (analysisHistory.length > 10) {
             analysisHistory.shift();
         }
@@ -260,8 +369,71 @@ Keep all points concise and build upon previous analysis if provided.`,
         return structuredData;
     } catch (error) {
         console.error('❌ Error during analysis generation:', error.message);
-        return previousAnalysisResult; // 에러 시 이전 결과 반환
+        
+        // Provide specific error messages for different failure modes
+        if (error.message.includes('not found')) {
+            console.error('💡 Suggestion: Make sure the model is installed. For Ollama, run: ollama pull <model-name>');
+        } else if (error.message.includes('connection')) {
+            console.error('💡 Suggestion: Check if Ollama is running on http://localhost:11434');
+        }
+        
+        // Return previous result on error to maintain continuity
+        return previousAnalysisResult;
     }
+}
+
+/**
+ * Makes a request to OpenAI's chat completion API
+ * @param {Array} messages - Array of message objects
+ * @returns {Promise<Object>} Response from OpenAI
+ */
+async function makeOpenAIRequest(messages) {
+    const API_KEY = getApiKey();
+    if (!API_KEY) {
+        throw new Error('No API key available');
+    }
+    
+    const loggedIn = isFirebaseLoggedIn(); // true ➜ vKey, false ➜ apiKey
+    const keyType = loggedIn ? 'vKey' : 'apiKey';
+    console.log(`[LiveSummary] keyType: ${keyType}`);
+
+    const fetchUrl = keyType === 'apiKey' ? 'https://api.openai.com/v1/chat/completions' : 'https://api.portkey.ai/v1/chat/completions';
+
+    const headers =
+        keyType === 'apiKey'
+            ? {
+                  Authorization: `Bearer ${API_KEY}`,
+                  'Content-Type': 'application/json',
+              }
+            : {
+                  'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
+                  'x-portkey-virtual-key': API_KEY,
+                  'Content-Type': 'application/json',
+              };
+
+    const openaiModel = config.get('openaiModel');
+    
+    console.log(`🤖 [SUMMARY] Making OpenAI request to: ${fetchUrl} with model: ${openaiModel} (keyType: ${keyType})`);
+    
+    const response = await fetch(fetchUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            model: openaiModel,
+            messages,
+            temperature: 0.7,
+            max_tokens: 1024,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log(` [SUMMARY] OpenAI request successful to: ${fetchUrl}`);
+    
+    return result;
 }
 
 function parseResponseText(responseText, previousResult) {
@@ -269,7 +441,7 @@ function parseResponseText(responseText, previousResult) {
         summary: [],
         topic: { header: '', bullets: [] },
         actions: [],
-        followUps: ['✉️ Draft a follow-up email', '✅ Generate action items', '📝 Show summary'],
+        followUps: ['✉️ Draft a follow-up email', ' Generate action items', '📝 Show summary'],
     };
 
     // 이전 결과가 있으면 기본값으로 사용
@@ -368,7 +540,7 @@ function parseResponseText(responseText, previousResult) {
                 summary: [],
                 topic: { header: 'Analysis in progress', bullets: [] },
                 actions: ['✨ What should I say next?', '💬 Suggest follow-up questions'],
-                followUps: ['✉️ Draft a follow-up email', '✅ Generate action items', '📝 Show summary'],
+                followUps: ['✉️ Draft a follow-up email', ' Generate action items', '📝 Show summary'],
             }
         );
     }
@@ -382,7 +554,7 @@ function parseResponseText(responseText, previousResult) {
  */
 async function triggerAnalysisIfNeeded() {
     if (conversationHistory.length >= 5 && conversationHistory.length % 5 === 0) {
-        console.log(`🚀 Triggering analysis (non-blocking) - ${conversationHistory.length} conversation texts accumulated`);
+        console.log(` Triggering analysis (non-blocking) - ${conversationHistory.length} conversation texts accumulated`);
 
         makeOutlineAndRequests(conversationHistory)
             .then(data => {
@@ -553,6 +725,8 @@ async function initializeLiveSummarySession(language = 'en') {
 
     try {
         const handleMyMessage = message => {
+            console.log('🎤 [DEBUG] My STT Message received:', JSON.stringify(message, null, 2));
+            
             const type = message.type;
             const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
 
@@ -567,6 +741,7 @@ async function initializeLiveSummarySession(language = 'en') {
                 const continuousText = myCompletionBuffer + (myCompletionBuffer ? ' ' : '') + myCurrentUtterance;
 
                 if (text && !text.includes('vq_lbr_audio_')) {
+                    console.log('🎤 [DEBUG] Sending STT update for Me:', continuousText);
                     sendToRenderer('stt-update', {
                         speaker: 'Me',
                         text: continuousText,
@@ -576,6 +751,7 @@ async function initializeLiveSummarySession(language = 'en') {
                     });
                 }
             } else if (type === 'conversation.item.input_audio_transcription.completed') {
+                console.log('🎤 [DEBUG] My transcription completed:', text);
                 if (text && text.trim()) {
                     const finalUtteranceText = text.trim();
                     myCurrentUtterance = '';
@@ -588,6 +764,8 @@ async function initializeLiveSummarySession(language = 'en') {
         };
 
         const handleTheirMessage = message => {
+            console.log('🎤 [DEBUG] Their STT Message received:', JSON.stringify(message, null, 2));
+            
             const type = message.type;
             const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
 
@@ -602,6 +780,7 @@ async function initializeLiveSummarySession(language = 'en') {
                 const continuousText = theirCompletionBuffer + (theirCompletionBuffer ? ' ' : '') + theirCurrentUtterance;
 
                 if (text && !text.includes('vq_lbr_audio_')) {
+                    console.log('🎤 [DEBUG] Sending STT update for Them:', continuousText);
                     sendToRenderer('stt-update', {
                         speaker: 'Them',
                         text: continuousText,
@@ -611,6 +790,7 @@ async function initializeLiveSummarySession(language = 'en') {
                     });
                 }
             } else if (type === 'conversation.item.input_audio_transcription.completed') {
+                console.log('🎤 [DEBUG] Their transcription completed:', text);
                 if (text && text.trim()) {
                     const finalUtteranceText = text.trim();
                     theirCurrentUtterance = '';
@@ -640,11 +820,11 @@ async function initializeLiveSummarySession(language = 'en') {
         };
 
         [mySttSession, theirSttSession] = await Promise.all([
-            connectToOpenAiSession(API_KEY, mySttConfig, keyType),
-            connectToOpenAiSession(API_KEY, theirSttConfig, keyType),
+            createSttSession('user', mySttConfig, API_KEY, keyType),
+            createSttSession('system', theirSttConfig, API_KEY, keyType),
         ]);
 
-        console.log('✅ Both STT sessions initialized successfully.');
+        console.log(' Both STT sessions initialized successfully.');
         triggerAnalysisIfNeeded();
 
         sendToRenderer('session-state-changed', { isActive: true });
@@ -654,7 +834,7 @@ async function initializeLiveSummarySession(language = 'en') {
         sendToRenderer('update-status', 'Connected. Ready to listen.');
         return true;
     } catch (error) {
-        console.error('❌ Failed to initialize OpenAI STT sessions:', error);
+        console.error('❌ Failed to initialize STT sessions:', error);
         isInitializingSession = false;
         sendToRenderer('session-initializing', false);
         sendToRenderer('update-status', 'Initialization failed.');
@@ -848,6 +1028,39 @@ async function closeSession() {
     }
 }
 
+/**
+ * Create STT session based on configured provider
+ * @param {string} sessionType - 'user' or 'system'
+ * @param {Object} sessionConfig - Session configuration
+ * @param {string} apiKey - API key for OpenAI/Portkey
+ * @param {string} keyType - 'apiKey' or 'vKey'
+ * @returns {Promise<Object>} STT session object
+ */
+async function createSttSession(sessionType, sessionConfig, apiKey, keyType) {
+    const sttProvider = config.getSttProvider();
+    
+    console.log(`🎤 Creating ${sessionType} STT session with provider: ${sttProvider}`);
+    
+    if (sttProvider === 'whisper') {
+        // Use local Whisper
+        const whisperConfig = {
+            model: config.getWhisperModel(),
+            language: sessionConfig.language || 'en',
+            callbacks: sessionConfig.callbacks
+        };
+        
+        return await connectToLocalWhisperSession(whisperConfig);
+    } else {
+        // Use OpenAI (default)
+        const openaiConfig = {
+            language: sessionConfig.language,
+            callbacks: sessionConfig.callbacks
+        };
+        
+        return await connectToOpenAiSession(apiKey, openaiConfig, keyType);
+    }
+}
+
 function setupLiveSummaryIpcHandlers() {
     ipcMain.handle('is-session-active', async () => {
         const isActive = isSessionActive();
@@ -938,6 +1151,97 @@ function setupLiveSummaryIpcHandlers() {
             return { success: false, error: error.message };
         }
     });
+
+    ipcMain.handle('update-model-provider', async (event, provider) => {
+        try {
+            console.log('Model provider updated to:', provider);
+            config.set('modelProvider', provider);
+            config.saveUserConfig();
+            
+            // If switching to Ollama, check if it's available
+            if (provider === 'ollama') {
+                const isAvailable = await isOllamaAvailable();
+                if (!isAvailable) {
+                    console.warn('Ollama is not available, but provider was set to ollama');
+                    return { 
+                        success: false, 
+                        error: 'Ollama is not available. Please ensure Ollama is installed and running on http://localhost:11434' 
+                    };
+                }
+                
+                // Check if the configured model is available
+                const ollamaModel = config.get('ollamaModel');
+                const modelAvailable = await isOllamaModelAvailable(ollamaModel);
+                if (!modelAvailable) {
+                    console.warn(`Ollama model '${ollamaModel}' is not available`);
+                    return { 
+                        success: false, 
+                        error: `Model '${ollamaModel}' is not available. Please run 'ollama pull ${ollamaModel}' to download it.` 
+                    };
+                }
+                
+                console.log(` Ollama is available with model '${ollamaModel}'`);
+            }
+            
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating model provider:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // STT Provider handlers
+    ipcMain.handle('update-stt-provider', async (event, { provider, model }) => {
+        try {
+            console.log(`Updating STT provider to: ${provider}${model ? ` with model: ${model}` : ''}`);
+            
+            // Set the provider
+            config.setSttProvider(provider);
+            
+            // Set the model if provided
+            if (model && provider === 'whisper') {
+                config.setWhisperModel(model);
+            }
+            
+            // If switching to Whisper, check if it's available
+            if (provider === 'whisper') {
+                const { LocalWhisperClient } = require('../../common/services/localWhisperClient.js');
+                const testClient = new LocalWhisperClient();
+                
+                try {
+                    await testClient.testWhisperAvailability();
+                    console.log(' Whisper CLI is available');
+                } catch (error) {
+                    console.warn('Whisper CLI is not available:', error.message);
+                    return { 
+                        success: false, 
+                        error: 'Whisper CLI is not available. Please install Whisper: pip install openai-whisper' 
+                    };
+                }
+            }
+            
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating STT provider:', error);
+            return { success: false, error: error.message };
+        }
+    });
+    
+    ipcMain.handle('get-stt-provider', async () => {
+        try {
+            const provider = config.getSttProvider();
+            const whisperModel = config.getWhisperModel();
+            
+            return { 
+                success: true, 
+                provider, 
+                whisperModel 
+            };
+        } catch (error) {
+            console.error('Error getting STT provider:', error);
+            return { success: false, error: error.message };
+        }
+    });
 }
 
 module.exports = {
@@ -953,4 +1257,7 @@ module.exports = {
     setupLiveSummaryIpcHandlers,
     isSessionActive,
     closeSession,
+    isOllamaAvailable,
+    isOllamaModelAvailable,
+    createSttSession,
 };

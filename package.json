@@ -42,6 +42,7 @@
         "firebase-admin": "^13.4.0",
         "jsonwebtoken": "^9.0.2",
         "node-fetch": "^2.7.0",
+        "ollama": "^0.5.16",
         "openai": "^4.70.0",
         "react-hot-toast": "^2.5.2",
         "sharp": "^0.34.2",
