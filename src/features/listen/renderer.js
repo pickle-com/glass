@@ -1,5 +1,6 @@
 // renderer.js
 const { ipcRenderer } = require('electron');
+const { makeStreamingChatCompletionWithPortkey } = require('../../common/services/aiProviderService.js');
 
 let mediaStream = null;
 let screenshotInterval = null;
@@ -229,33 +230,16 @@ class SimpleAEC {
         this.sampleRate = 24000;
         this.delaySamples = Math.floor((this.echoDelay / 1000) * this.sampleRate);
 
-        this.echoGain = 0.9;
+        this.echoGain = 0.5;
         this.noiseFloor = 0.01;
 
-        // 🔧 Adaptive-gain parameters (User-tuned, very aggressive)
-        this.targetErr = 0.002;
-        this.adaptRate  = 0.1;
-
-        console.log('🎯 AEC initialized (hyper-aggressive)');
+        console.log('🎯 Weakened AEC initialized');
     }
 
     process(micData, systemData) {
         if (!systemData || systemData.length === 0) {
             return micData;
         }
-
-        for (let i = 0; i < systemData.length; i++) {
-            if (systemData[i] > 0.98) systemData[i] = 0.98;
-            else if (systemData[i] < -0.98) systemData[i] = -0.98;
-
-            systemData[i] = Math.tanh(systemData[i] * 4);
-        }
-
-        let sum2 = 0;
-        for (let i = 0; i < systemData.length; i++) sum2 += systemData[i] * systemData[i];
-        const rms = Math.sqrt(sum2 / systemData.length);
-        const targetRms = 0.08;                   // 🔧 기준 RMS (기존 0.1)
-        const scale = targetRms / (rms + 1e-6);   // 1e-6: 0-division 방지
 
         const output = new Float32Array(micData.length);
 
@@ -268,31 +252,22 @@ class SimpleAEC {
                 const delayIndex = i - optimalDelay - d;
                 if (delayIndex >= 0 && delayIndex < systemData.length) {
                     const weight = Math.exp(-Math.abs(d) / 1000);
-                    echoEstimate += systemData[delayIndex] * scale * this.echoGain * weight;
+                    echoEstimate += systemData[delayIndex] * this.echoGain * weight;
                 }
             }
 
-            output[i] = micData[i] - echoEstimate * 0.9;
+            output[i] = micData[i] - echoEstimate * 0.5;
 
             if (Math.abs(output[i]) < this.noiseFloor) {
                 output[i] *= 0.5;
             }
 
             if (this.isSimilarToSystem(output[i], systemData, i, optimalDelay)) {
-                output[i] *= 0.25;
+                output[i] *= 0.5;
             }
 
             output[i] = Math.max(-1, Math.min(1, output[i]));
         }
-
-
-        let errSum = 0;
-        for (let i = 0; i < output.length; i++) errSum += output[i] * output[i];
-        const errRms = Math.sqrt(errSum / output.length);
-
-        const err = errRms - this.targetErr;
-        this.echoGain += this.adaptRate * err;      // 비례 제어
-        this.echoGain  = Math.max(0, Math.min(1, this.echoGain));
 
         return output;
     }
@@ -335,7 +310,7 @@ class SimpleAEC {
             }
         }
 
-        return similarity / (2 * windowSize + 1) < 0.15;
+        return similarity / (2 * windowSize + 1) < 0.2;
     }
 }
 
@@ -998,39 +973,21 @@ async function sendMessage(userPrompt, options = {}) {
         }
 
         const { isLoggedIn } = await queryLoginState();
-        const keyType = isLoggedIn ? 'vKey' : 'apiKey';
+        const provider = await ipcRenderer.invoke('get-ai-provider');
+        const usePortkey = isLoggedIn && provider === 'openai';
 
-        console.log('🚀 Sending request to OpenAI...');
-        const { url, headers } =
-            keyType === 'apiKey'
-                ? {
-                      url: 'https://api.openai.com/v1/chat/completions',
-                      headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-                  }
-                : {
-                      url: 'https://api.portkey.ai/v1/chat/completions',
-                      headers: {
-                          'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                          'x-portkey-virtual-key': API_KEY,
-                          'Content-Type': 'application/json',
-                      },
-                  };
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-            }),
+        console.log(`🚀 Sending request to ${provider} AI...`);
+        
+        const response = await makeStreamingChatCompletionWithPortkey({
+            apiKey: API_KEY,
+            provider: provider,
+            messages: messages,
+            temperature: 0.7,
+            maxTokens: 2048,
+            model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
+            usePortkey: usePortkey,
+            portkeyVirtualKey: usePortkey ? API_KEY : null
         });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
 
         // --- 스트리밍 응답 처리 ---
         const reader = response.body.getReader();

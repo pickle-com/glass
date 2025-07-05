@@ -21,6 +21,7 @@ const { Deeplink } = require('electron-deeplink');
 const express = require('express');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
+const { registerPermissionHandlers } = require('./electron/permissionsHandler');
 
 let WEB_PORT = 3000;
 
@@ -597,3 +598,5 @@ function initAutoUpdater() {
         console.error('[AutoUpdater] Failed to initialise:', e);
     }
 }
+
+registerPermissionHandlers();

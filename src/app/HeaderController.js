@@ -316,7 +316,7 @@ class HeaderTransitionManager {
         if (!window.require) return;
         return window
             .require('electron')
-            .ipcRenderer.invoke('resize-header-window', { width: 285, height: 220 })
+            .ipcRenderer.invoke('resize-header-window', { width: 285, height: 300 })
             .catch(() => {});
     }
 
@@ -372,4 +372,11 @@ class HeaderTransitionManager {
 
 window.addEventListener('DOMContentLoaded', () => {
     new HeaderTransitionManager();
+});
+
+window.addEventListener('mouseup', () => {
+  // Force refresh bounds after drag ends
+  if (window.electron && window.electron.ipcRenderer) {
+    window.electron.ipcRenderer.invoke('fix-window-dimensions');
+  }
 });
