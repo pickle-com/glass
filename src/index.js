@@ -456,7 +456,7 @@ async function startWebStack() {
   process.env.pickleglass_WEB_PORT = frontendPort.toString();
   process.env.pickleglass_WEB_URL = `http://localhost:${frontendPort}`;
 
-  console.log(`🌍 Environment variables set:`, {
+  console.log(` Environment variables set:`, {
     pickleglass_API_URL: process.env.pickleglass_API_URL,
     pickleglass_WEB_URL: process.env.pickleglass_WEB_URL
   });
@@ -517,7 +517,7 @@ async function startWebStack() {
     app.once('before-quit', () => server.close());
   });
 
-  console.log(`✅ Frontend server started on http://localhost:${frontendPort}`);
+  console.log(` Frontend server started on http://localhost:${frontendPort}`);
 
   const apiSrv = express();
   apiSrv.use(nodeApi);
@@ -528,9 +528,9 @@ async function startWebStack() {
     app.once('before-quit', () => server.close());
   });
 
-  console.log(`✅ API server started on http://localhost:${apiPort}`);
+  console.log(` API server started on http://localhost:${apiPort}`);
 
-  console.log(`🚀 All services ready:`);
+  console.log(` All services ready:`);
   console.log(`   Frontend: http://localhost:${frontendPort}`);
   console.log(`   API:      http://localhost:${apiPort}`);
 

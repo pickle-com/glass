@@ -505,7 +505,7 @@ ipcRenderer.on('stt-update', (event, data) => {
     if (isPartial) {
         console.log(`🔄 [${speaker} - partial]: ${text}`);
     } else if (isFinal) {
-        console.log(`✅ [${speaker} - final]: ${text}`);
+        console.log(` [${speaker} - final]: ${text}`);
 
         const speakerText = speaker.toLowerCase();
         const conversationText = `${speakerText}: ${text.trim()}`;
@@ -914,6 +914,131 @@ function formatRealtimeConversationHistory() {
     return realtimeConversationHistory.slice(-30).join('\n');
 }
 
+/**
+ * Checks if Ollama is available and running
+ * @returns {Promise<boolean>} Promise that resolves to true if Ollama is available
+ */
+async function checkOllamaAvailability() {
+    try {
+        console.log('Checking Ollama availability...');
+        const response = await fetch('http://localhost:11434/api/tags', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (response.ok) {
+            console.log('Ollama is available and running');
+            return true;
+        } else {
+            console.log(`Ollama responded with status: ${response.status}`);
+            return false;
+        }
+    } catch (error) {
+        console.log('Ollama not available:', error.message);
+        return false;
+    }
+}
+
+/**
+ * Checks if a specific model is available in Ollama
+ * @param {string} modelName - The name of the model to check
+ * @returns {Promise<boolean>} Promise that resolves to true if the model is available
+ */
+async function checkOllamaModel(modelName) {
+    try {
+        console.log(`Checking if Ollama model '${modelName}' is available...`);
+        const response = await fetch('http://localhost:11434/api/tags', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const availableModels = data.models || [];
+            const isModelAvailable = availableModels.some(model => model.name === modelName || model.name.startsWith(modelName + ':'));
+            
+            console.log(`Model '${modelName}' ${isModelAvailable ? 'found' : 'not found'} in Ollama`);
+            return isModelAvailable;
+        } else {
+            console.log(`Failed to check Ollama models: ${response.status}`);
+            return false;
+        }
+    } catch (error) {
+        console.log('Error checking Ollama model:', error.message);
+        return false;
+    }
+}
+
+/**
+ * Makes a request to Ollama's chat completion API
+ * @param {Array} messages - Array of message objects
+ * @param {string} model - Model name to use
+ * @param {boolean} stream - Whether to stream the response
+ * @param {string} screenshotBase64 - Base64 encoded screenshot (optional)
+ * @returns {Promise<Object>} Response from Ollama
+ */
+async function makeOllamaRequest(messages, model, stream = false) {
+    const ollamaBaseUrl = 'http://localhost:11434'; // Default Ollama URL
+    const requestUrl = `${ollamaBaseUrl}/api/chat`;
+    
+    console.log(`🦙 Making Ollama request to: ${requestUrl} with model: ${model}, stream: ${stream}`);
+    
+    const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: model,
+            messages: messages,
+            stream: stream,
+            options: {
+                temperature: 0.7,
+                num_predict: 2048,
+            }
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        
+        // Handle specific Ollama errors
+        if (response.status === 404) {
+            throw new Error(`Ollama model '${model}' not found. Please run 'ollama pull ${model}' to download it.`);
+        }
+        
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    console.log(` Ollama request successful to: ${requestUrl}`);
+    return response;
+}
+
+/**
+ * Gets the current model provider setting
+ * @returns {Promise<string>} The current model provider ('openai' or 'ollama')
+ */
+async function getModelProvider() {
+    try {
+        const provider = localStorage.getItem('modelProvider');
+        if (provider) {
+            return provider;
+        }
+        
+        // Try to get from IPC if available
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            const ipcProvider = await ipcRenderer.invoke('get-model-provider');
+            if (ipcProvider) {
+                return ipcProvider;
+            }
+        }
+        
+        return 'openai'; // Default to OpenAI
+    } catch (error) {
+        console.error('Error getting model provider:', error);
+        return 'openai';
+    }
+}
+
 async function sendMessage(userPrompt, options = {}) {
     if (!userPrompt || userPrompt.trim().length === 0) {
         console.warn('Cannot process empty message');
@@ -932,7 +1057,6 @@ async function sendMessage(userPrompt, options = {}) {
     try {
         console.log(`🤖 Processing message: ${userPrompt.substring(0, 50)}...`);
 
-        // 1. Get screenshot from main process
         let screenshotBase64 = null;
         try {
             screenshotBase64 = await getCurrentScreenshot();
@@ -950,89 +1074,94 @@ async function sendMessage(userPrompt, options = {}) {
 
         const systemPrompt = PICKLE_GLASS_SYSTEM_PROMPT.replace('{{CONVERSATION_HISTORY}}', conversationHistory);
 
-        let API_KEY = localStorage.getItem('openai_api_key');
+        const modelProvider = await getModelProvider();
+        console.log(`🤖 Using model provider: ${modelProvider}`);
 
-        if (!API_KEY && window.require) {
-            try {
-                const { ipcRenderer } = window.require('electron');
-                API_KEY = await ipcRenderer.invoke('get-stored-api-key');
-            } catch (error) {
-                console.error('Failed to get API key via IPC:', error);
+        if (modelProvider === 'ollama') {
+            return await sendMessageWithOllama(userPrompt, systemPrompt, screenshotBase64, options);
+        } else {
+            return await sendMessageWithOpenAI(userPrompt, systemPrompt, screenshotBase64, options);
+        }
+    } catch (error) {
+        console.error('Error processing message:', error);
+        const errorMessage = `Error: ${error.message}`;
+
+        return { success: false, error: error.message, response: errorMessage };
+    }
+}
+
+async function sendMessageWithOllama(userPrompt, systemPrompt, screenshotBase64, options = {}) {
+    console.log('🦙 Sending message to Ollama...');
+    
+    // Check if Ollama is available
+    const isOllamaAvailable = await checkOllamaAvailability();
+    if (!isOllamaAvailable) {
+        throw new Error('Ollama is not available. Please make sure Ollama is running on http://localhost:11434');
+    }
+
+    // Get the model name from localStorage or use default
+    let ollamaModel = localStorage.getItem('ollamaModel') || 'llama3.2';
+    let useVisionModel = false;
+    
+    // If we have a screenshot, try to use a vision model
+    if (screenshotBase64) {
+        console.log('📷 Screenshot available, checking for vision models...');
+        
+        // Try vision models in order of preference
+        const visionModels = ['qwen2.5vl', 'llava:7b', 'llava:13b', 'llava:34b', 'llama3.2-vision:11b'];
+        
+        for (const visionModel of visionModels) {
+            const isVisionModelAvailable = await checkOllamaModel(visionModel);
+            if (isVisionModelAvailable) {
+                ollamaModel = visionModel;
+                useVisionModel = true;
+                console.log(`🔍 Using vision model: ${ollamaModel}`);
+                break;
             }
         }
+        
+        if (!useVisionModel) {
+            console.log('⚠️ No vision models available, using text-only model (screenshot will be ignored)');
+        }
+    }
+    
+    // Check if the model is available
+    const isModelAvailable = await checkOllamaModel(ollamaModel);
+    if (!isModelAvailable) {
+        throw new Error(`Ollama model '${ollamaModel}' is not available. Please run 'ollama pull ${ollamaModel}' to download it.`);
+    }
 
-        if (!API_KEY) {
-            API_KEY = process.env.OPENAI_API_KEY;
+    // Build messages for Ollama
+    const messages = [
+        {
+            role: 'system',
+            content: systemPrompt,
+        },
+        {
+            role: 'user',
+            content: `User Request: ${userPrompt.trim()}`,
+        },
+    ];
+
+    // Add image to the user message if we have a screenshot and vision model
+    if (screenshotBase64 && useVisionModel) {
+        messages[1].images = [screenshotBase64];
+        console.log(`📷 Screenshot included for vision model: ${ollamaModel}`);
+    } else if (screenshotBase64 && !useVisionModel) {
+        console.log('📷 Screenshot captured but not included (no vision model available)');
+    }
+
+    const ollamaUrl = 'http://localhost:11434/api/chat';
+    console.log(`🌐 OLLAMA FETCH: ${ollamaUrl} with model: ${ollamaModel} (vision: ${useVisionModel})`);
+
+    try {
+        const response = await makeOllamaRequest(messages, ollamaModel, true);
+        
+        if (!response.body) {
+            throw new Error('No response body received from Ollama');
         }
 
-        if (!API_KEY) {
-            throw new Error('No API key found in storage, IPC, or environment');
-        }
-
-        console.log('[Renderer] Using API key for message request');
-
-        const messages = [
-            {
-                role: 'system',
-                content: systemPrompt,
-            },
-            {
-                role: 'user',
-                content: [
-                    {
-                        type: 'text',
-                        text: `User Request: ${userPrompt.trim()}`,
-                    },
-                ],
-            },
-        ];
-
-        if (screenshotBase64) {
-            messages[1].content.push({
-                type: 'image_url',
-                image_url: {
-                    url: `data:image/jpeg;base64,${screenshotBase64}`,
-                },
-            });
-            console.log('📷 Screenshot included in message request');
-        }
-
-        const { isLoggedIn } = await queryLoginState();
-        const keyType = isLoggedIn ? 'vKey' : 'apiKey';
-
-        console.log('🚀 Sending request to OpenAI...');
-        const { url, headers } =
-            keyType === 'apiKey'
-                ? {
-                      url: 'https://api.openai.com/v1/chat/completions',
-                      headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-                  }
-                : {
-                      url: 'https://api.portkey.ai/v1/chat/completions',
-                      headers: {
-                          'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                          'x-portkey-virtual-key': API_KEY,
-                          'Content-Type': 'application/json',
-                      },
-                  };
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
-
-        // --- 스트리밍 응답 처리 ---
+        // Handle streaming response from Ollama
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
@@ -1045,41 +1174,170 @@ async function sendMessage(userPrompt, options = {}) {
             const lines = chunk.split('\n').filter(line => line.trim() !== '');
 
             for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.substring(6);
-                    if (data === '[DONE]') {
-                        // 스트리밍 종료 신호
+                try {
+                    const json = JSON.parse(line);
+                    const token = json.message?.content || '';
+                    
+                    if (token) {
+                        fullResponse += token;
+                        // Send token chunk to AskView
+                        if (window.require) {
+                            const { ipcRenderer } = window.require('electron');
+                            ipcRenderer.send('ask-response-chunk', { token });
+                        }
+                    }
+                    
+                    // Check if streaming is done
+                    if (json.done) {
+                        // Send streaming end signal
                         if (window.require) {
                             const { ipcRenderer } = window.require('electron');
                             ipcRenderer.send('ask-response-stream-end');
                         }
                         return { success: true, response: fullResponse };
                     }
-                    try {
-                        const json = JSON.parse(data);
-                        const token = json.choices[0]?.delta?.content || '';
-                        if (token) {
-                            fullResponse += token;
-                            // 💡 렌더러 프로세스에 토큰 청크 전송
-                            if (window.require) {
-                                const { ipcRenderer } = window.require('electron');
-                                ipcRenderer.send('ask-response-chunk', { token });
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error parsing stream data chunk:', error, 'Chunk:', data);
-                    }
+                } catch (error) {
+                    console.error('Error parsing Ollama stream data:', error, 'Line:', line);
                 }
             }
         }
-        // 이 부분은 스트리밍이 끝나면 사실상 도달하지 않음
+        
         return { success: true, response: fullResponse };
     } catch (error) {
-        console.error('Error processing message:', error);
-        const errorMessage = `Error: ${error.message}`;
-
-        return { success: false, error: error.message, response: errorMessage };
+        console.error('Error with Ollama request:', error);
+        throw error;
     }
+}
+
+async function sendMessageWithOpenAI(userPrompt, systemPrompt, screenshotBase64, options = {}) {
+    console.log('🤖 Sending message to OpenAI...');
+    
+    let API_KEY = localStorage.getItem('openai_api_key');
+
+    if (!API_KEY && window.require) {
+        try {
+            const { ipcRenderer } = window.require('electron');
+            API_KEY = await ipcRenderer.invoke('get-stored-api-key');
+        } catch (error) {
+            console.error('Failed to get API key via IPC:', error);
+        }
+    }
+
+    if (!API_KEY) {
+        API_KEY = process.env.OPENAI_API_KEY;
+    }
+
+    if (!API_KEY) {
+        throw new Error('No API key found in storage, IPC, or environment');
+    }
+
+    console.log('[Renderer] Using API key for message request');
+
+    const messages = [
+        {
+            role: 'system',
+            content: systemPrompt,
+        },
+        {
+            role: 'user',
+            content: [
+                {
+                    type: 'text',
+                    text: `User Request: ${userPrompt.trim()}`,
+                },
+            ],
+        },
+    ];
+
+    if (screenshotBase64) {
+        messages[1].content.push({
+            type: 'image_url',
+            image_url: {
+                url: `data:image/jpeg;base64,${screenshotBase64}`,
+            },
+        });
+        console.log('📷 Screenshot included in message request');
+    }
+
+    const { isLoggedIn } = await queryLoginState();
+    const keyType = isLoggedIn ? 'vKey' : 'apiKey';
+
+    console.log(' Sending request to OpenAI...');
+    const { url, headers } =
+        keyType === 'apiKey'
+            ? {
+                  url: 'https://api.openai.com/v1/chat/completions',
+                  headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+              }
+            : {
+                  url: 'https://api.portkey.ai/v1/chat/completions',
+                  headers: {
+                      'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
+                      'x-portkey-virtual-key': API_KEY,
+                      'Content-Type': 'application/json',
+                  },
+              };
+
+    console.log(`🌐 OPENAI FETCH: ${url} with model: gpt-4.1 (keyType: ${keyType})`);
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            model: 'gpt-4.1',
+            messages,
+            temperature: 0.7,
+            max_tokens: 2048,
+            stream: true,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+    }
+
+    // --- 스트리밍 응답 처리 ---
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                const data = line.substring(6);
+                if (data === '[DONE]') {
+                    // 스트리밍 종료 신호
+                    if (window.require) {
+                        const { ipcRenderer } = window.require('electron');
+                        ipcRenderer.send('ask-response-stream-end');
+                    }
+                    return { success: true, response: fullResponse };
+                }
+                try {
+                    const json = JSON.parse(data);
+                    const token = json.choices[0]?.delta?.content || '';
+                    if (token) {
+                        fullResponse += token;
+                        // 💡 렌더러 프로세스에 토큰 청크 전송
+                        if (window.require) {
+                            const { ipcRenderer } = window.require('electron');
+                            ipcRenderer.send('ask-response-chunk', { token });
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error parsing stream data chunk:', error, 'Chunk:', data);
+                }
+            }
+        }
+    }
+    // 이 부분은 스트리밍이 끝나면 사실상 도달하지 않음
+    return { success: true, response: fullResponse };
 }
 
 
@@ -1159,7 +1417,7 @@ ipcRenderer.on('save-conversation-session', async (event, data) => {
     try {
         console.log(`📥 Received conversation session save request: ${data.sessionId}`);
         await saveConversationSession(data.sessionId, data.conversationHistory);
-        console.log(`✅ Conversation session saved successfully: ${data.sessionId}`);
+        console.log(` Conversation session saved successfully: ${data.sessionId}`);
     } catch (error) {
         console.error('❌ Error saving conversation session:', error);
     }

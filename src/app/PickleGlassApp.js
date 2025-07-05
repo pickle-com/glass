@@ -237,7 +237,7 @@ export class PickleGlassApp extends LitElement {
         const assistantView = this.shadowRoot?.querySelector('assistant-view');
         if (assistantView) {
             assistantView.structuredData = data;
-            console.log('✅ Structured data passed to AssistantView');
+            console.log(' Structured data passed to AssistantView');
         }
     }
 

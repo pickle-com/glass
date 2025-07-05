@@ -5,6 +5,10 @@ export class ApiKeyHeader extends LitElement {
         apiKey: { type: String },
         isLoading: { type: Boolean },
         errorMessage: { type: String },
+        loadingOperation: { type: String },
+        sttProvider: { type: String },
+        whisperModel: { type: String },
+        showSttSettings: { type: Boolean },
     };
 
     static styles = css`
@@ -49,7 +53,6 @@ export class ApiKeyHeader extends LitElement {
             padding: 18px 20px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 16px;
-            overflow: hidden;
             position: relative;
             display: flex;
             flex-direction: column;
@@ -164,7 +167,6 @@ export class ApiKeyHeader extends LitElement {
             cursor: pointer;
             transition: background 0.15s ease;
             position: relative;
-            overflow: hidden;
         }
 
         .action-button::after {
@@ -198,6 +200,89 @@ export class ApiKeyHeader extends LitElement {
             font-weight: 500; /* Medium */
             margin: 10px 0;
         }
+
+        .stt-settings {
+            margin-top: 15px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .stt-settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .stt-settings-title {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .stt-toggle-btn {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: background 0.15s ease;
+        }
+
+        .stt-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .stt-provider-select, .whisper-model-select {
+            width: 100%;
+            height: 28px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            color: white;
+            font-size: 11px;
+            padding: 0 8px;
+            margin-top: 4px;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8"><path fill="white" d="M0 2L4 6L8 2z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 8px;
+            padding-right: 24px;
+        }
+
+        .stt-provider-select:focus, .whisper-model-select:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .stt-provider-select option, .whisper-model-select option {
+            background: #2a2a2a;
+            color: white;
+        }
+
+        .stt-setting-row {
+            margin-bottom: 8px;
+        }
+
+        .stt-setting-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .stt-setting-label {
+            display: block;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 10px;
+            margin-bottom: 2px;
+        }
+
+        // ...existing CSS...
     `;
 
     constructor() {
@@ -207,7 +292,11 @@ export class ApiKeyHeader extends LitElement {
         this.apiKey = '';
         this.isLoading = false;
         this.errorMessage = '';
+        this.loadingOperation = '';
         this.validatedApiKey = null;
+        this.sttProvider = 'openai';
+        this.whisperModel = 'base';
+        this.showSttSettings = false;
 
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.handleMouseUp = this.handleMouseUp.bind(this);
@@ -216,12 +305,17 @@ export class ApiKeyHeader extends LitElement {
         this.handleInput = this.handleInput.bind(this);
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this);
+        this.handleUseOllama = this.handleUseOllama.bind(this);
+        this.handleSttProviderChange = this.handleSttProviderChange.bind(this);
+        this.handleWhisperModelChange = this.handleWhisperModelChange.bind(this);
+        this.toggleSttSettings = this.toggleSttSettings.bind(this);
     }
 
     reset() {
         this.apiKey = '';
         this.isLoading = false;
         this.errorMessage = '';
+        this.loadingOperation = '';
         this.validatedApiKey = null;
         this.requestUpdate();
     }
@@ -337,6 +431,7 @@ export class ApiKeyHeader extends LitElement {
 
         console.log('Starting API key validation...');
         this.isLoading = true;
+        this.loadingOperation = 'openai';
         this.errorMessage = '';
         this.requestUpdate();
 
@@ -367,6 +462,7 @@ export class ApiKeyHeader extends LitElement {
             this.errorMessage = 'Validation error - please try again';
         } finally {
             this.isLoading = false;
+            this.loadingOperation = '';
             this.requestUpdate();
         }
     }
@@ -473,6 +569,130 @@ export class ApiKeyHeader extends LitElement {
         }
     }
 
+    async handleUseOllama(e) {
+        e.preventDefault();
+        if (this.wasJustDragged) return;
+
+        console.log('Setting up Ollama as AI provider...');
+        this.isLoading = true;
+        this.loadingOperation = 'ollama';
+        this.errorMessage = '';
+        this.requestUpdate();
+
+        try {
+            // Check if Ollama is available
+            const isOllamaRunning = await this.checkOllamaAvailability();
+            
+            if (!isOllamaRunning) {
+                this.errorMessage = 'Ollama not found. Please install and start Ollama first.';
+                console.log('Ollama availability check failed');
+                return;
+            }
+
+            // Check if default model is available
+            const hasDefaultModel = await this.checkOllamaModel('llama3.2');
+            
+            if (!hasDefaultModel) {
+                this.errorMessage = 'Model llama3.2 not found. Run: ollama pull llama3.2';
+                console.log('Default model llama3.2 not available');
+                return;
+            }
+
+            // Configure the system to use Ollama
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                
+                // Set model provider to ollama
+                const result = await ipcRenderer.invoke('update-model-provider', 'ollama');
+                
+                if (result.success) {
+                    console.log('Ollama configured successfully');
+                    
+                    // Check system permissions
+                    const permissionResult = await this.checkAndRequestPermissions();
+                    
+                    if (permissionResult.success) {
+                        console.log('All permissions granted - starting with Ollama');
+                        this.startSlideOutAnimation();
+                        // Set a special flag to indicate Ollama mode
+                        this.validatedApiKey = 'OLLAMA_MODE';
+                    } else {
+                        this.errorMessage = permissionResult.error || 'Permission setup required';
+                        console.log('Permission setup incomplete:', permissionResult);
+                    }
+                } else {
+                    this.errorMessage = result.error || 'Failed to configure Ollama';
+                    console.log('Failed to configure Ollama:', result.error);
+                }
+            }
+        } catch (error) {
+            console.error('Error setting up Ollama:', error);
+            this.errorMessage = 'Error setting up Ollama - please try again';
+        } finally {
+            this.isLoading = false;
+            this.loadingOperation = '';
+            this.requestUpdate();
+        }
+    }
+
+    async checkOllamaAvailability() {
+        try {
+            console.log('Checking Ollama availability...');
+            const response = await fetch('http://localhost:11434/api/tags', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            
+            if (response.ok) {
+                console.log('Ollama is available and running');
+                return true;
+            } else {
+                console.log(`Ollama responded with status: ${response.status}`);
+                return false;
+            }
+        } catch (error) {
+            console.log('Ollama not available:', error.message);
+            return false;
+        }
+    }
+
+    async checkOllamaModel(modelName) {
+        try {
+            console.log(`Checking if Ollama model '${modelName}' is available...`);
+            const response = await fetch('http://localhost:11434/api/tags', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            
+            if (!response.ok) {
+                return false;
+            }
+            
+            const data = await response.json();
+            const availableModels = data.models || [];
+            
+            // Check if the model exists (handle both exact match and tag variations)
+            const modelExists = availableModels.some(model => {
+                const modelFullName = model.name || model.model;
+                return modelFullName === modelName || 
+                       modelFullName.startsWith(modelName + ':') ||
+                       modelFullName === modelName + ':latest';
+            });
+            
+            if (modelExists) {
+                console.log(`Model '${modelName}' is available`);
+            } else {
+                console.log(`Model '${modelName}' not found. Available models:`, 
+                    availableModels.map(m => m.name || m.model));
+            }
+            
+            return modelExists;
+        } catch (error) {
+            console.log('Error checking Ollama model availability:', error.message);
+            return false;
+        }
+    }
+
     handleClose() {
         console.log('Close button clicked');
         if (window.require) {
@@ -489,7 +709,13 @@ export class ApiKeyHeader extends LitElement {
 
             if (this.validatedApiKey) {
                 if (window.require) {
-                    window.require('electron').ipcRenderer.invoke('api-key-validated', this.validatedApiKey);
+                    if (this.validatedApiKey === 'OLLAMA_MODE') {
+                        // For Ollama mode, notify that we're using local AI
+                        window.require('electron').ipcRenderer.invoke('ollama-mode-activated');
+                    } else {
+                        // For regular API key mode
+                        window.require('electron').ipcRenderer.invoke('api-key-validated', this.validatedApiKey);
+                    }
                 }
                 this.validatedApiKey = null;
             }
@@ -498,14 +724,81 @@ export class ApiKeyHeader extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-        this.addEventListener('animationend', this.handleAnimationEnd);
-
+        this.loadSttSettings();
     }
 
     disconnectedCallback() {
         super.disconnectedCallback();
         this.removeEventListener('animationend', this.handleAnimationEnd);
 
+    }
+
+    async handleSttProviderChange(e) {
+        const provider = e.target.value;
+        const { ipcRenderer } = window.require('electron');
+        
+        try {
+            const result = await ipcRenderer.invoke('update-stt-provider', { 
+                provider, 
+                model: this.whisperModel 
+            });
+            
+            if (result.success) {
+                this.sttProvider = provider;
+                this.errorMessage = '';
+                console.log(`STT provider changed to: ${provider}`);
+            } else {
+                this.errorMessage = result.error || 'Failed to update STT provider';
+            }
+        } catch (error) {
+            this.errorMessage = 'Error updating STT provider: ' + error.message;
+        }
+        
+        this.requestUpdate();
+    }
+
+    async handleWhisperModelChange(e) {
+        const model = e.target.value;
+        const { ipcRenderer } = window.require('electron');
+        
+        try {
+            const result = await ipcRenderer.invoke('update-stt-provider', { 
+                provider: 'whisper', 
+                model 
+            });
+            
+            if (result.success) {
+                this.whisperModel = model;
+                this.errorMessage = '';
+                console.log(`Whisper model changed to: ${model}`);
+            } else {
+                this.errorMessage = result.error || 'Failed to update Whisper model';
+            }
+        } catch (error) {
+            this.errorMessage = 'Error updating Whisper model: ' + error.message;
+        }
+        
+        this.requestUpdate();
+    }
+
+    toggleSttSettings() {
+        this.showSttSettings = !this.showSttSettings;
+        this.requestUpdate();
+    }
+
+    async loadSttSettings() {
+        const { ipcRenderer } = window.require('electron');
+        
+        try {
+            const result = await ipcRenderer.invoke('get-stt-provider');
+            if (result.success) {
+                this.sttProvider = result.provider;
+                this.whisperModel = result.whisperModel;
+                this.requestUpdate();
+            }
+        } catch (error) {
+            console.error('Error loading STT settings:', error);
+        }
     }
 
     render() {
@@ -538,12 +831,53 @@ export class ApiKeyHeader extends LitElement {
                     />
 
                     <button class="action-button" @click=${this.handleSubmit} ?disabled=${isButtonDisabled} tabindex="0">
-                        ${this.isLoading ? 'Validating...' : 'Confirm'}
+                        ${this.isLoading && this.loadingOperation === 'openai' ? 'Validating...' : 'Confirm'}
                     </button>
 
                     <div class="or-text">or</div>
 
                     <button class="action-button" @click=${this.handleUsePicklesKey}>Use Pickle's API Key</button>
+                    <button class="action-button" @click=${this.handleUseOllama} ?disabled=${this.isLoading}>
+                        ${this.isLoading && this.loadingOperation === 'ollama' ? 'Setting up Ollama...' : 'Use your local Ollama (Defaults to Llama3.2)'}
+                    </button>
+
+                    <div class="stt-settings">
+                        <div class="stt-settings-header">
+                            <div class="stt-settings-title">Speech-to-Text Settings</div>
+                            <button class="stt-toggle-btn" @click=${this.toggleSttSettings}>
+                                ${this.showSttSettings ? '▲' : '▼'}
+                            </button>
+                        </div>
+
+                        ${this.showSttSettings
+                            ? html`
+                                <div class="stt-setting-row">
+                                    <label class="stt-setting-label">Provider</label>
+                                    <select class="stt-provider-select" @change=${this.handleSttProviderChange}>
+                                        <option value="openai" ?selected=${this.sttProvider === 'openai'}>OpenAI</option>
+                                        <option value="whisper" ?selected=${this.sttProvider === 'whisper'}>Local Whisper</option>
+                                    </select>
+                                </div>
+
+                                ${this.sttProvider === 'whisper'
+                                    ? html`
+                                        <div class="stt-setting-row">
+                                            <label class="stt-setting-label">Model</label>
+                                            <select class="whisper-model-select" @change=${this.handleWhisperModelChange}>
+                                                <option value="base" ?selected=${this.whisperModel === 'base'}>Base</option>
+                                                <option value="tiny" ?selected=${this.whisperModel === 'tiny'}>Tiny</option>
+                                                <option value="small" ?selected=${this.whisperModel === 'small'}>Small</option>
+                                                <option value="medium" ?selected=${this.whisperModel === 'medium'}>Medium</option>
+                                                <option value="large" ?selected=${this.whisperModel === 'large'}>Large</option>
+                                            </select>
+                                        </div>
+                                    `
+                                    : ''
+                                }
+                            `
+                            : ''
+                        }
+                    </div>
                 </div>
             </div>
         `;

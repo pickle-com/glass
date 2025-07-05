@@ -28,6 +28,16 @@ class Config {
             enableFileBasedCommunication: false,
             enableSQLiteStorage: true,
             
+            // Model provider settings
+            modelProvider: 'openai', // 'openai' | 'ollama'
+            ollamaBaseUrl: 'http://localhost:11434',
+            ollamaModel: 'llama3.2',
+            openaiModel: 'gpt-4.1',
+            
+            // STT provider settings
+            sttProvider: 'openai', // 'openai' | 'whisper'
+            whisperModel: 'base', // 'base' | 'small' | 'medium' | 'large'
+            
             logLevel: 'info',
             enableDebugLogging: false
         };
@@ -58,6 +68,23 @@ class Config {
         
         if (process.env.pickleglass_CACHE_TIMEOUT) {
             this.config.cacheTimeout = parseInt(process.env.pickleglass_CACHE_TIMEOUT);
+        }
+        
+        // Model provider configuration
+        if (process.env.pickleglass_MODEL_PROVIDER) {
+            this.config.modelProvider = process.env.pickleglass_MODEL_PROVIDER;
+        }
+        
+        if (process.env.pickleglass_OLLAMA_BASE_URL) {
+            this.config.ollamaBaseUrl = process.env.pickleglass_OLLAMA_BASE_URL;
+        }
+        
+        if (process.env.pickleglass_OLLAMA_MODEL) {
+            this.config.ollamaModel = process.env.pickleglass_OLLAMA_MODEL;
+        }
+        
+        if (process.env.pickleglass_OPENAI_MODEL) {
+            this.config.openaiModel = process.env.pickleglass_OPENAI_MODEL;
         }
         
         if (process.env.pickleglass_LOG_LEVEL) {
@@ -146,6 +173,31 @@ class Config {
         const currentLevelIndex = levels.indexOf(this.config.logLevel);
         const requestedLevelIndex = levels.indexOf(level);
         return requestedLevelIndex >= currentLevelIndex;
+    }
+    
+    // STT provider methods
+    getSttProvider() {
+        return this.config.sttProvider;
+    }
+    
+    setSttProvider(provider) {
+        if (!['openai', 'whisper'].includes(provider)) {
+            throw new Error('Invalid STT provider. Must be "openai" or "whisper"');
+        }
+        this.config.sttProvider = provider;
+        this.saveUserConfig();
+    }
+    
+    getWhisperModel() {
+        return this.config.whisperModel;
+    }
+    
+    setWhisperModel(model) {
+        if (!['base', 'small', 'medium', 'large'].includes(model)) {
+            throw new Error('Invalid Whisper model. Must be "base", "small", "medium", or "large"');
+        }
+        this.config.whisperModel = model;
+        this.saveUserConfig();
     }
 }
 

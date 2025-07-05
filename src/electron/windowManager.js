@@ -14,7 +14,7 @@ let currentDisplayId = null;
 
 let mouseEventsIgnored = false;
 let lastVisibleWindows = new Set(['header']);
-const HEADER_HEIGHT = 60;
+const HEADER_HEIGHT = 200;
 const DEFAULT_WINDOW_WIDTH = 345;
 
 let currentHeaderState = 'apikey';
@@ -2330,6 +2330,16 @@ function setupApiKeyIPC() {
         return storedApiKey;
     });
 
+    ipcMain.handle('get-current-api-key', async () => {
+        if (storedApiKey === null) {
+            const dbKey = await loadApiKeyFromDb();
+            if (dbKey) {
+                await setApiKey(dbKey);
+            }
+        }
+        return storedApiKey;
+    });
+
     ipcMain.handle('api-key-validated', async (event, apiKey) => {
         console.log('[WindowManager] API key validation completed, saving...');
         await setApiKey(apiKey);
@@ -2343,33 +2353,20 @@ function setupApiKeyIPC() {
         return { success: true };
     });
 
-    ipcMain.handle('remove-api-key', async () => {
-        console.log('[WindowManager] API key removal requested');
+    ipcMain.handle('ollama-mode-activated', async (event) => {
+        console.log('[WindowManager] Ollama mode activated, configuring local AI...');
+        
+        // Clear any stored API key since we're using Ollama
         await setApiKey(null);
-
+        
+        // Notify all windows that Ollama mode is active
         windowPool.forEach((win, name) => {
             if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-removed');
+                win.webContents.send('ollama-mode-activated');
             }
         });
 
-        const settingsWindow = windowPool.get('settings');
-        if (settingsWindow && settingsWindow.isVisible()) {
-            settingsWindow.hide();
-            console.log('[WindowManager] Settings window hidden after clearing API key.');
-        }
-
         return { success: true };
-    });
-
-    ipcMain.handle('get-current-api-key', async () => {
-        if (storedApiKey === null) {
-            const dbKey = await loadApiKeyFromDb();
-            if (dbKey) {
-                await setApiKey(dbKey);
-            }
-        }
-        return storedApiKey;
     });
 
     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');

@@ -264,6 +264,8 @@ export class CustomizeView extends LitElement {
         apiKey: { type: String, state: true },
         isLoading: { type: Boolean },
         activeTab: { type: String },
+        modelProvider: { type: String },
+        ollamaAvailable: { type: Boolean },
     };
 
     constructor() {
@@ -288,6 +290,8 @@ export class CustomizeView extends LitElement {
         this.isContentProtectionOn = true;
         this.isLoading = false;
         this.activeTab = 'prompts';
+        this.modelProvider = localStorage.getItem('modelProvider') || 'openai';
+        this.ollamaAvailable = false;
 
         this.loadKeybinds();
         this.loadRateLimitSettings();
@@ -297,6 +301,8 @@ export class CustomizeView extends LitElement {
         this.loadContentProtectionSettings();
         this.checkContentProtectionStatus();
         this.getApiKeyFromStorage();
+        this.loadModelProviderSettings();
+        this.checkOllamaAvailability();
     }
 
     connectedCallback() {
@@ -355,6 +361,14 @@ export class CustomizeView extends LitElement {
                 this.requestUpdate();
             });
             
+            ipcRenderer.on('ollama-mode-activated', () => {
+                console.log('[CustomizeView] Received ollama-mode-activated, updating model provider.');
+                this.modelProvider = 'ollama';
+                localStorage.setItem('modelProvider', 'ollama');
+                this.checkOllamaAvailability();
+                this.requestUpdate();
+            });
+            
             ipcRenderer.on('api-key-updated', () => {
                 console.log('[CustomizeView] Received api-key-updated, refreshing state.');
                 this.getApiKeyFromStorage();
@@ -386,6 +400,7 @@ export class CustomizeView extends LitElement {
             ipcRenderer.removeAllListeners('firebase-user-updated');
             ipcRenderer.removeAllListeners('user-changed');
             ipcRenderer.removeAllListeners('api-key-validated');
+            ipcRenderer.removeAllListeners('ollama-mode-activated');
             ipcRenderer.removeAllListeners('api-key-updated');
             ipcRenderer.removeAllListeners('api-key-removed');
         }
@@ -884,6 +899,43 @@ export class CustomizeView extends LitElement {
         this.requestUpdate();
     }
 
+    loadModelProviderSettings() {
+        const modelProvider = localStorage.getItem('modelProvider');
+        if (modelProvider) {
+            this.modelProvider = modelProvider;
+        }
+    }
+
+    async checkOllamaAvailability() {
+        try {
+            const response = await fetch('http://localhost:11434/api/tags', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            this.ollamaAvailable = response.ok;
+        } catch (error) {
+            this.ollamaAvailable = false;
+        }
+        this.requestUpdate();
+    }
+
+    handleModelProviderChange(e) {
+        this.modelProvider = e.target.value;
+        localStorage.setItem('modelProvider', this.modelProvider);
+        
+        // Notify the main process about the model provider change
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.invoke('update-model-provider', this.modelProvider);
+            } catch (error) {
+                console.error('Failed to notify main process about model provider change:', error);
+            }
+        }
+        
+        this.requestUpdate();
+    }
+
     render() {
         const loggedIn = !!this.firebaseUser;
         console.log('[CustomizeView] render: Rendering component template.');
@@ -920,6 +972,29 @@ export class CustomizeView extends LitElement {
                     <button class="settings-button full-width" @click=${this.handleSaveApiKey} ?disabled=${loggedIn}>
                         Save API Key
                     </button>
+                </div>
+
+                <div class="model-provider-section" style="padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                    <label style="font-size: 10px; color: rgba(255, 255, 255, 0.7); margin-bottom: 4px; display: block;">AI Model Provider</label>
+                    <select 
+                        .value=${this.modelProvider}
+                        @change=${this.handleModelProviderChange}
+                        style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; padding: 4px; font-size: 11px; margin-bottom: 4px;"
+                    >
+                        <option value="openai">OpenAI (Cloud)</option>
+                        <option value="ollama" ?disabled=${!this.ollamaAvailable}>
+                            Ollama (Local) ${this.ollamaAvailable ? '✓' : '✗'}
+                        </option>
+                    </select>
+                    ${!this.ollamaAvailable ? html`
+                        <div style="font-size: 9px; color: rgba(255, 255, 255, 0.5); line-height: 1.2;">
+                            Ollama not detected. Install from ollama.ai to use local models.
+                        </div>
+                    ` : html`
+                        <div style="font-size: 9px; color: rgba(0, 255, 0, 0.7); line-height: 1.2;">
+                            Ollama detected and available for local inference.
+                        </div>
+                    `}
                 </div>
 
                 <div class="shortcuts-section">
