@@ -1,9 +1,9 @@
-try {
-    const reloader = require('electron-reloader');
-    reloader(module, {
-    });
-} catch (err) {
-}
+// try {
+//     const reloader = require('electron-reloader');
+//     reloader(module, {
+//     });
+// } catch (err) {
+// }
 
 require('dotenv').config();
 

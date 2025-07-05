@@ -5,25 +5,26 @@ const { notarizeApp } = require('./notarize');
 module.exports = {
     packagerConfig: {
         asar: {
-            unpack:
-                '**/*.node,**/*.dylib,' +
-                '**/node_modules/{sharp,@img}/**/*'
+            unpack: '**/*.node,**/*.dylib,' + '**/node_modules/{sharp,@img}/**/*',
         },
         extraResource: ['./src/assets/SystemAudioDump', './pickleglass_web/out'],
         name: 'Glass',
         icon: 'src/assets/logo',
         appBundleId: 'com.pickle.glass',
+        arch: 'universal',
         protocols: [
             {
                 name: 'PickleGlass Protocol',
-                schemes: ['pickleglass']
-            }
+                schemes: ['pickleglass'],
+            },
         ],
         asarUnpack: [
-            "**/*.node",
-            "**/*.dylib",
-            "node_modules/@img/sharp-darwin-arm64/**",
-            "node_modules/@img/sharp-libvips-darwin-arm64/**"
+            '**/*.node',
+            '**/*.dylib',
+            'node_modules/@img/sharp-darwin-x64/**',
+            'node_modules/@img/sharp-libvips-darwin-x64/**',
+            'node_modules/@img/sharp-darwin-arm64/**',
+            'node_modules/@img/sharp-libvips-darwin-arm64/**',
         ],
         osxSign: {
             identity: process.env.APPLE_SIGNING_IDENTITY,
@@ -35,8 +36,8 @@ module.exports = {
             tool: 'notarytool',
             appleId: process.env.APPLE_ID,
             appleIdPassword: process.env.APPLE_ID_PASSWORD,
-            teamId: process.env.APPLE_TEAM_ID
-        }
+            teamId: process.env.APPLE_TEAM_ID,
+        },
     },
     rebuildConfig: {},
     makers: [

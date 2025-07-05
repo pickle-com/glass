@@ -1,5 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const LATEST_SCHEMA = require('../config/schema');
 
 class SQLiteClient {
     constructor() {
@@ -33,86 +34,121 @@ class SQLiteClient {
         });
     }
 
-    async initTables() {
+    async synchronizeSchema() {
+        console.log('[DB Sync] Starting schema synchronization...');
+        const tablesInDb = await this.getTablesFromDb();
+
+        for (const tableName of Object.keys(LATEST_SCHEMA)) {
+            const tableSchema = LATEST_SCHEMA[tableName];
+
+            if (!tablesInDb.includes(tableName)) {
+                // Table doesn't exist, create it
+                await this.createTable(tableName, tableSchema);
+            } else {
+                // Table exists, check for missing columns
+                await this.updateTable(tableName, tableSchema);
+            }
+        }
+        console.log('[DB Sync] Schema synchronization finished.');
+    }
+
+    async getTablesFromDb() {
         return new Promise((resolve, reject) => {
-            const schema = `
-                PRAGMA journal_mode = WAL;
-
-                CREATE TABLE IF NOT EXISTS users (
-                  uid           TEXT PRIMARY KEY,
-                  display_name  TEXT NOT NULL,
-                  email         TEXT NOT NULL,
-                  created_at    INTEGER,
-                  api_key       TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS sessions (
-                  id            TEXT PRIMARY KEY, 
-                  uid           TEXT NOT NULL,
-                  title         TEXT,
-                  started_at    INTEGER,
-                  ended_at      INTEGER,
-                  sync_state    TEXT DEFAULT 'clean',
-                  updated_at    INTEGER
-                );
-
-                CREATE TABLE IF NOT EXISTS transcripts (
-                  id            TEXT PRIMARY KEY,
-                  session_id    TEXT NOT NULL,
-                  start_at      INTEGER,
-                  end_at        INTEGER,
-                  speaker       TEXT,
-                  text          TEXT,
-                  lang          TEXT,
-                  created_at    INTEGER,
-                  sync_state    TEXT DEFAULT 'clean'
-                );
-
-                CREATE TABLE IF NOT EXISTS ai_messages (
-                  id            TEXT PRIMARY KEY,
-                  session_id    TEXT NOT NULL,
-                  sent_at       INTEGER,
-                  role          TEXT,
-                  content       TEXT,
-                  tokens        INTEGER,
-                  model         TEXT,
-                  created_at    INTEGER,
-                  sync_state    TEXT DEFAULT 'clean'
-                );
-
-                CREATE TABLE IF NOT EXISTS summaries (
-                  session_id    TEXT PRIMARY KEY,
-                  generated_at  INTEGER,
-                  model         TEXT,
-                  text          TEXT,
-                  tldr          TEXT,
-                  bullet_json   TEXT,
-                  action_json   TEXT,
-                  tokens_used   INTEGER,
-                  updated_at    INTEGER,
-                  sync_state    TEXT DEFAULT 'clean'
-                );
-
-                CREATE TABLE IF NOT EXISTS prompt_presets (
-                  id            TEXT PRIMARY KEY,
-                  uid           TEXT NOT NULL,
-                  title         TEXT NOT NULL,
-                  prompt        TEXT NOT NULL,
-                  is_default    INTEGER NOT NULL,
-                  created_at    INTEGER,
-                  sync_state    TEXT DEFAULT 'clean'
-                );
-            `;
-
-            this.db.exec(schema, (err) => {
-                if (err) {
-                    console.error('Failed to create tables:', err);
-                    return reject(err);
-                }
-                console.log('All tables are ready.');
-                            this.initDefaultData().then(resolve).catch(reject);
+            this.db.all("SELECT name FROM sqlite_master WHERE type='table'", (err, tables) => {
+                if (err) return reject(err);
+                resolve(tables.map(t => t.name));
             });
         });
+    }
+
+    async createTable(tableName, tableSchema) {
+        return new Promise((resolve, reject) => {
+            const columnDefs = tableSchema.columns.map(col => `"${col.name}" ${col.type}`).join(', ');
+            const query = `CREATE TABLE IF NOT EXISTS "${tableName}" (${columnDefs})`;
+
+            console.log(`[DB Sync] Creating table: ${tableName}`);
+            this.db.run(query, (err) => {
+                if (err) return reject(err);
+                resolve();
+            });
+        });
+    }
+
+    async updateTable(tableName, tableSchema) {
+        return new Promise((resolve, reject) => {
+            this.db.all(`PRAGMA table_info("${tableName}")`, async (err, existingColumns) => {
+                if (err) return reject(err);
+
+                const existingColumnNames = existingColumns.map(c => c.name);
+                const columnsToAdd = tableSchema.columns.filter(col => !existingColumnNames.includes(col.name));
+
+                if (columnsToAdd.length > 0) {
+                    console.log(`[DB Sync] Updating table: ${tableName}. Adding columns: ${columnsToAdd.map(c=>c.name).join(', ')}`);
+                    for (const column of columnsToAdd) {
+                        const addColumnQuery = `ALTER TABLE "${tableName}" ADD COLUMN "${column.name}" ${column.type}`;
+                        try {
+                            await this.runQuery(addColumnQuery);
+                        } catch (alterErr) {
+                            return reject(alterErr);
+                        }
+                    }
+                }
+                resolve();
+            });
+        });
+    }
+
+    async runQuery(query, params = []) {
+        return new Promise((resolve, reject) => {
+            this.db.run(query, params, function(err) {
+                if (err) return reject(err);
+                resolve(this);
+            });
+        });
+    }
+
+    async cleanupEmptySessions() {
+        console.log('[DB Cleanup] Checking for empty sessions...');
+        const query = `
+            SELECT s.id FROM sessions s
+            LEFT JOIN transcripts t ON s.id = t.session_id
+            LEFT JOIN ai_messages a ON s.id = a.session_id
+            LEFT JOIN summaries su ON s.id = su.session_id
+            WHERE t.id IS NULL AND a.id IS NULL AND su.session_id IS NULL
+        `;
+
+        return new Promise((resolve, reject) => {
+            this.db.all(query, [], (err, rows) => {
+                if (err) {
+                    console.error('[DB Cleanup] Error finding empty sessions:', err);
+                    return reject(err);
+                }
+
+                if (rows.length === 0) {
+                    console.log('[DB Cleanup] No empty sessions found.');
+                    return resolve();
+                }
+
+                const idsToDelete = rows.map(r => r.id);
+                const placeholders = idsToDelete.map(() => '?').join(',');
+                const deleteQuery = `DELETE FROM sessions WHERE id IN (${placeholders})`;
+
+                console.log(`[DB Cleanup] Found ${idsToDelete.length} empty sessions. Deleting...`);
+                this.db.run(deleteQuery, idsToDelete, function(deleteErr) {
+                    if (deleteErr) {
+                        console.error('[DB Cleanup] Error deleting empty sessions:', deleteErr);
+                        return reject(deleteErr);
+                    }
+                    console.log(`[DB Cleanup] Successfully deleted ${this.changes} empty sessions.`);
+                    resolve();
+                });
+            });
+        });
+    }
+
+    async initTables() {
+        await this.synchronizeSchema();
+        await this.initDefaultData();
     }
 
     async initDefaultData() {
@@ -190,17 +226,17 @@ class SQLiteClient {
         });
     }
 
-    async saveApiKey(apiKey, uid = this.defaultUserId) {
+    async saveApiKey(apiKey, uid = this.defaultUserId, provider = 'openai') {
         return new Promise((resolve, reject) => {
             this.db.run(
-                'UPDATE users SET api_key = ? WHERE uid = ?',
-                [apiKey, uid],
+                'UPDATE users SET api_key = ?, provider = ? WHERE uid = ?',
+                [apiKey, provider, uid],
                 function(err) {
                     if (err) {
                         console.error('SQLite: Failed to save API key:', err);
                         reject(err);
                     } else {
-                        console.log(`SQLite: API key saved for user ${uid}.`);
+                        console.log(`SQLite: API key saved for user ${uid} with provider ${provider}.`);
                         resolve({ changes: this.changes });
                     }
                 }
@@ -244,18 +280,52 @@ class SQLiteClient {
         });
     }
 
-    async createSession(uid) {
+    async getSession(id) {
+        return new Promise((resolve, reject) => {
+            this.db.get('SELECT * FROM sessions WHERE id = ?', [id], (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+    }
+
+    async updateSessionType(id, type) {
+        return new Promise((resolve, reject) => {
+            const now = Math.floor(Date.now() / 1000);
+            const query = 'UPDATE sessions SET session_type = ?, updated_at = ? WHERE id = ?';
+            this.db.run(query, [type, now, id], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve({ changes: this.changes });
+                }
+            });
+        });
+    }
+
+    async touchSession(id) {
+        return new Promise((resolve, reject) => {
+            const now = Math.floor(Date.now() / 1000);
+            const query = 'UPDATE sessions SET updated_at = ? WHERE id = ?';
+            this.db.run(query, [now, id], function(err) {
+                if (err) reject(err);
+                else resolve({ changes: this.changes });
+            });
+        });
+    }
+
+    async createSession(uid, type = 'ask') {
         return new Promise((resolve, reject) => {
             const sessionId = require('crypto').randomUUID();
             const now = Math.floor(Date.now() / 1000);
-            const query = `INSERT INTO sessions (id, uid, title, started_at, updated_at) VALUES (?, ?, ?, ?, ?)`;
+            const query = `INSERT INTO sessions (id, uid, title, session_type, started_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`;
             
-            this.db.run(query, [sessionId, uid, `Session @ ${new Date().toLocaleTimeString()}`, now, now], function(err) {
+            this.db.run(query, [sessionId, uid, `Session @ ${new Date().toLocaleTimeString()}`, type, now, now], function(err) {
                 if (err) {
                     console.error('SQLite: Failed to create session:', err);
                     reject(err);
                 } else {
-                    console.log(`SQLite: Created session ${sessionId} for user ${uid}`);
+                    console.log(`SQLite: Created session ${sessionId} for user ${uid} (type: ${type})`);
                     resolve(sessionId);
                 }
             });
@@ -275,6 +345,7 @@ class SQLiteClient {
 
     async addTranscript({ sessionId, speaker, text }) {
         return new Promise((resolve, reject) => {
+            this.touchSession(sessionId).catch(err => console.error("Failed to touch session", err));
             const transcriptId = require('crypto').randomUUID();
             const now = Math.floor(Date.now() / 1000);
             const query = `INSERT INTO transcripts (id, session_id, start_at, speaker, text, created_at) VALUES (?, ?, ?, ?, ?, ?)`;
@@ -287,6 +358,7 @@ class SQLiteClient {
 
     async addAiMessage({ sessionId, role, content, model = 'gpt-4.1' }) {
          return new Promise((resolve, reject) => {
+            this.touchSession(sessionId).catch(err => console.error("Failed to touch session", err));
             const messageId = require('crypto').randomUUID();
             const now = Math.floor(Date.now() / 1000);
             const query = `INSERT INTO ai_messages (id, session_id, sent_at, role, content, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`;
@@ -299,6 +371,7 @@ class SQLiteClient {
 
     async saveSummary({ sessionId, tldr, text, bullet_json, action_json, model = 'gpt-4.1' }) {
         return new Promise((resolve, reject) => {
+            this.touchSession(sessionId).catch(err => console.error("Failed to touch session", err));
             const now = Math.floor(Date.now() / 1000);
             const query = `
                 INSERT INTO summaries (session_id, generated_at, model, text, tldr, bullet_json, action_json, updated_at) 
@@ -319,6 +392,35 @@ class SQLiteClient {
         });
     }
 
+    async runMigrations() {
+        return new Promise((resolve, reject) => {
+            console.log('[DB Migration] Checking schema for `sessions` table...');
+            this.db.all("PRAGMA table_info(sessions)", (err, columns) => {
+                if (err) {
+                    console.error('[DB Migration] Error checking sessions table schema:', err);
+                    return reject(err);
+                }
+
+                const hasSessionTypeCol = columns.some(col => col.name === 'session_type');
+
+                if (!hasSessionTypeCol) {
+                    console.log('[DB Migration] `session_type` column missing. Altering table...');
+                    this.db.run("ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT 'ask'", (alterErr) => {
+                        if (alterErr) {
+                            console.error('[DB Migration] Failed to add `session_type` column:', alterErr);
+                            return reject(alterErr);
+                        }
+                        console.log('[DB Migration] `sessions` table updated successfully.');
+                        resolve();
+                    });
+                } else {
+                    console.log('[DB Migration] Schema is up to date.');
+                    resolve();
+                }
+            });
+        });
+    }
+
     close() {
         if (this.db) {
             this.db.close((err) => {
@@ -330,6 +432,34 @@ class SQLiteClient {
             });
             this.db = null;
         }
+    }
+
+    async query(sql, params = []) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                return reject(new Error('Database not connected'));
+            }
+
+            if (sql.toUpperCase().startsWith('SELECT')) {
+                this.db.all(sql, params, (err, rows) => {
+                    if (err) {
+                        console.error('Query error:', err);
+                        reject(err);
+                    } else {
+                        resolve(rows);
+                    }
+                });
+            } else {
+                this.db.run(sql, params, function(err) {
+                    if (err) {
+                        console.error('Query error:', err);
+                        reject(err);
+                    } else {
+                        resolve({ changes: this.changes, lastID: this.lastID });
+                    }
+                });
+            }
+        });
     }
 }
 

@@ -270,7 +270,17 @@ export class CustomizeView extends LitElement {
         super();
 
         this.selectedProfile = localStorage.getItem('selectedProfile') || 'school';
-        this.selectedLanguage = localStorage.getItem('selectedLanguage') || 'en-US';
+        
+        // Language format migration for legacy users
+        let lang = localStorage.getItem('selectedLanguage') || 'en';
+        if (lang.includes('-')) {
+            const newLang = lang.split('-')[0];
+            console.warn(`[Migration] Correcting language format from "${lang}" to "${newLang}".`);
+            localStorage.setItem('selectedLanguage', newLang);
+            lang = newLang;
+        }
+        this.selectedLanguage = lang;
+
         this.selectedScreenshotInterval = localStorage.getItem('selectedScreenshotInterval') || '5000';
         this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || '0.8';
         this.layoutMode = localStorage.getItem('layoutMode') || 'stacked';
@@ -428,36 +438,31 @@ export class CustomizeView extends LitElement {
 
     getLanguages() {
         return [
-            { value: 'en-US', name: 'English (US)' },
-            { value: 'en-GB', name: 'English (UK)' },
-            { value: 'en-AU', name: 'English (Australia)' },
-            { value: 'en-IN', name: 'English (India)' },
-            { value: 'de-DE', name: 'German (Germany)' },
-            { value: 'es-US', name: 'Spanish (United States)' },
-            { value: 'es-ES', name: 'Spanish (Spain)' },
-            { value: 'fr-FR', name: 'French (France)' },
-            { value: 'fr-CA', name: 'French (Canada)' },
-            { value: 'hi-IN', name: 'Hindi (India)' },
-            { value: 'pt-BR', name: 'Portuguese (Brazil)' },
-            { value: 'ar-XA', name: 'Arabic (Generic)' },
-            { value: 'id-ID', name: 'Indonesian (Indonesia)' },
-            { value: 'it-IT', name: 'Italian (Italy)' },
-            { value: 'ja-JP', name: 'Japanese (Japan)' },
-            { value: 'tr-TR', name: 'Turkish (Turkey)' },
-            { value: 'vi-VN', name: 'Vietnamese (Vietnam)' },
-            { value: 'bn-IN', name: 'Bengali (India)' },
-            { value: 'gu-IN', name: 'Gujarati (India)' },
-            { value: 'kn-IN', name: 'Kannada (India)' },
-            { value: 'ml-IN', name: 'Malayalam (India)' },
-            { value: 'mr-IN', name: 'Marathi (India)' },
-            { value: 'ta-IN', name: 'Tamil (India)' },
-            { value: 'te-IN', name: 'Telugu (India)' },
-            { value: 'nl-NL', name: 'Dutch (Netherlands)' },
-            { value: 'ko-KR', name: 'Korean (South Korea)' },
-            { value: 'cmn-CN', name: 'Mandarin Chinese (China)' },
-            { value: 'pl-PL', name: 'Polish (Poland)' },
-            { value: 'ru-RU', name: 'Russian (Russia)' },
-            { value: 'th-TH', name: 'Thai (Thailand)' },
+            { value: 'en', name: 'English' },
+            { value: 'de', name: 'German' },
+            { value: 'es', name: 'Spanish' },
+            { value: 'fr', name: 'French' },
+            { value: 'hi', name: 'Hindi' },
+            { value: 'pt', name: 'Portuguese' },
+            { value: 'ar', name: 'Arabic' },
+            { value: 'id', name: 'Indonesian' },
+            { value: 'it', name: 'Italian' },
+            { value: 'ja', name: 'Japanese' },
+            { value: 'tr', name: 'Turkish' },
+            { value: 'vi', name: 'Vietnamese' },
+            { value: 'bn', name: 'Bengali' },
+            { value: 'gu', name: 'Gujarati' },
+            { value: 'kn', name: 'Kannada' },
+            { value: 'ml', name: 'Malayalam' },
+            { value: 'mr', name: 'Marathi' },
+            { value: 'ta', name: 'Tamil' },
+            { value: 'te', name: 'Telugu' },
+            { value: 'nl', name: 'Dutch' },
+            { value: 'ko', name: 'Korean' },
+            { value: 'zh', name: 'Chinese' },
+            { value: 'pl', name: 'Polish' },
+            { value: 'ru', name: 'Russian' },
+            { value: 'th', name: 'Thai' },
         ];
     }
 

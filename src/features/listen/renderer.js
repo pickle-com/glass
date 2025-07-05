@@ -1,5 +1,6 @@
 // renderer.js
 const { ipcRenderer } = require('electron');
+const { makeStreamingChatCompletionWithPortkey } = require('../../common/services/aiProviderService.js');
 
 let mediaStream = null;
 let screenshotInterval = null;
@@ -229,7 +230,7 @@ class SimpleAEC {
         this.sampleRate = 24000;
         this.delaySamples = Math.floor((this.echoDelay / 1000) * this.sampleRate);
 
-        this.echoGain = 0.9;
+        this.echoGain = 0.5;
         this.noiseFloor = 0.01;
 
         // 🔧 Adaptive-gain parameters (User-tuned, very aggressive)
@@ -998,39 +999,21 @@ async function sendMessage(userPrompt, options = {}) {
         }
 
         const { isLoggedIn } = await queryLoginState();
-        const keyType = isLoggedIn ? 'vKey' : 'apiKey';
+        const provider = await ipcRenderer.invoke('get-ai-provider');
+        const usePortkey = isLoggedIn && provider === 'openai';
 
-        console.log('🚀 Sending request to OpenAI...');
-        const { url, headers } =
-            keyType === 'apiKey'
-                ? {
-                      url: 'https://api.openai.com/v1/chat/completions',
-                      headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-                  }
-                : {
-                      url: 'https://api.portkey.ai/v1/chat/completions',
-                      headers: {
-                          'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                          'x-portkey-virtual-key': API_KEY,
-                          'Content-Type': 'application/json',
-                      },
-                  };
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-            }),
+        console.log(`🚀 Sending request to ${provider} AI...`);
+        
+        const response = await makeStreamingChatCompletionWithPortkey({
+            apiKey: API_KEY,
+            provider: provider,
+            messages: messages,
+            temperature: 0.7,
+            maxTokens: 2048,
+            model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
+            usePortkey: usePortkey,
+            portkeyVirtualKey: usePortkey ? API_KEY : null
         });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
 
         // --- 스트리밍 응답 처리 ---
         const reader = response.body.getReader();
@@ -1052,6 +1035,18 @@ async function sendMessage(userPrompt, options = {}) {
                         if (window.require) {
                             const { ipcRenderer } = window.require('electron');
                             ipcRenderer.send('ask-response-stream-end');
+
+                            // Save the full conversation to DB
+                            ipcRenderer.invoke('save-ask-message', {
+                                userPrompt: userPrompt.trim(),
+                                aiResponse: fullResponse
+                            }).then(result => {
+                                if (result.success) {
+                                    console.log('Ask/answer pair saved successfully.');
+                                } else {
+                                    console.error('Failed to save ask/answer pair:', result.error);
+                                }
+                            });
                         }
                         return { success: true, response: fullResponse };
                     }
@@ -1096,26 +1091,6 @@ async function initConversationStorage() {
     }
 }
 
-async function saveConversationSession(sessionId, conversationHistory) {
-    try {
-        if (!apiClient) {
-            throw new Error('API client not available');
-        }
-
-        const response = await apiClient.client.post('/api/conversations', {
-            sessionId,
-            conversationHistory,
-            userId: apiClient.userId,
-        });
-
-        console.log('대화 세션 저장 완료:', sessionId);
-        return response.data;
-    } catch (error) {
-        console.error('대화 세션 저장 실패:', error);
-        throw error;
-    }
-}
-
 async function getConversationSession(sessionId) {
     try {
         if (!apiClient) {
@@ -1143,27 +1118,6 @@ async function getAllConversationSessions() {
         throw error;
     }
 }
-
-// Listen for conversation data from main process
-ipcRenderer.on('save-conversation-turn', async (event, data) => {
-    try {
-        await saveConversationSession(data.sessionId, data.fullHistory);
-        console.log('Conversation session saved:', data.sessionId);
-    } catch (error) {
-        console.error('Error saving conversation session:', error);
-    }
-});
-
-// Listen for session save request from main process
-ipcRenderer.on('save-conversation-session', async (event, data) => {
-    try {
-        console.log(`📥 Received conversation session save request: ${data.sessionId}`);
-        await saveConversationSession(data.sessionId, data.conversationHistory);
-        console.log(`✅ Conversation session saved successfully: ${data.sessionId}`);
-    } catch (error) {
-        console.error('❌ Error saving conversation session:', error);
-    }
-});
 
 // Initialize conversation storage when renderer loads
 initConversationStorage().catch(console.error);

@@ -90,6 +90,11 @@ function createFeatureWindows(header) {
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
     ask.on('blur',()=>ask.webContents.send('window-blur'));
+    
+    // Open DevTools in development
+    if (!app.isPackaged) {
+        ask.webContents.openDevTools({ mode: 'detach' });
+    }
     windowPool.set('ask', ask);
 
     // settings
@@ -102,6 +107,10 @@ function createFeatureWindows(header) {
 }
 
 function destroyFeatureWindows() {
+    if (settingsHideTimer) {
+        clearTimeout(settingsHideTimer);
+        settingsHideTimer = null;
+    }
     featureWindows.forEach(name=>{
         const win = windowPool.get(name);
         if (win && !win.isDestroyed()) win.destroy();
@@ -970,6 +979,11 @@ function createWindows() {
     header.setContentProtection(isContentProtectionOn);
     header.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     header.loadFile(path.join(__dirname, '../app/header.html'));
+    
+    // Open DevTools in development
+    if (!app.isPackaged) {
+        header.webContents.openDevTools({ mode: 'detach' });
+    }
 
     header.on('focus', () => {
         console.log('[WindowManager] Header gained focus');
@@ -1318,8 +1332,12 @@ function setupIpcHandlers(openaiSessionRef) {
                     clearTimeout(settingsHideTimer);
                 }
                 settingsHideTimer = setTimeout(() => {
-                    window.setAlwaysOnTop(false);
-                    window.hide();
+                    // window.setAlwaysOnTop(false);
+                    // window.hide();
+                    if (window && !window.isDestroyed()) {
+                        window.setAlwaysOnTop(false);
+                        window.hide();
+                    }
                     settingsHideTimer = null;
                 }, 200);
             } else {
@@ -1799,23 +1817,23 @@ function setupIpcHandlers(openaiSessionRef) {
 
     ipcMain.handle('firebase-logout', () => {
         console.log('[WindowManager] Received request to log out.');
-        // setApiKey(null)
-        //     .then(() => {
-        //         console.log('[WindowManager] API key cleared successfully after logout');
-        //         windowPool.forEach(win => {
-        //             if (win && !win.isDestroyed()) {
-        //                 win.webContents.send('api-key-removed');
-        //             }
-        //         });
-        //     })
-        //     .catch(err => {
-        //         console.error('[WindowManager] setApiKey error:', err);
-        //         windowPool.forEach(win => {
-        //             if (win && !win.isDestroyed()) {
-        //                 win.webContents.send('api-key-removed');
-        //             }
-        //         });
-        //     });
+        setApiKey(null)
+            .then(() => {
+                console.log('[WindowManager] API key cleared successfully after logout');
+                windowPool.forEach(win => {
+                    if (win && !win.isDestroyed()) {
+                        win.webContents.send('api-key-removed');
+                    }
+                });
+            })
+            .catch(err => {
+                console.error('[WindowManager] setApiKey error:', err);
+                windowPool.forEach(win => {
+                    if (win && !win.isDestroyed()) {
+                        win.webContents.send('api-key-removed');
+                    }
+                });
+            });
 
         const header = windowPool.get('header');
         if (header && !header.isDestroyed()) {
@@ -1823,24 +1841,164 @@ function setupIpcHandlers(openaiSessionRef) {
             header.webContents.send('request-firebase-logout');
         }
     });
+
+    ipcMain.handle('check-system-permissions', async () => {
+        const { systemPreferences } = require('electron');
+        const permissions = {
+            microphone: 'unknown',
+            screen: 'unknown',
+            needsSetup: true
+        };
+
+        try {
+            if (process.platform === 'darwin') {
+                // Check microphone permission on macOS
+                const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+                console.log('[Permissions] Microphone status:', micStatus);
+                permissions.microphone = micStatus;
+
+                // Check screen recording permission using the system API
+                const screenStatus = systemPreferences.getMediaAccessStatus('screen');
+                console.log('[Permissions] Screen status:', screenStatus);
+                permissions.screen = screenStatus;
+
+                permissions.needsSetup = micStatus !== 'granted' || screenStatus !== 'granted';
+            } else {
+                permissions.microphone = 'granted';
+                permissions.screen = 'granted';
+                permissions.needsSetup = false;
+            }
+
+            console.log('[Permissions] System permissions status:', permissions);
+            return permissions;
+        } catch (error) {
+            console.error('[Permissions] Error checking permissions:', error);
+            return {
+                microphone: 'unknown',
+                screen: 'unknown',
+                needsSetup: true,
+                error: error.message
+            };
+        }
+    });
+
+    ipcMain.handle('request-microphone-permission', async () => {
+        if (process.platform !== 'darwin') {
+            return { success: true };
+        }
+
+        const { systemPreferences } = require('electron');
+        try {
+            const status = systemPreferences.getMediaAccessStatus('microphone');
+            console.log('[Permissions] Microphone status:', status);
+            if (status === 'granted') {
+                return { success: true, status: 'granted' };
+            }
+
+            // Req mic permission
+            const granted = await systemPreferences.askForMediaAccess('microphone');
+            return { 
+                success: granted,
+                status: granted ? 'granted' : 'denied'
+            };
+        } catch (error) {
+            console.error('[Permissions] Error requesting microphone permission:', error);
+            return { 
+                success: false, 
+                error: error.message 
+            };
+        }
+    });
+
+    ipcMain.handle('open-system-preferences', async (event, section) => {
+        if (process.platform !== 'darwin') {
+            return { success: false, error: 'Not supported on this platform' };
+        }
+
+        try {
+            if (section === 'screen-recording') {
+                // First trigger screen capture request to register the app in system preferences
+                try {
+                    console.log('[Permissions] Triggering screen capture request to register app...');
+                    await desktopCapturer.getSources({ 
+                        types: ['screen'], 
+                        thumbnailSize: { width: 1, height: 1 } 
+                    });
+                    console.log('[Permissions] App registered for screen recording');
+                } catch (captureError) {
+                    console.log('[Permissions] Screen capture request triggered (expected to fail):', captureError.message);
+                }
+                
+                // Then open system preferences
+                // await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+            }
+            // if (section === 'microphone') {
+            //     await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+            // }
+            return { success: true };
+        } catch (error) {
+            console.error('[Permissions] Error opening system preferences:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('mark-permissions-completed', async () => {
+        try {
+            // Store in SQLite that permissions have been completed
+            await sqliteClient.query(
+                'INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)',
+                ['permissions_completed', 'true']
+            );
+            console.log('[Permissions] Marked permissions as completed');
+            return { success: true };
+        } catch (error) {
+            console.error('[Permissions] Error marking permissions as completed:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('check-permissions-completed', async () => {
+        try {
+            const result = await sqliteClient.query(
+                'SELECT value FROM system_settings WHERE key = ?',
+                ['permissions_completed']
+            );
+            const completed = result.length > 0 && result[0].value === 'true';
+            console.log('[Permissions] Permissions completed status:', completed);
+            return completed;
+        } catch (error) {
+            console.error('[Permissions] Error checking permissions completed status:', error);
+            return false;
+        }
+    });
 }
 
-let storedApiKey = null;
 
-async function setApiKey(apiKey) {
+
+let storedApiKey = null;
+let storedProvider = 'openai';
+
+async function setApiKey(apiKey, provider = 'openai') {
     storedApiKey = apiKey;
-    console.log('[WindowManager] API key stored (and will be persisted to DB)');
+    storedProvider = provider;
+    console.log('[WindowManager] API key and provider stored (and will be persisted to DB)');
 
     try {
-        await sqliteClient.saveApiKey(apiKey);
-        console.log('[WindowManager] API key saved to SQLite');
+        await sqliteClient.saveApiKey(apiKey, sqliteClient.defaultUserId, provider);
+        console.log('[WindowManager] API key and provider saved to SQLite');
     } catch (err) {
         console.error('[WindowManager] Failed to save API key to SQLite:', err);
     }
 
     windowPool.forEach(win => {
         if (win && !win.isDestroyed()) {
-            const js = apiKey ? `localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});` : `localStorage.removeItem('openai_api_key');`;
+            const js = apiKey ? `
+                localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});
+                localStorage.setItem('ai_provider', ${JSON.stringify(provider)});
+            ` : `
+                localStorage.removeItem('openai_api_key');
+                localStorage.removeItem('ai_provider');
+            `;
             win.webContents.executeJavaScript(js).catch(() => {});
         }
     });
@@ -1850,7 +2008,9 @@ async function loadApiKeyFromDb() {
     try {
         const user = await sqliteClient.getUser(sqliteClient.defaultUserId);
         if (user && user.api_key) {
-            console.log('[WindowManager] API key loaded from SQLite for default user.');
+            console.log('[WindowManager] API key and provider loaded from SQLite for default user.');
+            storedApiKey = user.api_key;
+            storedProvider = user.provider || 'openai';
             return user.api_key;
         }
         return null;
@@ -1877,6 +2037,10 @@ function getStoredApiKey() {
     return storedApiKey;
 }
 
+function getStoredProvider() {
+    return storedProvider || 'openai';
+}
+
 function setupApiKeyIPC() {
     const { ipcMain } = require('electron');
 
@@ -1884,19 +2048,24 @@ function setupApiKeyIPC() {
         if (storedApiKey === null) {
             const dbKey = await loadApiKeyFromDb();
             if (dbKey) {
-                await setApiKey(dbKey);
+                await setApiKey(dbKey, storedProvider);
             }
         }
         return storedApiKey;
     });
 
-    ipcMain.handle('api-key-validated', async (event, apiKey) => {
+    ipcMain.handle('api-key-validated', async (event, data) => {
         console.log('[WindowManager] API key validation completed, saving...');
-        await setApiKey(apiKey);
+        
+        // Support both old format (string) and new format (object)
+        const apiKey = typeof data === 'string' ? data : data.apiKey;
+        const provider = typeof data === 'string' ? 'openai' : (data.provider || 'openai');
+        
+        await setApiKey(apiKey, provider);
 
         windowPool.forEach((win, name) => {
             if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-validated', apiKey);
+                win.webContents.send('api-key-validated', { apiKey, provider });
             }
         });
 
@@ -1926,10 +2095,15 @@ function setupApiKeyIPC() {
         if (storedApiKey === null) {
             const dbKey = await loadApiKeyFromDb();
             if (dbKey) {
-                await setApiKey(dbKey);
+                await setApiKey(dbKey, storedProvider);
             }
         }
         return storedApiKey;
+    });
+    
+    ipcMain.handle('get-ai-provider', async () => {
+        console.log('[WindowManager] AI provider requested from renderer');
+        return storedProvider || 'openai';
     });
 
     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
@@ -2383,6 +2557,7 @@ module.exports = {
     fixedYPosition,
     setApiKey,
     getStoredApiKey,
+    getStoredProvider,
     clearApiKey,
     getCurrentFirebaseUser,
     isFirebaseLoggedIn,

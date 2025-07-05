@@ -24,6 +24,7 @@ export interface Session {
   id: string;
   uid: string;
   title: string;
+  session_type: string;
   started_at: number;
   ended_at?: number;
   sync_state: 'clean' | 'dirty';
@@ -102,6 +103,7 @@ const convertFirestoreSession = (session: { id: string } & FirestoreSession, uid
     id: session.id,
     uid,
     title: session.title,
+    session_type: session.session_type,
     started_at: timestampToUnix(session.startedAt),
     ended_at: session.endedAt ? timestampToUnix(session.endedAt) : undefined,
     sync_state: 'clean',
@@ -402,6 +404,7 @@ export const createSession = async (title?: string): Promise<{ id: string }> => 
     const uid = firebaseAuth.currentUser!.uid;
     const sessionId = await FirestoreSessionService.createSession(uid, {
       title: title || 'New Session',
+      session_type: 'ask',
       endedAt: undefined
     });
     return { id: sessionId };
@@ -557,7 +560,10 @@ export const updatePreset = async (id: string, data: { title: string, prompt: st
         method: 'PUT',
         body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to update preset');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update preset: ${response.status} ${errorText}`);
+    }
   }
 };
 

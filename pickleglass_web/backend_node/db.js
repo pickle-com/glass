@@ -7,78 +7,8 @@ const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
 
-db.exec(`
--- users
-CREATE TABLE IF NOT EXISTS users (
-  uid           TEXT PRIMARY KEY,
-  display_name  TEXT NOT NULL,
-  email         TEXT NOT NULL,
-  created_at    INTEGER,
-  api_key       TEXT
-);
-
--- sessions
-CREATE TABLE IF NOT EXISTS sessions (
-  id            TEXT PRIMARY KEY, 
-  uid           TEXT NOT NULL,
-  title         TEXT,
-  started_at    INTEGER,
-  ended_at      INTEGER,
-  sync_state    TEXT DEFAULT 'clean',
-  updated_at    INTEGER
-);
-
--- transcripts
-CREATE TABLE IF NOT EXISTS transcripts (
-  id            TEXT PRIMARY KEY,
-  session_id    TEXT NOT NULL,
-  start_at      INTEGER,
-  end_at        INTEGER,
-  speaker       TEXT,
-  text          TEXT,
-  lang          TEXT,
-  created_at    INTEGER,
-  sync_state    TEXT DEFAULT 'clean'
-);
-
--- ai_messages
-CREATE TABLE IF NOT EXISTS ai_messages (
-  id            TEXT PRIMARY KEY,
-  session_id    TEXT NOT NULL,
-  sent_at       INTEGER,
-  role          TEXT,
-  content       TEXT,
-  tokens        INTEGER,
-  model         TEXT,
-  created_at    INTEGER,
-  sync_state    TEXT DEFAULT 'clean'
-);
-
--- summaries
-CREATE TABLE IF NOT EXISTS summaries (
-  session_id    TEXT PRIMARY KEY,
-  generated_at  INTEGER,
-  model         TEXT,
-  text          TEXT,
-  tldr          TEXT,
-  bullet_json   TEXT,
-  action_json   TEXT,
-  tokens_used   INTEGER,
-  updated_at    INTEGER,
-  sync_state    TEXT DEFAULT 'clean'
-);
-
--- prompt_presets
-CREATE TABLE IF NOT EXISTS prompt_presets (
-  id            TEXT PRIMARY KEY,
-  uid           TEXT NOT NULL,
-  title         TEXT NOT NULL,
-  prompt        TEXT NOT NULL,
-  is_default    INTEGER NOT NULL,
-  created_at    INTEGER,
-  sync_state    TEXT DEFAULT 'clean'
-);
-`);
+// The schema is now managed by the main Electron process on startup.
+// This file can assume the schema is correct and up-to-date.
 
 const defaultPresets = [
     ['school', 'School', 'You are a school and lecture assistant. Your goal is to help the user, a student, understand academic material and answer questions.\n\nWhenever a question appears on the user\'s screen or is asked aloud, you provide a direct, step-by-step answer, showing all necessary reasoning or calculations.\n\nIf the user is watching a lecture or working through new material, you offer concise explanations of key concepts and clarify definitions as they come up.', 1],

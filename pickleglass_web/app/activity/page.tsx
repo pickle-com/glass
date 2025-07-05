@@ -7,12 +7,14 @@ import {
   UserProfile,
   Session,
   getSessions,
+  deleteSession,
 } from '@/utils/api'
 
 export default function ActivityPage() {
   const userInfo = useRedirectIfNotAuth() as UserProfile | null;
   const [sessions, setSessions] = useState<Session[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const fetchSessions = async () => {
     try {
@@ -47,6 +49,20 @@ export default function ActivityPage() {
     return 'Good evening'
   }
 
+  const handleDelete = async (sessionId: string) => {
+    if (!window.confirm('Are you sure you want to delete this activity? This cannot be undone.')) return;
+    setDeletingId(sessionId);
+    try {
+      await deleteSession(sessionId);
+      setSessions(sessions => sessions.filter(s => s.id !== sessionId));
+    } catch (error) {
+      alert('Failed to delete activity.');
+      console.error(error);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-8 py-12">
@@ -67,17 +83,28 @@ export default function ActivityPage() {
           ) : sessions.length > 0 ? (
             <div className="space-y-4">
               {sessions.map((session) => (
-                <Link href={`/activity/details?sessionId=${session.id}`} key={session.id} className="block bg-white rounded-lg p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
+                <div key={session.id} className="block bg-white rounded-lg p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className="text-lg font-medium text-gray-900">{session.title || `Conversation - ${new Date(session.started_at * 1000).toLocaleDateString()}`}</h3>
-                    <span className="text-sm text-gray-500">
-                      {new Date(session.started_at * 1000).toLocaleString()}
-                    </span>
+                    <div>
+                      <Link href={`/activity/details?sessionId=${session.id}`} className="text-lg font-medium text-gray-900 hover:underline">
+                        {session.title || `Conversation - ${new Date(session.started_at * 1000).toLocaleDateString()}`}
+                      </Link>
+                      <div className="text-sm text-gray-500">
+                        {new Date(session.started_at * 1000).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDelete(session.id)}
+                      disabled={deletingId === session.id}
+                      className={`ml-4 px-3 py-1 rounded text-xs font-medium border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors ${deletingId === session.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {deletingId === session.id ? 'Deleting...' : 'Delete'}
+                    </button>
                   </div>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      Conversation
-                    </span>
-                    </Link>
+                  <span className={`capitalize inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${session.session_type === 'listen' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                    {session.session_type || 'ask'}
+                  </span>
+                </div>
               ))}
             </div>
           ) : (

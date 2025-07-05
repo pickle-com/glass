@@ -54,13 +54,11 @@ class DatabaseInitializer {
 
             await sqliteClient.connect(this.dbPath); // DB 경로를 인자로 전달
             
-            // 연결 후 테이블 및 기본 데이터 초기화
+            // This single call will now synchronize the schema and then init default data.
             await sqliteClient.initTables();
-            const user = await sqliteClient.getUser(sqliteClient.defaultUserId);
-            if (!user) {
-                await sqliteClient.initDefaultData();
-                console.log('[DB] Default data initialized.');
-            }
+
+            // Clean up any orphaned sessions from previous versions
+            await sqliteClient.cleanupEmptySessions();
 
             this.isInitialized = true;
             console.log('[DB] Database initialized successfully');
@@ -140,6 +138,10 @@ class DatabaseInitializer {
         console.log('[DatabaseInitializer] Validating database integrity...');
         try {
             console.log('[DatabaseInitializer] Validating database integrity...');
+
+            // The synchronizeSchema function handles table and column creation now.
+            // We just need to ensure default data is present.
+            await sqliteClient.synchronizeSchema();
 
             const defaultUser =  await sqliteClient.getUser(sqliteClient.defaultUserId);
             if (!defaultUser) {

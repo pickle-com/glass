@@ -10,25 +10,25 @@ export class AppHeader extends LitElement {
             display: block;
             transform: translate3d(0, 0, 0);
             backface-visibility: hidden;
-            transition: transform 0.25s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.25s ease-out;
+            transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.2s ease-out;
+            will-change: transform, opacity;
         }
 
         :host(.hiding) {
-            animation: slideUp 0.45s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.6, 1) forwards;
         }
 
         :host(.showing) {
-            animation: slideDown 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+            animation: slideDown 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
 
         :host(.sliding-in) {
-            animation: fadeIn 0.25s ease-out forwards;
-            will-change: opacity;
+            animation: fadeIn 0.2s ease-out forwards;
         }
 
         :host(.hidden) {
             opacity: 0;
-            transform: translateY(-180%) scale(0.8);
+            transform: translateY(-150%) scale(0.85);
             pointer-events: none;
         }
 
@@ -36,65 +36,50 @@ export class AppHeader extends LitElement {
             0% {
                 opacity: 1;
                 transform: translateY(0) scale(1);
-                filter: blur(0px) brightness(1);
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                filter: blur(0px);
             }
-            25% {
-                opacity: 0.85;
-                transform: translateY(-20%) scale(0.96);
-                filter: blur(0px) brightness(0.95);
-                box-shadow: 0 6px 28px rgba(0, 0, 0, 0.25);
+            30% {
+                opacity: 0.7;
+                transform: translateY(-20%) scale(0.98);
+                filter: blur(0.5px);
             }
-            50% {
-                opacity: 0.5;
-                transform: translateY(-60%) scale(0.9);
-                filter: blur(1px) brightness(0.85);
-                box-shadow: 0 3px 15px rgba(0, 0, 0, 0.15);
-            }
-            75% {
-                opacity: 0.15;
-                transform: translateY(-120%) scale(0.85);
-                filter: blur(2px) brightness(0.75);
-                box-shadow: 0 1px 8px rgba(0, 0, 0, 0.08);
+            70% {
+                opacity: 0.3;
+                transform: translateY(-80%) scale(0.92);
+                filter: blur(1.5px);
             }
             100% {
                 opacity: 0;
-                transform: translateY(-180%) scale(0.8);
-                filter: blur(3px) brightness(0.7);
-                box-shadow: 0 0px 0px rgba(0, 0, 0, 0);
+                transform: translateY(-150%) scale(0.85);
+                filter: blur(2px);
             }
         }
 
         @keyframes slideDown {
             0% {
                 opacity: 0;
-                transform: translateY(-180%) scale(0.8);
-                filter: blur(3px) brightness(0.7);
-                box-shadow: 0 0px 0px rgba(0, 0, 0, 0);
+                transform: translateY(-150%) scale(0.85);
+                filter: blur(2px);
             }
-            40% {
-                opacity: 0.6;
-                transform: translateY(-30%) scale(0.95);
-                filter: blur(1px) brightness(0.9);
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            30% {
+                opacity: 0.5;
+                transform: translateY(-50%) scale(0.92);
+                filter: blur(1px);
             }
-            70% {
+            65% {
                 opacity: 0.9;
-                transform: translateY(-5%) scale(1.01);
-                filter: blur(0.3px) brightness(1.02);
-                box-shadow: 0 7px 28px rgba(0, 0, 0, 0.28);
+                transform: translateY(-5%) scale(0.99);
+                filter: blur(0.2px);
             }
             85% {
                 opacity: 0.98;
-                transform: translateY(1%) scale(0.995);
-                filter: blur(0.1px) brightness(1.01);
-                box-shadow: 0 8px 30px rgba(0, 0, 0, 0.31);
+                transform: translateY(2%) scale(1.005);
+                filter: blur(0px);
             }
             100% {
                 opacity: 1;
                 transform: translateY(0) scale(1);
-                filter: blur(0px) brightness(1);
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                filter: blur(0px);
             }
         }
 
@@ -318,6 +303,7 @@ export class AppHeader extends LitElement {
         this.hasSlidIn = false;
         this.settingsHideTimer = null;
         this.isSessionActive = false;
+        this.animationEndTimer = null;
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
@@ -388,7 +374,15 @@ export class AppHeader extends LitElement {
     }
 
     toggleVisibility() {
-        if (this.isAnimating) return;
+        if (this.isAnimating) {
+            console.log('[AppHeader] Animation already in progress, ignoring toggle');
+            return;
+        }
+        
+        if (this.animationEndTimer) {
+            clearTimeout(this.animationEndTimer);
+            this.animationEndTimer = null;
+        }
         
         this.isAnimating = true;
         
@@ -403,16 +397,33 @@ export class AppHeader extends LitElement {
         this.classList.remove('showing', 'hidden');
         this.classList.add('hiding');
         this.isVisible = false;
+        
+        this.animationEndTimer = setTimeout(() => {
+            if (this.classList.contains('hiding')) {
+                this.handleAnimationEnd({ target: this });
+            }
+        }, 350);
     }
 
     show() {
         this.classList.remove('hiding', 'hidden');
         this.classList.add('showing');
         this.isVisible = true;
+        
+        this.animationEndTimer = setTimeout(() => {
+            if (this.classList.contains('showing')) {
+                this.handleAnimationEnd({ target: this });
+            }
+        }, 400);
     }
 
     handleAnimationEnd(e) {
         if (e.target !== this) return;
+        
+        if (this.animationEndTimer) {
+            clearTimeout(this.animationEndTimer);
+            this.animationEndTimer = null;
+        }
         
         this.isAnimating = false;
         
@@ -434,7 +445,7 @@ export class AppHeader extends LitElement {
         } else if (this.classList.contains('sliding-in')) {
             this.classList.remove('sliding-in');
             this.hasSlidIn = true;
-            console.log('AppHeader slide-in animation completed');
+            console.log('[AppHeader] Slide-in animation completed');
         }
     }
 
@@ -459,6 +470,11 @@ export class AppHeader extends LitElement {
     disconnectedCallback() {
         super.disconnectedCallback();
         this.removeEventListener('animationend', this.handleAnimationEnd);
+        
+        if (this.animationEndTimer) {
+            clearTimeout(this.animationEndTimer);
+            this.animationEndTimer = null;
+        }
         
         if (window.require) {
             const { ipcRenderer } = window.require('electron');

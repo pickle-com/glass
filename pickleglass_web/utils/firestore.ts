@@ -24,6 +24,7 @@ export interface FirestoreUserProfile {
 
 export interface FirestoreSession {
   title: string;
+  session_type: string;
   startedAt: Timestamp;
   endedAt?: Timestamp;
 }

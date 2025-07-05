@@ -53,7 +53,6 @@ const authCallbackHandler = (request, response) => {
       }
 
       const idToken = request.body.token;
-      logger.info("Received token:", idToken.substring(0, 20) + "...");
 
       const decodedToken = await admin.auth().verifyIdToken(idToken);
       const uid = decodedToken.uid;

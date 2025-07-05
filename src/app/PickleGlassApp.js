@@ -51,7 +51,17 @@ export class PickleGlassApp extends LitElement {
         this.currentView = urlParams.get('view') || 'listen';
         this.currentResponseIndex = -1;
         this.selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
-        this.selectedLanguage = localStorage.getItem('selectedLanguage') || 'en-US';
+        
+        // Language format migration for legacy users
+        let lang = localStorage.getItem('selectedLanguage') || 'en';
+        if (lang.includes('-')) {
+            const newLang = lang.split('-')[0];
+            console.warn(`[Migration] Correcting language format from "${lang}" to "${newLang}".`);
+            localStorage.setItem('selectedLanguage', newLang);
+            lang = newLang;
+        }
+        this.selectedLanguage = lang;
+
         this.selectedScreenshotInterval = localStorage.getItem('selectedScreenshotInterval') || '5';
         this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'medium';
         this._isClickThrough = false;

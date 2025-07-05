@@ -5,6 +5,75 @@ export class AssistantView extends LitElement {
         :host {
             display: block;
             width: 400px;
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+            transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.2s ease-out;
+            will-change: transform, opacity;
+        }
+
+        :host(.hiding) {
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+        }
+
+        :host(.showing) {
+            animation: slideDown 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        :host(.hidden) {
+            opacity: 0;
+            transform: translateY(-150%) scale(0.85);
+            pointer-events: none;
+        }
+
+        @keyframes slideUp {
+            0% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0px);
+            }
+            30% {
+                opacity: 0.7;
+                transform: translateY(-20%) scale(0.98);
+                filter: blur(0.5px);
+            }
+            70% {
+                opacity: 0.3;
+                transform: translateY(-80%) scale(0.92);
+                filter: blur(1.5px);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-150%) scale(0.85);
+                filter: blur(2px);
+            }
+        }
+
+        @keyframes slideDown {
+            0% {
+                opacity: 0;
+                transform: translateY(-150%) scale(0.85);
+                filter: blur(2px);
+            }
+            30% {
+                opacity: 0.5;
+                transform: translateY(-50%) scale(0.92);
+                filter: blur(1px);
+            }
+            65% {
+                opacity: 0.9;
+                transform: translateY(-5%) scale(0.99);
+                filter: blur(0.2px);
+            }
+            85% {
+                opacity: 0.98;
+                transform: translateY(2%) scale(1.005);
+                filter: blur(0px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0px);
+            }
         }
 
         * {

@@ -92,11 +92,22 @@ You can visit [here](https://platform.openai.com/api-keys) to get your OpenAI AP
 
 We love contributions! Feel free to open issues for bugs or feature requests.
 
+## 🛠 Current Issues & Improvements
+
+| Status | Issue                          | Description                                       |
+|--------|--------------------------------|---------------------------------------------------|
+| 🚧 WIP     | AEC Improvement                | Transcription is not working occasionally |
+| 🚧 WIP     | Code Refactoring               | Refactoring the entire codebase for better maintainability. |
+| 🚧 WIP      | Firebase Data Storage Issue    | Session & ask should be saved in firebase for signup users |
+| 🚧 WIP      | Login Issue                    | Currently breaking when switching between local and sign-in mode |
+| 🚧 WIP      | Liquid Glass                    | Liquid Glass UI for MacOS 26 |
+| 🚧 WIP      | Permission Issue           | Mic & system audio & display capture permission sometimes not working|
+
+
+
 ## About Pickle
 
 **Our mission is to build a living digital clone for everyone.** Glass is part of Step 1—a trusted pipeline that transforms your daily data into a scalable clone. Visit [pickle.com](https://pickle.com) to learn more.
 
 ## Star History
-
-<img src="./public/assets/star-history-202574.png">
-
+[![Star History Chart](https://api.star-history.com/svg?repos=pickle-com/glass&type=Date)](https://www.star-history.com/#pickle-com/glass&Date)

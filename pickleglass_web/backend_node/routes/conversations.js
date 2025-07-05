@@ -8,7 +8,7 @@ router.get('/', (req, res) => {
     try {
         // Only return sessions that have transcripts or AI messages (filter out empty sessions)
         const sessions = db.prepare(`
-            SELECT DISTINCT s.id, s.uid, s.title, s.started_at, s.ended_at, s.sync_state, s.updated_at 
+            SELECT DISTINCT s.id, s.uid, s.title, s.session_type, s.started_at, s.ended_at, s.sync_state, s.updated_at 
             FROM sessions s 
             WHERE s.uid = ? 
             AND (

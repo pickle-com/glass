@@ -1,7 +1,7 @@
 {
     "name": "pickle-glass",
     "productName": "Glass",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "Cl*ely for Free",
     "main": "src/index.js",
     "scripts": {
@@ -29,6 +29,8 @@
     },
     "license": "GPL-3.0",
     "dependencies": {
+        "@google/genai": "^1.8.0",
+        "@google/generative-ai": "^0.24.1",
         "axios": "^1.10.0",
         "better-sqlite3": "^9.4.3",
         "cors": "^2.8.5",
@@ -65,5 +67,9 @@
         "electron-builder": "^26.0.12",
         "electron-reloader": "^1.2.3",
         "esbuild": "^0.25.5"
+    },
+    "optionalDependencies": {
+        "@img/sharp-darwin-x64": "^0.34.2",
+        "@img/sharp-libvips-darwin-x64": "^1.1.0"
     }
 }

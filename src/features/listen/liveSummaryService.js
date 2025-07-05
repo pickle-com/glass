@@ -3,11 +3,13 @@ const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { saveDebugAudio } = require('./audioUtils.js');
 const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
+const { connectToGeminiSession } = require('../../common/services/googleGeminiClient.js');
 const { connectToOpenAiSession, createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../../common/services/openAiClient.js');
+const { makeChatCompletionWithPortkey } = require('../../common/services/aiProviderService.js');
 const sqliteClient = require('../../common/services/sqliteClient');
 const dataService = require('../../common/services/dataService');
 
-const { isFirebaseLoggedIn, getCurrentFirebaseUser } = require('../../electron/windowManager.js');
+const { isFirebaseLoggedIn, getCurrentFirebaseUser, getStoredProvider } = require('../../electron/windowManager.js');
 
 function getApiKey() {
     const { getStoredApiKey } = require('../../electron/windowManager.js');
@@ -28,6 +30,18 @@ function getApiKey() {
     return null;
 }
 
+async function getAiProvider() {
+    try {
+        const { ipcRenderer } = require('electron');
+        const provider = await ipcRenderer.invoke('get-ai-provider');
+        return provider || 'openai';
+    } catch (error) {
+        // If we're in the main process, get it directly
+        const { getStoredProvider } = require('../../electron/windowManager.js');
+        return getStoredProvider ? getStoredProvider() : 'openai';
+    }
+}
+
 let currentSessionId = null;
 let conversationHistory = [];
 let isInitializingSession = false;
@@ -42,6 +56,8 @@ let theirLastPartialText = '';
 let myInactivityTimer = null;
 let theirInactivityTimer = null;
 const INACTIVITY_TIMEOUT = 3000;
+
+const SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60; // 30 minutes
 
 let previousAnalysisResult = null;
 let analysisHistory = [];
@@ -206,43 +222,37 @@ Keep all points concise and build upon previous analysis if provided.`,
         if (!API_KEY) {
             throw new Error('No API key available');
         }
+        
+        const provider = getStoredProvider ? getStoredProvider() : 'openai';
         const loggedIn = isFirebaseLoggedIn(); // true ➜ vKey, false ➜ apiKey
-        const keyType = loggedIn ? 'vKey' : 'apiKey';
-        console.log(`[LiveSummary] keyType: ${keyType}`);
+        const usePortkey = loggedIn && provider === 'openai'; // Only use Portkey for OpenAI with Firebase
+        
+        console.log(`[LiveSummary] provider: ${provider}, usePortkey: ${usePortkey}`);
 
-        const fetchUrl = keyType === 'apiKey' ? 'https://api.openai.com/v1/chat/completions' : 'https://api.portkey.ai/v1/chat/completions';
-
-        const headers =
-            keyType === 'apiKey'
-                ? {
-                      Authorization: `Bearer ${API_KEY}`,
-                      'Content-Type': 'application/json',
-                  }
-                : {
-                      'x-portkey-api-key': 'gRv2UGRMq6GGLJ8aVEB4e7adIewu',
-                      'x-portkey-virtual-key': API_KEY,
-                      'Content-Type': 'application/json',
-                  };
-
-        const response = await fetch(fetchUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'gpt-4.1',
-                messages,
-                temperature: 0.7,
-                max_tokens: 1024,
-            }),
+        const completion = await makeChatCompletionWithPortkey({
+            apiKey: API_KEY,
+            provider: provider,
+            messages: messages,
+            temperature: 0.7,
+            maxTokens: 1024,
+            model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
+            usePortkey: usePortkey,
+            portkeyVirtualKey: usePortkey ? API_KEY : null
         });
 
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        const responseText = result.choices[0].message.content.trim();
+        const responseText = completion.content;
         console.log(`✅ Analysis response received: ${responseText}`);
         const structuredData = parseResponseText(responseText, previousAnalysisResult);
+
+        if (currentSessionId) {
+            sqliteClient.saveSummary({
+                sessionId: currentSessionId,
+                tldr: structuredData.summary.join('\n'),
+                bullet_json: JSON.stringify(structuredData.topic.bullets),
+                action_json: JSON.stringify(structuredData.actions),
+                model: 'gpt-4.1'
+            }).catch(err => console.error('[DB] Failed to save summary:', err));
+        }
 
         // 분석 결과 저장
         previousAnalysisResult = structuredData;
@@ -445,11 +455,52 @@ function getCurrentSessionData() {
 }
 
 // Conversation management functions
+async function getOrCreateActiveSession(requestedType = 'ask') {
+    // 1. Check for an existing, valid session
+    if (currentSessionId) {
+        const session = await sqliteClient.getSession(currentSessionId);
+
+        if (session && !session.ended_at) {
+            // Ask sessions can expire, Listen sessions can't (they are closed explicitly)
+            const isExpired = session.session_type === 'ask' && 
+                              (Date.now() / 1000) - session.updated_at > SESSION_IDLE_TIMEOUT_SECONDS;
+
+            if (!isExpired) {
+                // Session is valid, potentially promote it
+                if (requestedType === 'listen' && session.session_type === 'ask') {
+                    await sqliteClient.updateSessionType(currentSessionId, 'listen');
+                    console.log(`[Session] Promoted session ${currentSessionId} to 'listen'.`);
+                } else {
+                    await sqliteClient.touchSession(currentSessionId);
+                }
+                return currentSessionId;
+            } else {
+                console.log(`[Session] Ask session ${currentSessionId} expired. Closing it.`);
+                await sqliteClient.endSession(currentSessionId);
+                currentSessionId = null; // Important: clear the expired session ID
+            }
+        }
+    }
+
+    // 2. If no valid session, create a new one
+    console.log(`[Session] No active session found. Creating a new one with type: ${requestedType}`);
+    const uid = dataService.currentUserId;
+    currentSessionId = await sqliteClient.createSession(uid, requestedType);
+    
+    // Clear old conversation data for the new session
+    conversationHistory = [];
+    myCurrentUtterance = '';
+    theirCurrentUtterance = '';
+    previousAnalysisResult = null;
+    analysisHistory = [];
+
+    return currentSessionId;
+}
+
 async function initializeNewSession() {
     try {
-        const uid = dataService.currentUserId; // Get current user (local or firebase)
-        currentSessionId = await sqliteClient.createSession(uid);
-        console.log(`[DB] New session started in DB: ${currentSessionId}`);
+        currentSessionId = await getOrCreateActiveSession('listen');
+        console.log(`[DB] New listen session ensured: ${currentSessionId}`);
 
         conversationHistory = [];
         myCurrentUtterance = '';
@@ -484,12 +535,8 @@ async function initializeNewSession() {
 
 async function saveConversationTurn(speaker, transcription) {
     if (!currentSessionId) {
-        console.log('No active session, initializing a new one first.');
-        const success = await initializeNewSession();
-        if (!success) {
-            console.error('Could not save turn because session initialization failed.');
-            return;
-        }
+        console.error('[DB] Cannot save turn, no active session ID.');
+        return;
     }
     if (transcription.trim() === '') return;
 
@@ -513,20 +560,14 @@ async function saveConversationTurn(speaker, transcription) {
             timestamp: Date.now(),
             transcription: transcription.trim(),
         };
-        sendToRenderer('update-live-transcription', { turn: conversationTurn });
-        if (conversationHistory.length % 5 === 0) {
-            console.log(`🔄 Auto-saving conversation session ${currentSessionId} (${conversationHistory.length} turns)`);
-            sendToRenderer('save-conversation-session', {
-                sessionId: currentSessionId,
-                conversationHistory: conversationHistory,
-            });
-        }
     } catch (error) {
         console.error('Failed to save transcript to DB:', error);
     }
 }
 
 async function initializeLiveSummarySession(language = 'en') {
+    // Use system environment variable if set, otherwise use the provided language
+    const effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG || language || 'en';
     if (isInitializingSession) {
         console.log('Session initialization already in progress.');
         return false;
@@ -539,7 +580,6 @@ async function initializeLiveSummarySession(language = 'en') {
     sendToRenderer('session-initializing', true);
     sendToRenderer('update-status', 'Initializing sessions...');
 
-    // Merged block
     const API_KEY = getApiKey();
     if (!API_KEY) {
         console.error('FATAL ERROR: API Key is not defined.');
@@ -549,81 +589,98 @@ async function initializeLiveSummarySession(language = 'en') {
         return false;
     }
 
-    initializeNewSession();
+    await initializeNewSession();
+
+    const provider = await getAiProvider();
+    const isGemini  = provider === 'gemini';
+    console.log(`[LiveSummaryService] Initializing STT for provider: ${provider}`);
 
     try {
         const handleMyMessage = message => {
-            const type = message.type;
-            const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
-
-            if (type === 'conversation.item.input_audio_transcription.delta') {
-                if (myCompletionTimer) {
-                    clearTimeout(myCompletionTimer);
-                    myCompletionTimer = null;
-                }
-
-                myCurrentUtterance += text;
-
-                const continuousText = myCompletionBuffer + (myCompletionBuffer ? ' ' : '') + myCurrentUtterance;
-
-                if (text && !text.includes('vq_lbr_audio_')) {
-                    sendToRenderer('stt-update', {
-                        speaker: 'Me',
-                        text: continuousText,
-                        isPartial: true,
-                        isFinal: false,
-                        timestamp: Date.now(),
-                    });
-                }
-            } else if (type === 'conversation.item.input_audio_transcription.completed') {
+            if (isGemini) {
+                // console.log('[Gemini Raw Message - Me]:', JSON.stringify(message, null, 2));
+                const text = message.serverContent?.inputTranscription?.text || '';
                 if (text && text.trim()) {
-                    const finalUtteranceText = text.trim();
-                    myCurrentUtterance = '';
-
-                    debounceMyCompletion(finalUtteranceText);
+                    const finalUtteranceText = text.trim().replace(/<noise>/g, '').trim();
+                    if (finalUtteranceText && finalUtteranceText !== '.') {
+                        debounceMyCompletion(finalUtteranceText);
+                    }
                 }
-            } else if (message.error) {
+            } else {
+                const type = message.type;
+                const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
+
+                if (type === 'conversation.item.input_audio_transcription.delta') {
+                    if (myCompletionTimer) clearTimeout(myCompletionTimer);
+                    myCompletionTimer = null;
+                    myCurrentUtterance += text;
+                    const continuousText = myCompletionBuffer + (myCompletionBuffer ? ' ' : '') + myCurrentUtterance;
+                    if (text && !text.includes('vq_lbr_audio_')) {
+                        sendToRenderer('stt-update', {
+                            speaker: 'Me',
+                            text: continuousText,
+                            isPartial: true,
+                            isFinal: false,
+                            timestamp: Date.now(),
+                        });
+                    }
+                } else if (type === 'conversation.item.input_audio_transcription.completed') {
+                    if (text && text.trim()) {
+                        const finalUtteranceText = text.trim();
+                        myCurrentUtterance = '';
+                        debounceMyCompletion(finalUtteranceText);
+                    }
+                }
+            }
+
+            if (message.error) {
                 console.error('[Me] STT Session Error:', message.error);
             }
         };
 
         const handleTheirMessage = message => {
-            const type = message.type;
-            const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
-
-            if (type === 'conversation.item.input_audio_transcription.delta') {
-                if (theirCompletionTimer) {
-                    clearTimeout(theirCompletionTimer);
-                    theirCompletionTimer = null;
-                }
-
-                theirCurrentUtterance += text;
-
-                const continuousText = theirCompletionBuffer + (theirCompletionBuffer ? ' ' : '') + theirCurrentUtterance;
-
-                if (text && !text.includes('vq_lbr_audio_')) {
-                    sendToRenderer('stt-update', {
-                        speaker: 'Them',
-                        text: continuousText,
-                        isPartial: true,
-                        isFinal: false,
-                        timestamp: Date.now(),
-                    });
-                }
-            } else if (type === 'conversation.item.input_audio_transcription.completed') {
+            if (isGemini) {
+                // console.log('[Gemini Raw Message - Them]:', JSON.stringify(message, null, 2));
+                const text = message.serverContent?.inputTranscription?.text || '';
                 if (text && text.trim()) {
-                    const finalUtteranceText = text.trim();
-                    theirCurrentUtterance = '';
-
-                    debounceTheirCompletion(finalUtteranceText);
+                    const finalUtteranceText = text.trim().replace(/<noise>/g, '').trim();
+                    if (finalUtteranceText && finalUtteranceText !== '.') {
+                        debounceTheirCompletion(finalUtteranceText);
+                    }
                 }
-            } else if (message.error) {
+            } else {
+                const type = message.type;
+                const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
+                if (type === 'conversation.item.input_audio_transcription.delta') {
+                    if (theirCompletionTimer) clearTimeout(theirCompletionTimer);
+                    theirCompletionTimer = null;
+                    theirCurrentUtterance += text;
+                    const continuousText = theirCompletionBuffer + (theirCompletionBuffer ? ' ' : '') + theirCurrentUtterance;
+                    if (text && !text.includes('vq_lbr_audio_')) {
+                        sendToRenderer('stt-update', {
+                            speaker: 'Them',
+                            text: continuousText,
+                            isPartial: true,
+                            isFinal: false,
+                            timestamp: Date.now(),
+                        });
+                    }
+                } else if (type === 'conversation.item.input_audio_transcription.completed') {
+                    if (text && text.trim()) {
+                        const finalUtteranceText = text.trim();
+                        theirCurrentUtterance = '';
+                        debounceTheirCompletion(finalUtteranceText);
+                    }
+                }
+            }
+            
+            if (message.error) {
                 console.error('[Them] STT Session Error:', message.error);
             }
         };
 
         const mySttConfig = {
-            language: language,
+            language: effectiveLanguage,
             callbacks: {
                 onmessage: handleMyMessage,
                 onerror: error => console.error('My STT session error:', error.message),
@@ -631,7 +688,7 @@ async function initializeLiveSummarySession(language = 'en') {
             },
         };
         const theirSttConfig = {
-            language: language,
+            language: effectiveLanguage,
             callbacks: {
                 onmessage: handleTheirMessage,
                 onerror: error => console.error('Their STT session error:', error.message),
@@ -639,10 +696,17 @@ async function initializeLiveSummarySession(language = 'en') {
             },
         };
 
-        [mySttSession, theirSttSession] = await Promise.all([
-            connectToOpenAiSession(API_KEY, mySttConfig, keyType),
-            connectToOpenAiSession(API_KEY, theirSttConfig, keyType),
-        ]);
+        if (isGemini) {
+            [mySttSession, theirSttSession] = await Promise.all([
+                connectToGeminiSession(API_KEY, mySttConfig),
+                connectToGeminiSession(API_KEY, theirSttConfig),
+            ]);
+        } else {
+            [mySttSession, theirSttSession] = await Promise.all([
+                connectToOpenAiSession(API_KEY, mySttConfig, keyType),
+                connectToOpenAiSession(API_KEY, theirSttConfig, keyType),
+            ]);
+        }
 
         console.log('✅ Both STT sessions initialized successfully.');
         triggerAnalysisIfNeeded();
@@ -654,7 +718,7 @@ async function initializeLiveSummarySession(language = 'en') {
         sendToRenderer('update-status', 'Connected. Ready to listen.');
         return true;
     } catch (error) {
-        console.error('❌ Failed to initialize OpenAI STT sessions:', error);
+        console.error('❌ Failed to initialize STT sessions:', error);
         isInitializingSession = false;
         sendToRenderer('session-initializing', false);
         sendToRenderer('update-status', 'Initialization failed.');
@@ -702,7 +766,7 @@ async function startMacOSAudioCapture() {
     const { app } = require('electron');
     const path = require('path');
     const systemAudioPath = app.isPackaged
-        ? path.join(process.resourcesPath, 'SystemAudioDump')
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'src', 'assets', 'SystemAudioDump')
         : path.join(app.getAppPath(), 'src', 'assets', 'SystemAudioDump');
 
     console.log('SystemAudioDump path:', systemAudioPath);
@@ -726,6 +790,9 @@ async function startMacOSAudioCapture() {
 
     let audioBuffer = Buffer.alloc(0);
 
+    const provider = await getAiProvider();
+    const isGemini  = provider === 'gemini';
+
     systemAudioProc.stdout.on('data', async data => {
         audioBuffer = Buffer.concat([audioBuffer, data]);
 
@@ -740,10 +807,11 @@ async function startMacOSAudioCapture() {
 
             if (theirSttSession) {
                 try {
-                    // await theirSttSession.sendRealtimeInput({
-                    //     audio: { data: base64Data, mimeType: 'audio/pcm;rate=24000' },
-                    // });
-                    await theirSttSession.sendRealtimeInput(base64Data);
+                    // await theirSttSession.sendRealtimeInput(base64Data);
+                    const payload = isGemini
+                        ? { audio: { data: base64Data, mimeType: 'audio/pcm;rate=24000' } }
+                        : base64Data;
+                    await theirSttSession.sendRealtimeInput(payload);
                 } catch (err) {
                     console.error('Error sending system audio:', err.message);
                 }
@@ -857,14 +925,22 @@ function setupLiveSummaryIpcHandlers() {
 
     ipcMain.handle('initialize-openai', async (event, profile = 'interview', language = 'en') => {
         console.log(`Received initialize-openai request with profile: ${profile}, language: ${language}`);
-        const success = await initializeLiveSummarySession();
+        const success = await initializeLiveSummarySession(language);
         return success;
     });
 
     ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => {
+    const provider = await getAiProvider();
+    const isGemini  = provider === 'gemini';
         if (!mySttSession) return { success: false, error: 'User STT session not active' };
         try {
-            await mySttSession.sendRealtimeInput(data);
+            // await mySttSession.sendRealtimeInput(data);
+                   // provider에 맞는 형식으로 래핑
+       const payload = isGemini
+           ? { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } }
+           : data;   // OpenAI는 base64 string 그대로
+
+       await mySttSession.sendRealtimeInput(payload);
             return { success: true };
         } catch (error) {
             console.error('Error sending user audio:', error);
@@ -938,10 +1014,36 @@ function setupLiveSummaryIpcHandlers() {
             return { success: false, error: error.message };
         }
     });
+
+    ipcMain.handle('save-ask-message', async (event, { userPrompt, aiResponse }) => {
+        try {
+            const sessionId = await getOrCreateActiveSession('ask');
+            if (!sessionId) {
+                throw new Error('Could not get or create a session for the ASK message.');
+            }
+    
+            await sqliteClient.addAiMessage({
+                sessionId: sessionId,
+                role: 'user',
+                content: userPrompt
+            });
+    
+            await sqliteClient.addAiMessage({
+                sessionId: sessionId,
+                role: 'assistant',
+                content: aiResponse
+            });
+    
+            console.log(`[DB] Saved ask/answer pair to session ${sessionId}`);
+            return { success: true };
+        } catch(error) {
+            console.error('[IPC] Failed to save ask message:', error);
+            return { success: false, error: error.message };
+        }
+    });
 }
 
 module.exports = {
-    initializeLiveSummarySession,
     sendToRenderer,
     initializeNewSession,
     saveConversationTurn,

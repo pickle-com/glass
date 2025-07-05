@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronDown } from 'lucide-react'
-import { getPresets, updatePreset, PromptPreset } from '@/utils/api'
+import { ChevronDown, Plus, Copy } from 'lucide-react'
+import { getPresets, updatePreset, createPreset, PromptPreset } from '@/utils/api'
 
 export default function PersonalizePage() {
   const [allPresets, setAllPresets] = useState<PromptPreset[]>([]);
@@ -72,10 +72,76 @@ export default function PersonalizePage() {
           )
         );
       setIsDirty(false);
-        console.log('Save completed!');
     } catch (error) {
       console.error("Save failed:", error);
       alert("Failed to save preset. See console for details.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateNewPreset = async () => {
+    const title = prompt("Enter a title for the new preset:");
+    if (!title) return;
+    
+    try {
+      setSaving(true);
+      const { id } = await createPreset({
+        title,
+        prompt: "Enter your custom prompt here..."
+      });
+      
+      const newPreset: PromptPreset = {
+        id,
+        uid: 'current_user',
+        title,
+        prompt: "Enter your custom prompt here...",
+        is_default: 0,
+        created_at: Date.now(),
+        sync_state: 'clean'
+      };
+      
+      setAllPresets(prev => [...prev, newPreset]);
+      setSelectedPreset(newPreset);
+      setEditorContent(newPreset.prompt);
+      setIsDirty(false);
+    } catch (error) {
+      console.error("Failed to create preset:", error);
+      alert("Failed to create preset. See console for details.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDuplicatePreset = async () => {
+    if (!selectedPreset) return;
+    
+    const title = prompt("Enter a title for the duplicated preset:", `${selectedPreset.title} (Copy)`);
+    if (!title) return;
+    
+    try {
+      setSaving(true);
+      const { id } = await createPreset({
+        title,
+        prompt: editorContent
+      });
+      
+      const newPreset: PromptPreset = {
+        id,
+        uid: 'current_user',
+        title,
+        prompt: editorContent,
+        is_default: 0,
+        created_at: Date.now(),
+        sync_state: 'clean'
+      };
+      
+      setAllPresets(prev => [...prev, newPreset]);
+      setSelectedPreset(newPreset);
+      setIsDirty(false);
+    } catch (error) {
+      console.error("Failed to duplicate preset:", error);
+      alert("Failed to duplicate preset. See console for details.");
     } finally {
       setSaving(false);
     }
@@ -98,19 +164,39 @@ export default function PersonalizePage() {
               <p className="text-sm text-gray-500 mb-2">Presets</p>
               <h1 className="text-3xl font-bold text-gray-900">Personalize</h1>
             </div>
-            <button
-              onClick={handleSave}
-              disabled={saving || !isDirty || selectedPreset?.is_default === 1}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                !isDirty && !saving
-                  ? 'bg-gray-500 text-white cursor-default'
-                  : saving 
-                    ? 'bg-gray-400 text-white cursor-not-allowed' 
-                    : 'bg-gray-600 text-white hover:bg-gray-700'
-              }`}
-            >
-              {!isDirty && !saving ? 'Saved' : saving ? 'Saving...' : 'Save'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreateNewPreset}
+                disabled={saving}
+                className="px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                New Preset
+              </button>
+              {selectedPreset && (
+                <button
+                  onClick={handleDuplicatePreset}
+                  disabled={saving}
+                  className="px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Copy className="h-4 w-4" />
+                  Duplicate
+                </button>
+              )}
+              <button
+                onClick={handleSave}
+                disabled={saving || !isDirty || selectedPreset?.is_default === 1}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                  !isDirty && !saving
+                    ? 'bg-gray-500 text-white cursor-default'
+                    : saving 
+                      ? 'bg-gray-400 text-white cursor-not-allowed' 
+                      : 'bg-gray-600 text-white hover:bg-gray-700'
+                }`}
+              >
+                {!isDirty && !saving ? 'Saved' : saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -137,13 +223,18 @@ export default function PersonalizePage() {
                   onClick={() => handlePresetClick(preset)}
                   className={`
                     p-4 rounded-lg cursor-pointer transition-all duration-200 bg-white
-                    h-48 flex flex-col shadow-sm hover:shadow-md
+                    h-48 flex flex-col shadow-sm hover:shadow-md relative
                     ${selectedPreset?.id === preset.id
                       ? 'border-2 border-blue-500 shadow-md'
                       : 'border border-gray-200 hover:border-gray-300'
                     }
                   `}
                 >
+                  {preset.is_default === 1 && (
+                    <div className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+                      Default
+                    </div>
+                  )}
                   <h3 className="font-semibold text-gray-900 mb-3 text-center text-sm">
                     {preset.title}
                   </h3>
@@ -158,12 +249,24 @@ export default function PersonalizePage() {
       </div>
 
       <div className="flex-1 bg-white">
-        <div className="h-full px-8 py-6">
+        <div className="h-full px-8 py-6 flex flex-col">
+          {selectedPreset?.is_default === 1 && (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-yellow-400 rounded-full"></div>
+                <p className="text-sm text-yellow-800">
+                  <strong>This is a default preset and cannot be edited.</strong> 
+                  Use the "Duplicate" button above to create an editable copy, or create a new preset.
+                </p>
+              </div>
+            </div>
+          )}
           <textarea
             value={editorContent}
             onChange={handleEditorChange}
-            className="w-full h-full text-sm text-gray-900 border-0 resize-none focus:outline-none bg-transparent font-mono leading-relaxed"
+            className="w-full flex-1 text-sm text-gray-900 border-0 resize-none focus:outline-none bg-transparent font-mono leading-relaxed"
             placeholder="Select a preset or type directly..."
+            readOnly={selectedPreset?.is_default === 1}
           />
         </div>
       </div>
