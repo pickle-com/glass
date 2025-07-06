@@ -1161,9 +1161,20 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
         try {
             globalShortcut.register(key, () => {
                 const header = windowPool.get('header');
-                if (header && header.isVisible()) {
-                    movementManager.moveToEdge(direction);
+                console.log(`[Shortcut] Edge shortcut triggered: ${key} for direction: ${direction}`);
+                if (!header) {
+                    console.log('[Shortcut] Header window not found');
+                    return;
                 }
+                if (!header.isVisible()) {
+                    console.log('[Shortcut] Header window is not visible');
+                    return;
+                }
+                if (!movementManager) {
+                    console.log('[Shortcut] movementManager not initialized');
+                    return;
+                }
+                    movementManager.moveToEdge(direction);
             });
             console.log(`Registered global shortcut: ${key} -> edge ${direction}`);
         } catch (error) {

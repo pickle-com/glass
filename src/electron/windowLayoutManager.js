@@ -10,6 +10,11 @@ function getCurrentDisplay(window) {
     return screen.getDisplayNearestPoint(windowCenter);
 }
 
+function getDisplayById(displayId) {
+    const displays = screen.getAllDisplays();
+    return displays.find(d => d.id === displayId) || screen.getPrimaryDisplay();
+}
+
 class WindowLayoutManager {
     constructor(windowPool) {
         this.windowPool = windowPool;
@@ -242,4 +247,8 @@ class WindowLayoutManager {
     destroy() {}
 }
 
-module.exports = { WindowLayoutManager }; 
+module.exports = {
+    WindowLayoutManager,
+    getCurrentDisplay,
+    getDisplayById,
+}; 

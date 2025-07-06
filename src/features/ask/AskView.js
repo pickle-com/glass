@@ -868,6 +868,8 @@ export class AskView extends LitElement {
 
             ipcRenderer.on('ask-response-chunk', this.handleStreamChunk);
             ipcRenderer.on('ask-response-stream-end', this.handleStreamEnd);
+            ipcRenderer.on('navigate-previous-response', this.handleNavigatePreviousResponse);
+            ipcRenderer.on('navigate-next-response', this.handleNavigateNextResponse);
             console.log('✅ AskView: IPC 이벤트 리스너 등록 완료');
         }
     }
@@ -906,6 +908,8 @@ export class AskView extends LitElement {
 
             ipcRenderer.removeListener('ask-response-chunk', this.handleStreamChunk);
             ipcRenderer.removeListener('ask-response-stream-end', this.handleStreamEnd);
+            ipcRenderer.removeListener('navigate-previous-response', this.handleNavigatePreviousResponse);
+            ipcRenderer.removeListener('navigate-next-response', this.handleNavigateNextResponse);
             console.log('✅ AskView: IPC 이벤트 리스너 제거 완료');
         }
     }
@@ -1435,6 +1439,22 @@ export class AskView extends LitElement {
             this.isThrottled = false;
         }, 16);
     }
+
+    handleNavigatePreviousResponse = () => {
+        if (typeof this.goToPreviousResponse === 'function') {
+            this.goToPreviousResponse();
+        } else {
+            console.log('[AskView] goToPreviousResponse not implemented');
+        }
+    };
+
+    handleNavigateNextResponse = () => {
+        if (typeof this.goToNextResponse === 'function') {
+            this.goToNextResponse();
+        } else {
+            console.log('[AskView] goToNextResponse not implemented');
+        }
+    };
 }
 
 customElements.define('ask-view', AskView);
