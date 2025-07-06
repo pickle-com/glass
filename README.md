@@ -14,6 +14,8 @@
 
 > This project is a fork of [CheatingDaddy](https://github.com/sohzm/cheating-daddy) with modifications and enhancements. Thanks to [Soham](https://x.com/soham_btw) and all the open-source contributors who made this possible!
 
+> Currently, we're working on a full code refactor and modularization. Once that's completed, we'll jump into addressing the major issues. You can find WIP issues & changelog below this document.
+
 🤖 **Fast, light & open-source**—Glass lives on your desktop, sees what you see, listens in real time, understands your context, and turns every moment into structured knowledge.
 
 💬 **Proactive in meetings**—it surfaces action items, summaries, and answers the instant you need them.
@@ -62,9 +64,14 @@ npm run setup
 
 <img width="100%" alt="booking-screen" src="./public/assets/01.gif">
 
-### Use your own OpenAI API key, or sign up to use ours (free)
+### Use your own API key, or sign up to use ours (free)
 
 <img width="100%" alt="booking-screen" src="./public/assets/02.gif">
+
+**Currently Supporting:**
+- OpenAI API
+- Gemini API
+- Local LLM (Working on
 
 You can visit [here](https://platform.openai.com/api-keys) to get your OpenAI API Key.
 
@@ -91,18 +98,23 @@ You can visit [here](https://platform.openai.com/api-keys) to get your OpenAI AP
 ## Contributing
 
 We love contributions! Feel free to open issues for bugs or feature requests.
+> Currently, we're working on a full code refactor and modularization. Once that's completed, we'll jump into addressing the major issues.
 
 ## 🛠 Current Issues & Improvements
 
 | Status | Issue                          | Description                                       |
 |--------|--------------------------------|---------------------------------------------------|
-| 🚧 WIP     | AEC Improvement                | Transcription is not working occasionally |
 | 🚧 WIP     | Code Refactoring               | Refactoring the entire codebase for better maintainability. |
+| 🚧 WIP      | Windows Build                  | Make Glass buildable & runnable in Windows |
+| 🚧 WIP      | Local LLM Support                  | Supporting Local LLM to power AI answers |
+| 🚧 WIP     | AEC Improvement                | Transcription is not working occasionally |
 | 🚧 WIP      | Firebase Data Storage Issue    | Session & ask should be saved in firebase for signup users |
 | 🚧 WIP      | Login Issue                    | Currently breaking when switching between local and sign-in mode |
 | 🚧 WIP      | Liquid Glass                    | Liquid Glass UI for MacOS 26 |
-| 🚧 WIP      | Permission Issue           | Mic & system audio & display capture permission sometimes not working|
 
+## Changelog
+
+- Jul 5: Now support Gemini, Intel Mac supported
 
 
 ## About Pickle
