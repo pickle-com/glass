@@ -482,8 +482,8 @@ export class AskView extends LitElement {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 12px 16px;
-            background: rgba(0, 0, 0, 0.1);
+            padding: 4px;
+            background: rgba(0, 0, 0, 0.01);
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             flex-shrink: 0;
             transition: all 0.3s ease-in-out;
@@ -505,8 +505,8 @@ export class AskView extends LitElement {
         #textInput {
             flex: 1;
             padding: 10px 14px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.01);
+            border-radius: 6px;
             outline: none;
             border: none;
             color: white;

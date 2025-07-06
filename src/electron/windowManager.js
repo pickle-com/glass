@@ -15,7 +15,7 @@ let currentDisplayId = null;
 let mouseEventsIgnored = false;
 let lastVisibleWindows = new Set(['header']);
 const HEADER_HEIGHT = 60;
-const DEFAULT_WINDOW_WIDTH = 345;
+const DEFAULT_WINDOW_WIDTH = 336;
 
 let currentHeaderState = 'apikey';
 const windowPool = new Map();
@@ -85,7 +85,7 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:600, height:350 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:554, height:350 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
@@ -222,7 +222,9 @@ class WindowLayoutManager {
 
         if (!askVisible && !listenVisible) return;
 
-        const PAD = 8;
+        // const PAD = 3;
+        const PAD_H = 8;
+        const PAD_V = -4;
 
         /* ① 헤더 중심 X를 "디스플레이 기준 상대좌표"로 변환  */
         const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
@@ -234,34 +236,34 @@ class WindowLayoutManager {
         /* 두 창 모두 보이는 경우 */
         /* ------------------------------------------------- */
         if (askVisible && listenVisible) {
-            const combinedWidth = listenBounds.width + PAD + askBounds.width;
+            const combinedWidth = listenBounds.width + PAD_H + askBounds.width;
 
             /* ② 모든 X 좌표를 상대좌표로 계산 */
             let groupStartXRel = headerCenterXRel - combinedWidth / 2;
             let listenXRel = groupStartXRel;
-            let askXRel = groupStartXRel + listenBounds.width + PAD;
+            let askXRel = groupStartXRel + listenBounds.width + PAD_H;
 
             /* 좌우 화면 여백 클램프 – 역시 상대좌표로 */
-            if (listenXRel < PAD) {
-                listenXRel = PAD;
-                askXRel = listenXRel + listenBounds.width + PAD;
+            if (listenXRel < PAD_H) {
+                listenXRel = PAD_H;
+                askXRel = listenXRel + listenBounds.width + PAD_H;
             }
-            if (askXRel + askBounds.width > screenWidth - PAD) {
-                askXRel = screenWidth - PAD - askBounds.width;
-                listenXRel = askXRel - listenBounds.width - PAD;
+            if (askXRel + askBounds.width > screenWidth - PAD_H) {
+                askXRel = screenWidth - PAD_H - askBounds.width;
+                listenXRel = askXRel - listenBounds.width - PAD_H;
             }
 
             /* Y 좌표는 이미 상대값으로 계산돼 있음 */
             let yRel;
             switch (strategy.primary) {
                 case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
                 case 'above':
-                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD;
+                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD_V;
                     break;
                 default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
             }
 
@@ -291,19 +293,19 @@ class WindowLayoutManager {
             let yRel;
             switch (strategy.primary) {
                 case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
                 case 'above':
-                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD;
+                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD_V;
                     break;
                 default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
             }
 
             /* 화면 경계 클램프 */
-            xRel = Math.max(PAD, Math.min(screenWidth - winBounds.width - PAD, xRel));
-            yRel = Math.max(PAD, Math.min(screenHeight - winBounds.height - PAD, yRel));
+            xRel = Math.max(PAD_H, Math.min(screenWidth - winBounds.width - PAD_H, xRel));
+            yRel = Math.max(PAD_H, Math.min(screenHeight - winBounds.height - PAD_H, yRel));
 
             /* 절대좌표로 변환 후 배치 */
             win.setBounds({
@@ -331,7 +333,7 @@ class WindowLayoutManager {
         }
 
         const settingsBounds = settings.getBounds();
-        const PAD = 5;
+        const PAD = -5;
 
         const buttonPadding = 17;
         let x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
@@ -1452,7 +1454,7 @@ function setupIpcHandlers(openaiSessionRef) {
                 const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
 
                 let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
-                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
+                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 23);
 
                 x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
                 y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
