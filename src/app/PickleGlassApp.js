@@ -1,7 +1,6 @@
 import { html, css, LitElement } from '../assets/lit-core-2.7.4.min.js';
 import { CustomizeView } from '../features/customize/CustomizeView.js';
 import { AssistantView } from '../features/listen/AssistantView.js';
-import { OnboardingView } from '../features/onboarding/OnboardingView.js';
 import { AskView } from '../features/ask/AskView.js';
 
 import '../features/listen/renderer.js';
@@ -11,6 +10,7 @@ export class PickleGlassApp extends LitElement {
         :host {
             display: block;
             width: 100%;
+            height: 100%;
             color: var(--text-color);
             background: transparent;
             border-radius: 7px;
@@ -19,11 +19,13 @@ export class PickleGlassApp extends LitElement {
         assistant-view {
             display: block;
             width: 100%;
+            height: 100%;
         }
 
         ask-view, customize-view, history-view, help-view, onboarding-view, setup-view {
             display: block;
             width: 100%;
+            height: 100%;
         }
 
     `;

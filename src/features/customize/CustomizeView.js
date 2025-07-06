@@ -11,7 +11,7 @@ export class CustomizeView extends LitElement {
         :host {
             display: block;
             width: 180px;
-            min-height: 180px;
+            height: 100%;
             color: white;
         }
 
@@ -234,6 +234,38 @@ export class CustomizeView extends LitElement {
             font-size: 11px;
             margin-bottom: 4px;
         }
+        :host-context(body.has-glass) .settings-container,
+        :host-context(body.has-glass) .settings-button,
+        :host-context(body.has-glass) .cmd-key,
+        :host-context(body.has-glass) .shortcut-key,
+        :host-context(body.has-glass) .api-key-section input {
+            background: transparent !important;
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+        }
+
+        /* 블러·그림자·gradient 레이어 제거 */
+        :host-context(body.has-glass) .settings-container::before {
+            display: none !important;
+        }
+
+        /* hover/active 시 다시 생기는 배경도 차단 */
+        :host-context(body.has-glass) .settings-button:hover,
+        :host-context(body.has-glass) .shortcut-item:hover,
+        :host-context(body.has-glass) .settings-button.danger:hover {
+            background: transparent !important;
+            border-color: transparent !important;
+            transform: none !important;
+        }
+
+        /* 스크롤바 트랙·썸 투명화(선택 사항) */
+        :host-context(body.has-glass) .settings-container::-webkit-scrollbar-track,
+        :host-context(body.has-glass) .settings-container::-webkit-scrollbar-thumb {
+            background: transparent !important;
+        }
 
     `;
 
@@ -390,9 +422,7 @@ export class CustomizeView extends LitElement {
 
     updateScrollHeight() {
         const windowHeight = window.innerHeight;
-        const headerHeight = 60;
-        const padding = 40;
-        const maxHeight = windowHeight - headerHeight - padding;
+        const maxHeight = windowHeight;
         
         this.style.maxHeight = `${maxHeight}px`;
     }

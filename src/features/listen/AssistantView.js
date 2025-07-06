@@ -161,7 +161,7 @@ export class AssistantView extends LitElement {
             /* outline: 0.5px rgba(255, 255, 255, 0.5) solid; */
             /* outline-offset: -1px; */
             width: 100%;
-            min-height: 200px;
+            height: 100%;
         }
 
         .assistant-container::after {
@@ -542,6 +542,73 @@ export class AssistantView extends LitElement {
             font-size: 10px;
             color: rgba(255, 255, 255, 0.7);
         }
+        :host-context(body.has-glass) .assistant-container,
+        :host-context(body.has-glass) .top-bar,
+        :host-context(body.has-glass) .toggle-button,
+        :host-context(body.has-glass) .copy-button,
+        :host-context(body.has-glass) .transcription-container,
+        :host-context(body.has-glass) .insights-container,
+        :host-context(body.has-glass) .stt-message,
+        :host-context(body.has-glass) .outline-item,
+        :host-context(body.has-glass) .request-item,
+        :host-context(body.has-glass) .markdown-content,
+        :host-context(body.has-glass) .insights-container pre,
+        :host-context(body.has-glass) .insights-container p code,
+        :host-context(body.has-glass) .insights-container pre code {
+            background: transparent !important;
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+        }
+
+        /* 가상 레이어·gradient 테두리 제거 */
+        :host-context(body.has-glass) .assistant-container::before,
+        :host-context(body.has-glass) .assistant-container::after {
+            display: none !important;
+        }
+
+        /* hover 상태에서 생기는 배경도 차단 */
+        :host-context(body.has-glass) .toggle-button:hover,
+        :host-context(body.has-glass) .copy-button:hover,
+        :host-context(body.has-glass) .outline-item:hover,
+        :host-context(body.has-glass) .request-item.clickable:hover,
+        :host-context(body.has-glass) .markdown-content:hover {
+            background: transparent !important;
+            transform: none !important;
+        }
+
+        /* 스크롤바 트랙·썸도 투명화(선택) */
+        :host-context(body.has-glass) .transcription-container::-webkit-scrollbar-track,
+        :host-context(body.has-glass) .transcription-container::-webkit-scrollbar-thumb,
+        :host-context(body.has-glass) .insights-container::-webkit-scrollbar-track,
+        :host-context(body.has-glass) .insights-container::-webkit-scrollbar-thumb {
+            background: transparent !important;
+        }
+        :host-context(body.has-glass) * {
+            animation: none !important;
+            transition: none !important;
+            transform: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+            box-shadow: none !important;
+        }
+
+        /* 추가: 둥근 모서리와 스크롤바도 평면화하려면 */
+        :host-context(body.has-glass) .assistant-container,
+        :host-context(body.has-glass) .stt-message,
+        :host-context(body.has-glass) .toggle-button,
+        :host-context(body.has-glass) .copy-button {
+            border-radius: 0 !important;
+        }
+
+        :host-context(body.has-glass) ::-webkit-scrollbar,
+        :host-context(body.has-glass) ::-webkit-scrollbar-track,
+        :host-context(body.has-glass) ::-webkit-scrollbar-thumb {
+            background: transparent !important;
+            width: 0 !important;      /* 스크롤바 자체 숨기기 */
+        }
     `;
 
     static properties = {
@@ -777,9 +844,9 @@ export class AssistantView extends LitElement {
 
                 const contentHeight = activeContent.scrollHeight;
 
-                const idealHeight = topBarHeight + contentHeight + 20;
+                const idealHeight = topBarHeight + contentHeight;
 
-                const targetHeight = Math.min(700, Math.max(200, idealHeight));
+                const targetHeight = Math.min(700, idealHeight);
 
                 console.log(
                     `[Height Adjusted] Mode: ${this.viewMode}, TopBar: ${topBarHeight}px, Content: ${contentHeight}px, Ideal: ${idealHeight}px, Target: ${targetHeight}px`

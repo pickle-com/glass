@@ -1,6 +1,6 @@
 import { LitElement, html, css } from '../assets/lit-core-2.7.4.min.js';
 
-export class PermissionSetup extends LitElement {
+export class PermissionHeader extends LitElement {
     static styles = css`
         :host {
             display: block;
@@ -237,6 +237,30 @@ export class PermissionSetup extends LitElement {
             background: rgba(255, 255, 255, 0.2);
             cursor: not-allowed;
         }
+        :host-context(body.has-glass) .container,
+        :host-context(body.has-glass) .action-button,
+        :host-context(body.has-glass) .continue-button,
+        :host-context(body.has-glass) .close-button {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+        }
+
+        /* Remove gradient borders / pseudo layers */
+        :host-context(body.has-glass) .container::after,
+        :host-context(body.has-glass) .action-button::after,
+        :host-context(body.has-glass) .continue-button::after {
+            display: none !important;
+        }
+
+        /* Prevent background reappearing on hover/active */
+        :host-context(body.has-glass) .action-button:hover,
+        :host-context(body.has-glass) .continue-button:hover,
+        :host-context(body.has-glass) .close-button:hover {
+            background: transparent !important;
+        }
     `;
 
     static properties = {
@@ -337,7 +361,7 @@ export class PermissionSetup extends LitElement {
         
         try {
             const permissions = await ipcRenderer.invoke('check-system-permissions');
-            console.log('[PermissionSetup] Permission check result:', permissions);
+            console.log('[PermissionHeader] Permission check result:', permissions);
             
             const prevMic = this.microphoneGranted;
             const prevScreen = this.screenGranted;
@@ -347,7 +371,7 @@ export class PermissionSetup extends LitElement {
             
             // if permissions changed == UI update
             if (prevMic !== this.microphoneGranted || prevScreen !== this.screenGranted) {
-                console.log('[PermissionSetup] Permission status changed, updating UI');
+                console.log('[PermissionHeader] Permission status changed, updating UI');
                 this.requestUpdate();
             }
             
@@ -355,11 +379,11 @@ export class PermissionSetup extends LitElement {
             if (this.microphoneGranted === 'granted' && 
                 this.screenGranted === 'granted' && 
                 this.continueCallback) {
-                console.log('[PermissionSetup] All permissions granted, proceeding automatically');
+                console.log('[PermissionHeader] All permissions granted, proceeding automatically');
                 setTimeout(() => this.handleContinue(), 500);
             }
         } catch (error) {
-            console.error('[PermissionSetup] Error checking permissions:', error);
+            console.error('[PermissionHeader] Error checking permissions:', error);
         } finally {
             this.isChecking = false;
         }
@@ -368,12 +392,12 @@ export class PermissionSetup extends LitElement {
     async handleMicrophoneClick() {
         if (!window.require || this.microphoneGranted === 'granted' || this.wasJustDragged) return;
         
-        console.log('[PermissionSetup] Requesting microphone permission...');
+        console.log('[PermissionHeader] Requesting microphone permission...');
         const { ipcRenderer } = window.require('electron');
         
         try {
             const result = await ipcRenderer.invoke('check-system-permissions');
-            console.log('[PermissionSetup] Microphone permission result:', result);
+            console.log('[PermissionHeader] Microphone permission result:', result);
             
             if (result.microphone === 'granted') {
                 this.microphoneGranted = 'granted';
@@ -394,19 +418,19 @@ export class PermissionSetup extends LitElement {
             // Check permissions again after a delay
             // setTimeout(() => this.checkPermissions(), 1000);
         } catch (error) {
-            console.error('[PermissionSetup] Error requesting microphone permission:', error);
+            console.error('[PermissionHeader] Error requesting microphone permission:', error);
         }
     }
 
     async handleScreenClick() {
         if (!window.require || this.screenGranted === 'granted' || this.wasJustDragged) return;
         
-        console.log('[PermissionSetup] Checking screen recording permission...');
+        console.log('[PermissionHeader] Checking screen recording permission...');
         const { ipcRenderer } = window.require('electron');
         
         try {
             const permissions = await ipcRenderer.invoke('check-system-permissions');
-            console.log('[PermissionSetup] Screen permission check result:', permissions);
+            console.log('[PermissionHeader] Screen permission check result:', permissions);
             
             if (permissions.screen === 'granted') {
                 this.screenGranted = 'granted';
@@ -414,7 +438,7 @@ export class PermissionSetup extends LitElement {
                 return;
             }
             if (permissions.screen === 'not-determined' || permissions.screen === 'denied' || permissions.screen === 'unknown' || permissions.screen === 'restricted') {
-            console.log('[PermissionSetup] Opening screen recording preferences...');
+            console.log('[PermissionHeader] Opening screen recording preferences...');
             await ipcRenderer.invoke('open-system-preferences', 'screen-recording');
             }
             
@@ -422,7 +446,7 @@ export class PermissionSetup extends LitElement {
             // (This may not execute if app restarts after permission grant)
             // setTimeout(() => this.checkPermissions(), 2000);
         } catch (error) {
-            console.error('[PermissionSetup] Error opening screen recording preferences:', error);
+            console.error('[PermissionHeader] Error opening screen recording preferences:', error);
         }
     }
 
@@ -436,9 +460,9 @@ export class PermissionSetup extends LitElement {
                 const { ipcRenderer } = window.require('electron');
                 try {
                     await ipcRenderer.invoke('mark-permissions-completed');
-                    console.log('[PermissionSetup] Marked permissions as completed');
+                    console.log('[PermissionHeader] Marked permissions as completed');
                 } catch (error) {
-                    console.error('[PermissionSetup] Error marking permissions as completed:', error);
+                    console.error('[PermissionHeader] Error marking permissions as completed:', error);
                 }
             }
             
@@ -530,4 +554,4 @@ export class PermissionSetup extends LitElement {
     }
 }
 
-customElements.define('permission-setup', PermissionSetup); 
+customElements.define('permission-setup', PermissionHeader); 

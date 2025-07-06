@@ -70,6 +70,7 @@
     },
     "optionalDependencies": {
         "@img/sharp-darwin-x64": "^0.34.2",
-        "@img/sharp-libvips-darwin-x64": "^1.1.0"
+        "@img/sharp-libvips-darwin-x64": "^1.1.0",
+        "electron-liquid-glass": "^1.0.1"
     }
 }

@@ -590,6 +590,43 @@ export class AskView extends LitElement {
             color: rgba(255, 255, 255, 0.5);
             font-size: 14px;
         }
+        :host-context(body.has-glass) .ask-container,
+        :host-context(body.has-glass) .response-header,
+        :host-context(body.has-glass) .response-icon,
+        :host-context(body.has-glass) .copy-button,
+        :host-context(body.has-glass) .close-button,
+        :host-context(body.has-glass) .line-copy-button,
+        :host-context(body.has-glass) .text-input-container,
+        :host-context(body.has-glass) .response-container pre,
+        :host-context(body.has-glass) .response-container p code,
+        :host-context(body.has-glass) .response-container pre code {
+            background: transparent !important;
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+        }
+
+        /* ask-container 의 블러·그림자 레이어 제거 */
+        :host-context(body.has-glass) .ask-container::before {
+            display: none !important;
+        }
+
+        /* hover/active 때 다시 생기는 배경도 차단 */
+        :host-context(body.has-glass) .copy-button:hover,
+        :host-context(body.has-glass) .close-button:hover,
+        :host-context(body.has-glass) .line-copy-button,
+        :host-context(body.has-glass) .line-copy-button:hover,
+        :host-context(body.has-glass) .response-line:hover {
+            background: transparent !important;
+        }
+
+        /* 스크롤바 트랙·썸 마저 투명화 (원할 경우) */
+        :host-context(body.has-glass) .response-container::-webkit-scrollbar-track,
+        :host-context(body.has-glass) .response-container::-webkit-scrollbar-thumb {
+            background: transparent !important;
+        }
     `;
 
     constructor() {
@@ -1378,9 +1415,9 @@ export class AskView extends LitElement {
             const responseHeight = responseEl.scrollHeight;
             const inputHeight    = (inputEl && !inputEl.classList.contains('hidden')) ? inputEl.offsetHeight : 0;
 
-            const idealHeight = headerHeight + responseHeight + inputHeight + 20; // padding
+            const idealHeight = headerHeight + responseHeight + inputHeight;
 
-            const targetHeight = Math.min(700, Math.max(200, idealHeight));
+            const targetHeight = Math.min(700, idealHeight);
 
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.invoke('adjust-window-height', targetHeight);

@@ -1,18 +1,18 @@
-import './AppHeader.js';
+import './MainHeader.js';
 import './ApiKeyHeader.js';
-import './PermissionSetup.js';
+import './PermissionHeader.js';
 
 class HeaderTransitionManager {
     constructor() {
         this.headerContainer      = document.getElementById('header-container');
-        this.currentHeaderType    = null;   // 'apikey' | 'app' | 'permission'
+        this.currentHeaderType    = null;   // 'apikey' | 'main' | 'permission'
         this.apiKeyHeader         = null;
-        this.appHeader            = null;
-        this.permissionSetup      = null;
+        this.mainHeader            = null;
+        this.permissionHeader      = null;
 
         /**
          * only one header window is allowed
-         * @param {'apikey'|'app'|'permission'} type
+         * @param {'apikey'|'main'|'permission'} type
          */
         this.ensureHeader = (type) => {
             if (this.currentHeaderType === type) return;
@@ -20,21 +20,21 @@ class HeaderTransitionManager {
             this.headerContainer.innerHTML = '';
             
             this.apiKeyHeader = null;
-            this.appHeader = null;
-            this.permissionSetup = null;
+            this.mainHeader = null;
+            this.permissionHeader = null;
 
             // Create new header element
             if (type === 'apikey') {
                 this.apiKeyHeader = document.createElement('apikey-header');
                 this.headerContainer.appendChild(this.apiKeyHeader);
             } else if (type === 'permission') {
-                this.permissionSetup = document.createElement('permission-setup');
-                this.permissionSetup.continueCallback = () => this.transitionToAppHeader();
-                this.headerContainer.appendChild(this.permissionSetup);
+                this.permissionHeader = document.createElement('permission-setup');
+                this.permissionHeader.continueCallback = () => this.transitionToMainHeader();
+                this.headerContainer.appendChild(this.permissionHeader);
             } else {
-                this.appHeader = document.createElement('app-header');
-                this.headerContainer.appendChild(this.appHeader);
-                this.appHeader.startSlideInAnimation?.();
+                this.mainHeader = document.createElement('main-header');
+                this.headerContainer.appendChild(this.mainHeader);
+                this.mainHeader.startSlideInAnimation?.();
             }
 
             this.currentHeaderType = type;
@@ -87,16 +87,16 @@ class HeaderTransitionManager {
         const { isLoggedIn, hasApiKey } = userState;
 
         if (isLoggedIn) {
-            // Firebase user: Check permissions, then show App or Permission Setup
+            // Firebase user: Check permissions, then show Main or Permission header
             const permissionResult = await this.checkPermissions();
             if (permissionResult.success) {
-                this.transitionToAppHeader();
+                this.transitionToMainHeader();
             } else {
-                this.transitionToPermissionSetup();
+                this.transitionToPermissionHeader();
             }
         } else if (hasApiKey) {
-            // API Key only user: Skip permission check, go directly to App
-            this.transitionToAppHeader();
+            // API Key only user: Skip permission check, go directly to Main
+            this.transitionToMainHeader();
         } else {
             // No auth at all
             await this._resizeForApiKey();
@@ -104,7 +104,7 @@ class HeaderTransitionManager {
         }
     }
 
-    async transitionToPermissionSetup() {
+    async transitionToPermissionHeader() {
         // Prevent duplicate transitions
         if (this.currentHeaderType === 'permission') {
             console.log('[HeaderController] Already showing permission setup, skipping transition');
@@ -123,7 +123,7 @@ class HeaderTransitionManager {
                     const permissionResult = await this.checkPermissions();
                     if (permissionResult.success) {
                         // Skip permission setup if already granted
-                        this.transitionToAppHeader();
+                        this.transitionToMainHeader();
                         return;
                     }
                     
@@ -134,24 +134,24 @@ class HeaderTransitionManager {
             }
         }
 
-        await this._resizeForPermissionSetup();
+        await this._resizeForPermissionHeader();
         this.ensureHeader('permission');
     }
 
-    async transitionToAppHeader(animate = true) {
-        if (this.currentHeaderType === 'app') {
-            return this._resizeForApp();
+    async transitionToMainHeader(animate = true) {
+        if (this.currentHeaderType === 'main') {
+            return this._resizeForMain();
         }
 
-        await this._resizeForApp();
-        this.ensureHeader('app');
+        await this._resizeForMain();
+        this.ensureHeader('main');
     }
 
-    _resizeForApp() {
+    _resizeForMain() {
         if (!window.require) return;
         return window
             .require('electron')
-            .ipcRenderer.invoke('resize-header-window', { width: 353, height: 60 })
+            .ipcRenderer.invoke('resize-header-window', { width: 353, height: 47 })
             .catch(() => {});
     }
 
@@ -163,7 +163,7 @@ class HeaderTransitionManager {
             .catch(() => {});
     }
 
-    async _resizeForPermissionSetup() {
+    async _resizeForPermissionHeader() {
         if (!window.require) return;
         return window
             .require('electron')

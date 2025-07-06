@@ -1,4 +1,7 @@
 const { BrowserWindow, globalShortcut, ipcMain, screen, app, shell, desktopCapturer } = require('electron');
+const WindowLayoutManager = require('./windowLayoutManager');
+const SmoothMovementManager = require('./smoothMovementManager');
+const liquidGlass = require('electron-liquid-glass');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('os');
@@ -10,13 +13,22 @@ const systemSettingsRepository = require('../common/repositories/systemSettings'
 const userRepository = require('../common/repositories/user');
 const fetch = require('node-fetch');
 
+const isLiquidGlassSupported = () => {
+    if (process.platform !== 'darwin') {
+        return false;
+    }
+    const majorVersion = parseInt(os.release().split('.')[0], 10);
+    return majorVersion >= 26; // macOS 26+ (Darwin 25+)
+};
+const shouldUseLiquidGlass = isLiquidGlassSupported();
+
 let isContentProtectionOn = true;
 let currentDisplayId = null;
 
 let mouseEventsIgnored = false;
 let lastVisibleWindows = new Set(['header']);
-const HEADER_HEIGHT = 60;
-const DEFAULT_WINDOW_WIDTH = 345;
+const HEADER_HEIGHT = 47;
+const DEFAULT_WINDOW_WIDTH = 353;
 
 let currentHeaderState = 'apikey';
 const windowPool = new Map();
@@ -27,38 +39,22 @@ let settingsHideTimer = null;
 
 let selectedCaptureSourceId = null;
 
-const windowDefinitions = {
-    header: {
-        file: 'header.html',
-        options: {
-            /*…*/
-        },
-        allowedStates: ['apikey', 'app'],
-    },
-    ask: {
-        file: 'ask.html',
-        options: {
-            /*…*/
-        },
-        allowedStates: ['app'],
-    },
-    listen: {
-        file: 'assistant.html',
-        options: {
-            /*…*/
-        },
-        allowedStates: ['app'],
-    },
-    settings: {
-        file: 'settings.html',
-        options: {
-            /*…*/
-        },
-        allowedStates: ['app'],
-    },
-};
+let layoutManager = null;
+function updateLayout() {
+    if (layoutManager) {
+        layoutManager.updateLayout();
+    }
+}
+
+let movementManager = null;
+
+let storedProvider = 'openai';
 
 const featureWindows = ['listen','ask','settings'];
+function isAllowed(name) {
+    if (name === 'header') return true;
+    return featureWindows.includes(name) && currentHeaderState === 'main';
+}
 
 function createFeatureWindows(header) {
     if (windowPool.has('listen')) return;
@@ -68,6 +64,7 @@ function createFeatureWindows(header) {
         show: false,
         frame: false,
         transparent: true,
+        vibrancy: false,
         hasShadow: false,
         skipTaskbar: true,
         hiddenInMissionControl: true,
@@ -77,19 +74,62 @@ function createFeatureWindows(header) {
 
     // listen
     const listen = new BrowserWindow({
-        ...commonChildOptions, width:400,height:300,minWidth:400,maxWidth:400,
-        minHeight:200,maxHeight:700,
+        ...commonChildOptions, width:400,minWidth:400,maxWidth:400,
+        maxHeight:700,
     });
     listen.setContentProtection(isContentProtectionOn);
     listen.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-    listen.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'listen'}});
+    listen.setWindowButtonVisibility(false);
+    const listenLoadOptions = { query: { view: 'listen' } };
+    if (!shouldUseLiquidGlass) {
+        listen.loadFile(path.join(__dirname, '../app/content.html'), listenLoadOptions);
+    }
+    else {
+        listenLoadOptions.query.glass = 'true';
+        listen.loadFile(path.join(__dirname, '../app/content.html'), listenLoadOptions);
+        listen.webContents.once('did-finish-load', () => {
+            const viewId = liquidGlass.addView(listen.getNativeWindowHandle(), {
+                cornerRadius: 12,
+                tintColor: '#FF00001A', // Red tint
+                opaque: false, 
+            });
+            if (viewId !== -1) {
+                liquidGlass.unstable_setVariant(viewId, 2);
+                // liquidGlass.unstable_setScrim(viewId, 1);
+                // liquidGlass.unstable_setSubdued(viewId, 1);
+            }
+        });
+    }
+
+
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:554, height:350 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:600 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-    ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
+    ask.setWindowButtonVisibility(false);
+    const askLoadOptions = { query: { view: 'ask' } };
+    if (!shouldUseLiquidGlass) {
+        ask.loadFile(path.join(__dirname, '../app/content.html'), askLoadOptions);
+    }
+    else {
+        askLoadOptions.query.glass = 'true';
+        ask.loadFile(path.join(__dirname, '../app/content.html'), askLoadOptions);
+        ask.webContents.once('did-finish-load', () => {
+            const viewId = liquidGlass.addView(ask.getNativeWindowHandle(), {
+                cornerRadius: 12,
+                tintColor: '#FF00001A', // Red tint
+                opaque: false, 
+            });
+            if (viewId !== -1) {
+                liquidGlass.unstable_setVariant(viewId, 2);
+                // liquidGlass.unstable_setScrim(viewId, 1);
+                // liquidGlass.unstable_setSubdued(viewId, 1);
+            }
+        });
+    }
+
     ask.on('blur',()=>ask.webContents.send('window-blur'));
     
     // Open DevTools in development
@@ -99,12 +139,33 @@ function createFeatureWindows(header) {
     windowPool.set('ask', ask);
 
     // settings
-    const settings = new BrowserWindow({ ...commonChildOptions, width:240, height:450, parent:undefined });
+    const settings = new BrowserWindow({ ...commonChildOptions, width:240, maxHeight:350, parent:undefined });
     settings.setContentProtection(isContentProtectionOn);
     settings.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-    settings.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'customize'}})
-        .catch(console.error);
-    windowPool.set('settings', settings);
+    settings.setWindowButtonVisibility(false);
+    const settingsLoadOptions = { query: { view: 'customize' } };
+    if (!shouldUseLiquidGlass) {
+        settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
+            .catch(console.error);
+    }
+    else {
+        settingsLoadOptions.query.glass = 'true';
+        settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
+            .catch(console.error);
+        settings.webContents.once('did-finish-load', () => {
+            const viewId = liquidGlass.addView(settings.getNativeWindowHandle(), {
+                cornerRadius: 12,
+                tintColor: '#FF00001A', // Red tint
+                opaque: false, 
+            });
+            if (viewId !== -1) {
+                liquidGlass.unstable_setVariant(viewId, 2);
+                // liquidGlass.unstable_setScrim(viewId, 1);
+                // liquidGlass.unstable_setSubdued(viewId, 1);
+            }
+        });
+    }
+    windowPool.set('settings', settings);   
 }
 
 function destroyFeatureWindows() {
@@ -119,18 +180,6 @@ function destroyFeatureWindows() {
     });
 }
 
-function instantHideWindow(win) {
-    if (!win || win.isDestroyed() || !win.isVisible()) return;
-    try {
-      win.webContents.send('cancel-animations'); // ① 렌더러 애니메이션 정지
-    } catch (_) {}
-    win.hide();                                   // ② 지연 없이 바로 hide
-  }
-
-function isAllowed(name) {
-    const def = windowDefinitions[name];
-    return def && def.allowedStates.includes(currentHeaderState);
-}
 
 function getCurrentDisplay(window) {
     if (!window || window.isDestroyed()) return screen.getPrimaryDisplay();
@@ -149,605 +198,9 @@ function getDisplayById(displayId) {
     return displays.find(d => d.id === displayId) || screen.getPrimaryDisplay();
 }
 
-class WindowLayoutManager {
-    constructor() {
-        this.isUpdating = false;
-        this.PADDING = 80;
-    }
 
-    updateLayout() {
-        if (this.isUpdating) return;
-        this.isUpdating = true;
 
-        setImmediate(() => {
-            this.positionWindows();
-            this.isUpdating = false;
-        });
-    }
-
-    positionWindows() {
-        const header = windowPool.get('header');
-        if (!header?.getBounds) return;
-
-        const headerBounds = header.getBounds();
-        const display = getCurrentDisplay(header);
-        const { width: screenWidth, height: screenHeight } = display.workAreaSize;
-        const { x: workAreaX, y: workAreaY } = display.workArea;
-
-        const headerCenterX = headerBounds.x - workAreaX + headerBounds.width / 2;
-        const headerCenterY = headerBounds.y - workAreaY + headerBounds.height / 2;
-
-        const relativeX = headerCenterX / screenWidth;
-        const relativeY = headerCenterY / screenHeight;
-
-        const strategy = this.determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY);
-
-        this.positionFeatureWindows(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
-        this.positionSettingsWindow(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
-    }
-
-    determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY) {
-        const spaceBelow = screenHeight - (headerBounds.y + headerBounds.height);
-        const spaceAbove = headerBounds.y;
-        const spaceLeft = headerBounds.x;
-        const spaceRight = screenWidth - (headerBounds.x + headerBounds.width);
-
-        const spaces = {
-            below: spaceBelow,
-            above: spaceAbove,
-            left: spaceLeft,
-            right: spaceRight,
-        };
-
-        if (spaceBelow >= 400) {
-            return {
-                name: 'below',
-                primary: 'below',
-                secondary: relativeX < 0.5 ? 'right' : 'left',
-            };
-        } else if (spaceAbove >= 400) {
-            return {
-                name: 'above',
-                primary: 'above',
-                secondary: relativeX < 0.5 ? 'right' : 'left',
-            };
-        } else if (relativeX < 0.3 && spaceRight >= 800) {
-            return {
-                name: 'right-side',
-                primary: 'right',
-                secondary: spaceBelow > spaceAbove ? 'below' : 'above',
-            };
-        } else if (relativeX > 0.7 && spaceLeft >= 800) {
-            return {
-                name: 'left-side',
-                primary: 'left',
-                secondary: spaceBelow > spaceAbove ? 'below' : 'above',
-            };
-        } else {
-            return {
-                name: 'adaptive',
-                primary: spaceBelow > spaceAbove ? 'below' : 'above',
-                secondary: spaceRight > spaceLeft ? 'right' : 'left',
-            };
-        }
-    }
-
-    positionFeatureWindows(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY) {
-        const ask = windowPool.get('ask');
-        const listen = windowPool.get('listen');
-        const askVisible = ask && ask.isVisible() && !ask.isDestroyed();
-        const listenVisible = listen && listen.isVisible() && !listen.isDestroyed();
-
-        if (!askVisible && !listenVisible) return;
-
-        const PAD_H = 12;
-        const PAD_V = -6;
-
-        /* ① 헤더 중심 X를 "디스플레이 기준 상대좌표"로 변환  */
-        const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
-
-        let askBounds = askVisible ? ask.getBounds() : null;
-        let listenBounds = listenVisible ? listen.getBounds() : null;
-
-        /* ------------------------------------------------- */
-        /* 두 창 모두 보이는 경우 */
-        /* ------------------------------------------------- */
-        if (askVisible && listenVisible) {
-            const combinedWidth = listenBounds.width + PAD_H + askBounds.width;
-
-            /* ② 모든 X 좌표를 상대좌표로 계산 */
-            let groupStartXRel = headerCenterXRel - combinedWidth / 2;
-            let listenXRel = groupStartXRel;
-            let askXRel = groupStartXRel + listenBounds.width + PAD_H;
-
-            /* 좌우 화면 여백 클램프 – 역시 상대좌표로 */
-            if (listenXRel < PAD_H) {
-                listenXRel = PAD_H;
-                askXRel = listenXRel + listenBounds.width + PAD_H;
-            }
-            if (askXRel + askBounds.width > screenWidth - PAD_H) {
-                askXRel = screenWidth - PAD_H - askBounds.width;
-                listenXRel = askXRel - listenBounds.width - PAD_H;
-            }
-
-            /* Y 좌표는 이미 상대값으로 계산돼 있음 */
-            let yRel;
-            switch (strategy.primary) {
-                case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
-                    break;
-                case 'above':
-                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD_V;
-                    break;
-                default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
-                    break;
-            }
-
-            /* ③ setBounds 직전에 workAreaX/Y를 더해 절대좌표로 변환 */
-            listen.setBounds({
-                x: Math.round(listenXRel + workAreaX),
-                y: Math.round(yRel + workAreaY),
-                width: listenBounds.width,
-                height: listenBounds.height,
-            });
-            ask.setBounds({
-                x: Math.round(askXRel + workAreaX),
-                y: Math.round(yRel + workAreaY),
-                width: askBounds.width,
-                height: askBounds.height,
-            });
-
-            /* ------------------------------------------------- */
-            /* 하나만 보이는 경우 */
-            /* ------------------------------------------------- */
-        } else {
-            const win = askVisible ? ask : listen;
-            const winBounds = askVisible ? askBounds : listenBounds;
-
-            /* X, Y 둘 다 상대좌표로 계산 */
-            let xRel = headerCenterXRel - winBounds.width / 2;
-            let yRel;
-            switch (strategy.primary) {
-                case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
-                    break;
-                case 'above':
-                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD_V;
-                    break;
-                default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
-                    break;
-            }
-
-            /* 화면 경계 클램프 */
-            xRel = Math.max(PAD_H, Math.min(screenWidth - winBounds.width - PAD_H, xRel));
-            yRel = Math.max(PAD_V, Math.min(screenHeight - winBounds.height - PAD_V, yRel));
-
-            /* 절대좌표로 변환 후 배치 */
-            win.setBounds({
-                x: Math.round(xRel + workAreaX),
-                y: Math.round(yRel + workAreaY),
-                width: winBounds.width,
-                height: winBounds.height,
-            });
-        }
-    }
-
-    positionSettingsWindow(headerBounds, strategy, screenWidth, screenHeight) {
-        const settings = windowPool.get('settings');
-        if (!settings?.getBounds || !settings.isVisible()) return;
-
-        // if (settings.__lockedByButton) return;
-        if (settings.__lockedByButton) {
-            const headerDisplay = getCurrentDisplay(windowPool.get('header'));
-            const settingsDisplay = getCurrentDisplay(settings);
-            if (headerDisplay.id !== settingsDisplay.id) {
-                settings.__lockedByButton = false;
-            } else {
-                return; // 같은 화면이면 그대로 둔다
-            }
-        }
-
-        const settingsBounds = settings.getBounds();
-        const PAD = 5;
-
-        const buttonPadding = 17;
-        let x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
-        let y = headerBounds.y + headerBounds.height + PAD;
-
-        const otherVisibleWindows = [];
-        ['listen', 'ask'].forEach(name => {
-            const win = windowPool.get(name);
-            if (win && win.isVisible() && !win.isDestroyed()) {
-                otherVisibleWindows.push({
-                    name,
-                    bounds: win.getBounds(),
-                });
-            }
-        });
-
-        const settingsNewBounds = { x, y, width: settingsBounds.width, height: settingsBounds.height };
-        let hasOverlap = false;
-
-        for (const otherWin of otherVisibleWindows) {
-            if (this.boundsOverlap(settingsNewBounds, otherWin.bounds)) {
-                hasOverlap = true;
-                break;
-            }
-        }
-
-        if (hasOverlap) {
-            x = headerBounds.x + headerBounds.width + PAD;
-            y = headerBounds.y;
-            settingsNewBounds.x = x;
-            settingsNewBounds.y = y;
-
-            if (x + settingsBounds.width > screenWidth - 10) {
-                x = headerBounds.x - settingsBounds.width - PAD;
-                settingsNewBounds.x = x;
-            }
-
-            if (x < 10) {
-                x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
-                y = headerBounds.y - settingsBounds.height - PAD;
-                settingsNewBounds.x = x;
-                settingsNewBounds.y = y;
-
-                if (y < 10) {
-                    x = headerBounds.x + headerBounds.width - settingsBounds.width;
-                    y = headerBounds.y + headerBounds.height + PAD;
-                }
-            }
-        }
-
-        x = Math.max(10, Math.min(screenWidth - settingsBounds.width - 10, x));
-        y = Math.max(10, Math.min(screenHeight - settingsBounds.height - 10, y));
-
-        settings.setBounds({ x, y });
-        settings.moveTop();
-
-        // console.log(`[Layout] Settings positioned at (${x}, ${y}) ${hasOverlap ? '(adjusted for overlap)' : '(default position)'}`);
-    }
-
-    boundsOverlap(bounds1, bounds2) {
-        const margin = 10;
-        return !(
-            bounds1.x + bounds1.width + margin < bounds2.x ||
-            bounds2.x + bounds2.width + margin < bounds1.x ||
-            bounds1.y + bounds1.height + margin < bounds2.y ||
-            bounds2.y + bounds2.height + margin < bounds1.y
-        );
-    }
-
-    isWindowVisible(windowName) {
-        const window = windowPool.get(windowName);
-        return window && !window.isDestroyed() && window.isVisible();
-    }
-
-    destroy() {}
-}
-
-class SmoothMovementManager {
-    constructor() {
-        this.stepSize = 80;
-        this.animationDuration = 300;
-        this.headerPosition = { x: 0, y: 0 };
-        this.isAnimating = false;
-        this.hiddenPosition = null;
-        this.lastVisiblePosition = null;
-        this.currentDisplayId = null;
-    }
-
-    moveToDisplay(displayId) {
-        const header = windowPool.get('header');
-        if (!header || !header.isVisible() || this.isAnimating) return;
-
-        const targetDisplay = getDisplayById(displayId);
-        if (!targetDisplay) return;
-
-        const currentBounds = header.getBounds();
-        const currentDisplay = getCurrentDisplay(header);
-
-        if (currentDisplay.id === targetDisplay.id) {
-            console.log('[Movement] Already on target display');
-            return;
-        }
-
-        const relativeX = (currentBounds.x - currentDisplay.workArea.x) / currentDisplay.workAreaSize.width;
-        const relativeY = (currentBounds.y - currentDisplay.workArea.y) / currentDisplay.workAreaSize.height;
-
-        const targetX = targetDisplay.workArea.x + targetDisplay.workAreaSize.width * relativeX;
-        const targetY = targetDisplay.workArea.y + targetDisplay.workAreaSize.height * relativeY;
-
-        const finalX = Math.max(
-            targetDisplay.workArea.x,
-            Math.min(targetDisplay.workArea.x + targetDisplay.workAreaSize.width - currentBounds.width, targetX)
-        );
-        const finalY = Math.max(
-            targetDisplay.workArea.y,
-            Math.min(targetDisplay.workArea.y + targetDisplay.workAreaSize.height - currentBounds.height, targetY)
-        );
-
-        this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
-        this.animateToPosition(header, finalX, finalY);
-
-        this.currentDisplayId = targetDisplay.id;
-    }
-
-    hideToEdge(edge, callback, { instant = false } = {}) {
-        const header = windowPool.get('header');
-        if (!header || header.isDestroyed()) {
-          if (typeof callback === 'function') callback();
-          return;
-        }
-      
-        const { x, y } = header.getBounds();
-        this.lastVisiblePosition = { x, y };
-        this.hiddenPosition     = { edge };
-      
-        // header.webContents.send('window-hide-animation');
-      
-        // setTimeout(() => {
-        //   if (!header.isDestroyed()) header.hide();
-        //   if (typeof callback === 'function') callback();
-        // }, 5);
-        if (instant) {
-            header.hide();
-            callback?.();
-            return;
-        }
-
-        header.webContents.send('window-hide-animation');
-      
-        setTimeout(() => {
-          if (!header.isDestroyed()) header.hide();
-          if (typeof callback === 'function') callback();
-        }, 5);
-    }
-      
-      showFromEdge(callback) {
-        const header = windowPool.get('header');
-        if (!header || header.isDestroyed()) {
-          if (typeof callback === 'function') callback();
-          return;
-        }
-      
-        // 숨기기 전에 기억해둔 위치 복구
-        if (this.lastVisiblePosition) {
-          header.setPosition(
-            this.lastVisiblePosition.x,
-            this.lastVisiblePosition.y,
-            false   // animate: false
-          );
-        }
-      
-        header.show();
-        header.webContents.send('window-show-animation');
-      
-        // 내부 상태 초기화
-        this.hiddenPosition      = null;
-        this.lastVisiblePosition = null;
-      
-        if (typeof callback === 'function') callback();
-    }
-
-    moveStep(direction) {
-        const header = windowPool.get('header');
-        if (!header || !header.isVisible() || this.isAnimating) return;
-
-        console.log(`[Movement] Step ${direction}`);
-
-        const currentBounds = header.getBounds();
-        this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
-
-        let targetX = this.headerPosition.x;
-        let targetY = this.headerPosition.y;
-
-        switch (direction) {
-            case 'left':
-                targetX -= this.stepSize;
-                break;
-            case 'right':
-                targetX += this.stepSize;
-                break;
-            case 'up':
-                targetY -= this.stepSize;
-                break;
-            case 'down':
-                targetY += this.stepSize;
-                break;
-            default:
-                return;
-        }
-
-        const displays = screen.getAllDisplays();
-        let validPosition = false;
-
-        for (const display of displays) {
-            const { x, y, width, height } = display.workArea;
-            const headerBounds = header.getBounds();
-
-            if (targetX >= x && targetX + headerBounds.width <= x + width && targetY >= y && targetY + headerBounds.height <= y + height) {
-                validPosition = true;
-                break;
-            }
-        }
-
-        if (!validPosition) {
-            const nearestDisplay = screen.getDisplayNearestPoint({ x: targetX, y: targetY });
-            const { x, y, width, height } = nearestDisplay.workArea;
-            const headerBounds = header.getBounds();
-
-            targetX = Math.max(x, Math.min(x + width - headerBounds.width, targetX));
-            targetY = Math.max(y, Math.min(y + height - headerBounds.height, targetY));
-        }
-
-        if (targetX === this.headerPosition.x && targetY === this.headerPosition.y) {
-            console.log(`[Movement] Already at boundary for ${direction}`);
-            return;
-        }
-
-        this.animateToPosition(header, targetX, targetY);
-    }
-
-    animateToPosition(header, targetX, targetY) {
-        this.isAnimating = true;
-
-        const startX = this.headerPosition.x;
-        const startY = this.headerPosition.y;
-        const startTime = Date.now();
-
-        if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(startX) || !Number.isFinite(startY)) {
-            console.error('[Movement] Invalid position values:', { startX, startY, targetX, targetY });
-            this.isAnimating = false;
-            return;
-        }
-
-        const animate = () => {
-            if (!header || header.isDestroyed()) {
-                this.isAnimating = false;
-                return;
-            }
-
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / this.animationDuration, 1);
-
-            const eased = 1 - Math.pow(1 - progress, 3);
-
-            const currentX = startX + (targetX - startX) * eased;
-            const currentY = startY + (targetY - startY) * eased;
-
-            if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
-                console.error('[Movement] Invalid animation values:', { currentX, currentY, progress, eased });
-                this.isAnimating = false;
-                return;
-            }
-
-            header.setPosition(Math.round(currentX), Math.round(currentY));
-
-            if (progress < 1) {
-                setTimeout(animate, 8);
-            } else {
-                this.headerPosition = { x: targetX, y: targetY };
-                if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
-                } else {
-                    console.warn('[Movement] Final position invalid, skip setPosition:', { targetX, targetY });
-                }
-                this.isAnimating = false;
-
-                updateLayout();
-
-                console.log(`[Movement] Step completed to (${targetX}, ${targetY})`);
-            }
-        };
-
-        animate();
-    }
-
-    moveToEdge(direction) {
-        const header = windowPool.get('header');
-        if (!header || !header.isVisible() || this.isAnimating) return;
-
-        console.log(`[Movement] Move to edge: ${direction}`);
-
-        const display = getCurrentDisplay(header);
-        const { width, height } = display.workAreaSize;
-        const { x: workAreaX, y: workAreaY } = display.workArea;
-        const headerBounds = header.getBounds();
-
-        const currentBounds = header.getBounds();
-        let targetX = currentBounds.x;
-        let targetY = currentBounds.y;
-
-        switch (direction) {
-            case 'left':
-                targetX = workAreaX;
-                break;
-            case 'right':
-                targetX = workAreaX + width - headerBounds.width;
-                break;
-            case 'up':
-                targetY = workAreaY;
-                break;
-            case 'down':
-                targetY = workAreaY + height - headerBounds.height;
-                break;
-        }
-
-        this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
-
-        this.isAnimating = true;
-        const startX = this.headerPosition.x;
-        const startY = this.headerPosition.y;
-        const duration = 400;
-        const startTime = Date.now(); // 이 줄을 animate 함수 정의 전으로 이동
-
-        if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(startX) || !Number.isFinite(startY)) {
-            console.error('[Movement] Invalid edge position values:', { startX, startY, targetX, targetY });
-            this.isAnimating = false;
-            return;
-        }
-
-        const animate = () => {
-            if (!header || header.isDestroyed()) {
-                this.isAnimating = false;
-                return;
-            }
-
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            const eased = 1 - Math.pow(1 - progress, 4);
-
-            const currentX = startX + (targetX - startX) * eased;
-            const currentY = startY + (targetY - startY) * eased;
-
-            if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
-                console.error('[Movement] Invalid edge animation values:', { currentX, currentY, progress, eased });
-                this.isAnimating = false;
-                return;
-            }
-
-            header.setPosition(Math.round(currentX), Math.round(currentY));
-
-            if (progress < 1) {
-                setTimeout(animate, 8);
-            } else {
-                if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
-                }
-                this.headerPosition = { x: targetX, y: targetY };
-                this.isAnimating = false;
-
-                updateLayout();
-
-                console.log(`[Movement] Edge movement completed: ${direction}`);
-            }
-        };
-
-        animate();
-    }
-
-    handleKeyPress(direction) {}
-
-    handleKeyRelease(direction) {}
-
-    forceStopMovement() {
-        this.isAnimating = false;
-    }
-
-    destroy() {
-        this.isAnimating = false;
-        console.log('[Movement] Destroyed');
-    }
-}
-
-const layoutManager = new WindowLayoutManager();
-let movementManager = null;
-
-function toggleAllWindowsVisibility() {
+function toggleAllWindowsVisibility(movementManager) {
     const header = windowPool.get('header');
     if (!header) return;
 
@@ -825,21 +278,6 @@ function toggleAllWindowsVisibility() {
     }
 }
 
-function ensureDataDirectories() {
-    const homeDir = os.homedir();
-    const pickleGlassDir = path.join(homeDir, '.pickle-glass');
-    const dataDir = path.join(pickleGlassDir, 'data');
-    const imageDir = path.join(dataDir, 'image');
-    const audioDir = path.join(dataDir, 'audio');
-
-    [pickleGlassDir, dataDir, imageDir, audioDir].forEach(dir => {
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-    });
-
-    return { imageDir, audioDir };
-}
 
 function createWindows() {
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -847,8 +285,8 @@ function createWindows() {
 
     const initialX = Math.round((screenWidth - DEFAULT_WINDOW_WIDTH) / 2);
     const initialY = workAreaY + 21;
-    movementManager = new SmoothMovementManager();
-
+    movementManager = new SmoothMovementManager(windowPool, getDisplayById, getCurrentDisplay, updateLayout);
+    
     const header = new BrowserWindow({
         width: DEFAULT_WINDOW_WIDTH,
         height: HEADER_HEIGHT,
@@ -856,6 +294,7 @@ function createWindows() {
         y: initialY,
         frame: false,
         transparent: true,
+        vibrancy: false,
         alwaysOnTop: true,
         skipTaskbar: true,
         hiddenInMissionControl: true,
@@ -869,16 +308,43 @@ function createWindows() {
             webSecurity: false,
         },
     });
-
+    header.setWindowButtonVisibility(false);
+    const headerLoadOptions = {};
+    if (!shouldUseLiquidGlass) {
+        header.loadFile(path.join(__dirname, '../app/header.html'), headerLoadOptions);
+    }
+    else {
+        headerLoadOptions.query = { glass: 'true' };
+        header.loadFile(path.join(__dirname, '../app/header.html'), headerLoadOptions);
+        header.webContents.once('did-finish-load', () => {
+            const viewId = liquidGlass.addView(header.getNativeWindowHandle(), {
+                cornerRadius: 12,
+                tintColor: '#FF00001A', // Red tint
+                opaque: false, 
+            });
+            if (viewId !== -1) {
+                liquidGlass.unstable_setVariant(viewId, 2); 
+                // liquidGlass.unstable_setScrim(viewId, 1); 
+                // liquidGlass.unstable_setSubdued(viewId, 1);
+            }
+        });
+    }
     windowPool.set('header', header);
+    layoutManager = new WindowLayoutManager(windowPool);
 
-    if (currentHeaderState === 'app') {
+    header.webContents.once('dom-ready', () => {
+        loadAndRegisterShortcuts(movementManager);
+    });
+
+    setupIpcHandlers(movementManager);
+
+    if (currentHeaderState === 'main') {
         createFeatureWindows(header);
     }
 
     header.setContentProtection(isContentProtectionOn);
     header.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    header.loadFile(path.join(__dirname, '../app/header.html'));
+    // header.loadFile(path.join(__dirname, '../app/header.html'));
     
     // Open DevTools in development
     if (!app.isPackaged) {
@@ -904,14 +370,14 @@ function createWindows() {
 
     header.on('resize', updateLayout);
 
-    header.webContents.once('dom-ready', () => {
-        loadAndRegisterShortcuts();
-    });
+    // header.webContents.once('dom-ready', () => {
+    //     loadAndRegisterShortcuts();
+    // });
 
     ipcMain.handle('toggle-all-windows-visibility', toggleAllWindowsVisibility);
 
     ipcMain.handle('toggle-feature', async (event, featureName) => {
-        if (!windowPool.get(featureName) && currentHeaderState === 'app') {
+        if (!windowPool.get(featureName) && currentHeaderState === 'main') {
             createFeatureWindows(windowPool.get('header'));
         }
 
@@ -1103,12 +569,12 @@ function createWindows() {
         }
     });
 
-    setupIpcHandlers();
+    // setupIpcHandlers();
 
     return windowPool;
 }
 
-function loadAndRegisterShortcuts() {
+function loadAndRegisterShortcuts(movementManager) {
     const defaultKeybinds = getDefaultKeybinds();
     const header = windowPool.get('header');
     const sendToRenderer = (channel, ...args) => {
@@ -1121,10 +587,9 @@ function loadAndRegisterShortcuts() {
         });
     };
 
-    const openaiSessionRef = { current: null };
 
     if (!header) {
-        return updateGlobalShortcuts(defaultKeybinds, undefined, sendToRenderer, openaiSessionRef);
+        return updateGlobalShortcuts(defaultKeybinds, undefined, sendToRenderer, movementManager);
     }
 
     header.webContents
@@ -1132,19 +597,13 @@ function loadAndRegisterShortcuts() {
         .then(saved => (saved ? JSON.parse(saved) : {}))
         .then(savedKeybinds => {
             const keybinds = { ...defaultKeybinds, ...savedKeybinds };
-            updateGlobalShortcuts(keybinds, header, sendToRenderer, openaiSessionRef);
+            updateGlobalShortcuts(keybinds, header, sendToRenderer, movementManager);
         })
-        .catch(() => updateGlobalShortcuts(defaultKeybinds, header, sendToRenderer, openaiSessionRef));
+        .catch(() => updateGlobalShortcuts(defaultKeybinds, header, sendToRenderer, movementManager));
 }
 
-function updateLayout() {
-    layoutManager.updateLayout();
-}
 
-function setupIpcHandlers(openaiSessionRef) {
-    const layoutManager = new WindowLayoutManager();
-    // const movementManager = new SmoothMovementManager();
-
+function setupIpcHandlers(movementManager) {
     screen.on('display-added', (event, newDisplay) => {
         console.log('[Display] New display added:', newDisplay.id);
     });
@@ -1289,9 +748,9 @@ function setupIpcHandlers(openaiSessionRef) {
         console.log(`[WindowManager] Header state changed to: ${state}`);
         currentHeaderState = state;
 
-        if (state === 'app') {
+        if (state === 'main') {
             createFeatureWindows(windowPool.get('header'));
-        } else {         // 'apikey'
+        } else {         // 'apikey' | 'permission'
             destroyFeatureWindows();
         }
 
@@ -1323,7 +782,7 @@ function setupIpcHandlers(openaiSessionRef) {
                         });
                     };
 
-                    updateGlobalShortcuts(keybinds, header, sendToRenderer, { current: null });
+                    updateGlobalShortcuts(keybinds, header, sendToRenderer, movementManager);
                 })
                 .catch(console.error);
         }
@@ -1637,7 +1096,6 @@ function setupIpcHandlers(openaiSessionRef) {
     });
 }
 
-let storedProvider = 'openai';
 
 async function setApiKey(apiKey, provider = 'openai') {
     console.log('[WindowManager] Persisting API key and provider to DB');
@@ -1729,96 +1187,6 @@ function setupApiKeyIPC() {
     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
 }
 
-function createWindow(sendToRenderer, openaiSessionRef) {
-    const mainWindow = new BrowserWindow({
-        width: DEFAULT_WINDOW_WIDTH,
-        height: HEADER_HEIGHT,
-        x: initialX,
-        y: initialY,
-        frame: false,
-        transparent: false,
-        hasShadow: true,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        hiddenInMissionControl: true,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
-            backgroundThrottling: false,
-            enableBlinkFeatures: 'GetDisplayMedia',
-            webSecurity: true,
-            allowRunningInsecureContent: false,
-        },
-        backgroundColor: '#FF0000',
-    });
-
-    const { session, desktopCapturer } = require('electron');
-    session.defaultSession.setDisplayMediaRequestHandler(
-        (request, callback) => {
-            desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
-                callback({ video: sources[0], audio: 'loopback' });
-            });
-        },
-        { useSystemPicker: true }
-    );
-
-    mainWindow.setResizable(false);
-    mainWindow.setContentProtection(true);
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width: screenWidth } = primaryDisplay.workAreaSize;
-    const x = Math.floor((screenWidth - DEFAULT_WINDOW_WIDTH) / 2);
-    const y = 0;
-    mainWindow.setPosition(x, y);
-
-    if (process.platform === 'win32') {
-        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-    }
-
-    mainWindow.loadFile(path.join(__dirname, '../index.html'));
-
-    mainWindow.webContents.once('dom-ready', () => {
-        setTimeout(() => {
-            const defaultKeybinds = getDefaultKeybinds();
-            let keybinds = defaultKeybinds;
-
-            mainWindow.webContents
-                .executeJavaScript(
-                    `
-                (() => {
-                    try {
-                        const savedKeybinds = localStorage.getItem('customKeybinds');
-                        const savedContentProtection = localStorage.getItem('contentProtection');
-                        
-                        return {
-                            keybinds: savedKeybinds ? JSON.parse(savedKeybinds) : null,
-                            contentProtection: savedContentProtection !== null ? savedContentProtection === 'true' : true
-                        };
-                    } catch (e) {
-                        return { keybinds: null, contentProtection: true };
-                    }
-                })()
-            `
-                )
-                .then(savedSettings => {
-                    if (savedSettings.keybinds) {
-                        keybinds = { ...defaultKeybinds, ...savedSettings.keybinds };
-                    }
-                    mainWindow.setContentProtection(savedSettings.contentProtection);
-                    updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessionRef);
-                })
-                .catch(() => {
-                    mainWindow.setContentProtection(true);
-                    updateGlobalShortcuts(defaultKeybinds, mainWindow, sendToRenderer, openaiSessionRef);
-                });
-        }, 150);
-    });
-
-    setupWindowIpcHandlers(mainWindow, sendToRenderer, openaiSessionRef);
-
-    return mainWindow;
-}
 
 function getDefaultKeybinds() {
     const isMac = process.platform === 'darwin';
@@ -1838,23 +1206,20 @@ function getDefaultKeybinds() {
     };
 }
 
-function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessionRef) {
+function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementManager) {
     console.log('Updating global shortcuts with:', keybinds);
 
     // Unregister all existing shortcuts
     globalShortcut.unregisterAll();
 
-    if (movementManager) {
-        movementManager.destroy();
-    }
-    movementManager = new SmoothMovementManager();
+    let toggleVisibilityDebounceTimer = null;
 
     const isMac = process.platform === 'darwin';
     const modifier = isMac ? 'Cmd' : 'Ctrl';
 
     if (keybinds.toggleVisibility) {
         try {
-            globalShortcut.register(keybinds.toggleVisibility, toggleAllWindowsVisibility);
+            globalShortcut.register(keybinds.toggleVisibility, () => toggleAllWindowsVisibility(movementManager));
             console.log(`Registered toggleVisibility: ${keybinds.toggleVisibility}`);
         } catch (error) {
             console.error(`Failed to register toggleVisibility (${keybinds.toggleVisibility}):`, error);
@@ -1867,9 +1232,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessi
             const key = `${modifier}+Shift+${index + 1}`;
             try {
                 globalShortcut.register(key, () => {
-                    if (movementManager) {
-                        movementManager.moveToDisplay(display.id);
-                    }
+                    movementManager.moveToDisplay(display.id);
                 });
                 console.log(`Registered display switch shortcut: ${key} -> Display ${index + 1}`);
             } catch (error) {
@@ -2056,48 +1419,6 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessi
     }
 }
 
-function setupWindowIpcHandlers(mainWindow, sendToRenderer, openaiSessionRef) {
-    ipcMain.handle('resize-window', async (event, args) => {
-        try {
-            const { isMainViewVisible, view } = args;
-            let targetHeight = HEADER_HEIGHT;
-            let targetWidth = DEFAULT_WINDOW_WIDTH;
-
-            if (isMainViewVisible) {
-                const viewHeights = {
-                    listen: 400,
-                    customize: 600,
-                    help: 550,
-                    history: 550,
-                    setup: 200,
-                };
-                targetHeight = viewHeights[view] || 400;
-            }
-
-            const [currentWidth, currentHeight] = mainWindow.getSize();
-            if (currentWidth !== targetWidth || currentHeight !== targetHeight) {
-                console.log('Window resize requested but disabled for manual resize prevention');
-            }
-        } catch (error) {
-            console.error('Error resizing window:', error);
-        }
-    });
-
-    ipcMain.handle('toggle-window-visibility', async event => {
-        if (mainWindow.isVisible()) {
-            mainWindow.hide();
-        } else {
-            mainWindow.show();
-        }
-    });
-
-    ipcMain.handle('quit-application', async () => {
-        app.quit();
-    });
-
-    // Keep other essential IPC handlers
-    // ... other handlers like open-external, etc. can be added from the old file if needed
-}
 
 async function captureScreenshot(options = {}) {
     if (process.platform === 'darwin') {

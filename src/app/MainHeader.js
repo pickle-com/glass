@@ -1,6 +1,6 @@
 import { html, css, LitElement } from '../assets/lit-core-2.7.4.min.js';
 
-export class AppHeader extends LitElement {
+export class MainHeader extends LitElement {
     static properties = {
         isSessionActive: { type: Boolean, state: true },
     };
@@ -292,6 +292,58 @@ export class AppHeader extends LitElement {
             width: 16px;
             height: 16px;
         }
+        :host-context(body.has-glass) .header,
+        :host-context(body.has-glass) .listen-button,
+        :host-context(body.has-glass) .header-actions,
+        :host-context(body.has-glass) .settings-button {
+            /* 배경·블러·그림자 전부 제거 */
+            background: transparent !important;
+            filter: none !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+        }
+        :host-context(body.has-glass) .icon-box {
+            background: transparent !important;
+            border: none !important;
+        }
+
+        /* 장식용 before/after 레이어와 버튼 오버레이 비활성화 */
+        :host-context(body.has-glass) .header::before,
+        :host-context(body.has-glass) .header::after,
+        :host-context(body.has-glass) .listen-button::before,
+        :host-context(body.has-glass) .listen-button::after {
+            display: none !important;
+        }
+
+        /* hover 때 의도치 않게 생기는 배경도 차단 */
+        :host-context(body.has-glass) .header-actions:hover,
+        :host-context(body.has-glass) .settings-button:hover,
+        :host-context(body.has-glass) .listen-button:hover::before {
+            background: transparent !important;
+        }
+        :host-context(body.has-glass) * {
+            animation: none !important;
+            transition: none !important;
+            transform: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+            box-shadow: none !important;
+        }
+
+        /* 2) pill 형태·아이콘 박스 둥근 모서리 평면화 (선택) */
+        :host-context(body.has-glass) .header,
+        :host-context(body.has-glass) .listen-button,
+        :host-context(body.has-glass) .header-actions,
+        :host-context(body.has-glass) .settings-button,
+        :host-context(body.has-glass) .icon-box {
+            border-radius: 0 !important;
+        }
+        :host-context(body.has-glass) {
+            animation: none !important;
+            transition: none !important;
+            transform: none !important;
+            will-change: auto !important;
+        }
         `;
 
     constructor() {
@@ -362,7 +414,7 @@ export class AppHeader extends LitElement {
 
     toggleVisibility() {
         if (this.isAnimating) {
-            console.log('[AppHeader] Animation already in progress, ignoring toggle');
+            console.log('[MainHeader] Animation already in progress, ignoring toggle');
             return;
         }
         
@@ -432,7 +484,7 @@ export class AppHeader extends LitElement {
         } else if (this.classList.contains('sliding-in')) {
             this.classList.remove('sliding-in');
             this.hasSlidIn = true;
-            console.log('[AppHeader] Slide-in animation completed');
+            console.log('[MainHeader] Slide-in animation completed');
         }
     }
 
@@ -484,7 +536,7 @@ export class AppHeader extends LitElement {
         if (this.wasJustDragged) return;
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            console.log(`[AppHeader] showWindow('${name}') called at ${Date.now()}`);
+            console.log(`[MainHeader] showWindow('${name}') called at ${Date.now()}`);
             
             ipcRenderer.send('cancel-hide-window', name);
 
@@ -508,7 +560,7 @@ export class AppHeader extends LitElement {
     hideWindow(name) {
         if (this.wasJustDragged) return;
         if (window.require) {
-            console.log(`[AppHeader] hideWindow('${name}') called at ${Date.now()}`);
+            console.log(`[MainHeader] hideWindow('${name}') called at ${Date.now()}`);
             window.require('electron').ipcRenderer.send('hide-window', name);
         }
     }
@@ -590,4 +642,4 @@ export class AppHeader extends LitElement {
     }
 }
 
-customElements.define('app-header', AppHeader);
+customElements.define('main-header', MainHeader);
