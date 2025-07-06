@@ -102,14 +102,18 @@ npm run setup
 We love contributions! Feel free to open issues for bugs or feature requests.
 > Currently, we're working on a full code refactor and modularization. Once that's completed, we'll jump into addressing the major issues.
 
-## Contributors
+### Contributors
 
 <a href="https://github.com/pickle-com/glass/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=pickle-com/glass" />
 </a>
 
+### Help Wanted Issues
 
-## 🛠 Current Issues & Improvements
+We have a list of [help wanted](https://github.com/pickle-com/glass/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22%F0%9F%99%8B%E2%80%8D%E2%99%82%EF%B8%8Fhelp%20wanted%22) that contain small features and bugs which have a relatively limited scope. This is a great place to get started, gain experience, and get familiar with our contribution process.
+
+
+### 🛠 Current Issues & Improvements
 
 | Status | Issue                          | Description                                       |
 |--------|--------------------------------|---------------------------------------------------|
@@ -121,7 +125,7 @@ We love contributions! Feel free to open issues for bugs or feature requests.
 | 🚧 WIP      | Login Issue                    | Currently breaking when switching between local and sign-in mode |
 | 🚧 WIP      | Liquid Glass                    | Liquid Glass UI for MacOS 26 |
 
-## Changelog
+### Changelog
 
 - Jul 5: Now support Gemini, Intel Mac supported
 
