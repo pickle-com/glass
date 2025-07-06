@@ -30,7 +30,7 @@ To have fun building with us, join our [Discord](https://discord.gg/UCZH5B5Hpd)!
 
 **Version**: Latest Release  
 **Platform**: Windows 10/11 (64-bit)  
-**Size**: ~200MB (varies by version)  
+**Size**: ~120MB (for version 0.1.2)  
 **License**: MIT  
 
 ### Features
