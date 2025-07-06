@@ -104,6 +104,18 @@ We love contributions! Feel free to open issues for bugs or feature requests.
 | 🚧 WIP      | Permission Issue           | Mic & system audio & display capture permission sometimes not working|
 
 
+## Known Issues & Limitations
+
+> **Note:** This release is a community build with major Windows compatibility improvements, but some features are still in progress or may not be fully stable. Please review the following known issues before use:
+
+- **Transcription (AEC) Reliability:** Transcription may not work occasionally, especially with aggressive echo cancellation.
+- **Code Refactoring:** The codebase is undergoing refactoring for better maintainability; some areas may be less polished.
+- **Firebase Data Storage:** Session and ask data are not always saved in Firebase for signed-up users.
+- **Login Switching:** Switching between local and sign-in mode can break the app; use with caution.
+- **Liquid Glass UI:** The new UI for MacOS is not finished and is marked as coming soon.
+- **Permissions:** Microphone, system audio, and display capture permissions may not work on all systems or may require manual intervention.
+
+If you encounter issues, please check the Issues tab or open a new issue with details.
 
 ## About Pickle
 
