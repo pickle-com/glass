@@ -100,13 +100,13 @@
             }
 
             .window-sliding-down {
-                animation: slideDownFromHeader 0.25s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+                animation: slideDownFromHeader 0.12s cubic-bezier(0.23, 1, 0.32, 1) forwards;
                 will-change: transform, opacity;
                 transform-style: preserve-3d;
             }
 
             .window-sliding-up {
-                animation: slideUpToHeader 0.18s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
+                animation: slideUpToHeader 0.10s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
                 will-change: transform, opacity;
                 transform-style: preserve-3d;
             }
@@ -156,14 +156,14 @@
             }
 
             .settings-window-show {
-                animation: settingsPopFromButton 0.22s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+                animation: settingsPopFromButton 0.12s cubic-bezier(0.23, 1, 0.32, 1) forwards;
                 transform-origin: 85% 0%;
                 will-change: transform, opacity;
                 transform-style: preserve-3d;
             }
 
             .settings-window-hide {
-                animation: settingsCollapseToButton 0.18s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
+                animation: settingsCollapseToButton 0.10s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards;
                 transform-origin: 85% 0%;
                 will-change: transform, opacity;
                 transform-style: preserve-3d;
@@ -250,7 +250,7 @@
                         if (animationTimeout) clearTimeout(animationTimeout);
                         animationTimeout = setTimeout(() => {
                             app.classList.remove('window-sliding-down');
-                        }, 250);
+                        }, 120);
                     });
                     
                     ipcRenderer.on('settings-window-show-animation', () => {
@@ -261,7 +261,7 @@
                         if (animationTimeout) clearTimeout(animationTimeout);
                         animationTimeout = setTimeout(() => {
                             app.classList.remove('settings-window-show');
-                        }, 220);
+                        }, 120);
                     });
                     
                     ipcRenderer.on('window-hide-animation', () => {
@@ -273,7 +273,7 @@
                         animationTimeout = setTimeout(() => {
                             app.classList.remove('window-sliding-up');
                             app.classList.add('window-hidden');
-                        }, 180);
+                        }, 100);
                     });
                     
                     ipcRenderer.on('settings-window-hide-animation', () => {
@@ -285,7 +285,7 @@
                         animationTimeout = setTimeout(() => {
                             app.classList.remove('settings-window-hide');
                             app.classList.add('window-hidden');
-                        }, 180);
+                        }, 100);
                     });
 
                     ipcRenderer.on('listen-window-move-to-center', () => {
