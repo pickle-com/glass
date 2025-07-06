@@ -16,6 +16,7 @@ const { createWindows } = require('./electron/windowManager.js');
 const { setupLiveSummaryIpcHandlers, stopMacOSAudioCapture } = require('./features/listen/liveSummaryService.js');
 const databaseInitializer = require('./common/services/databaseInitializer');
 const dataService = require('./common/services/dataService');
+const config = require('./common/config/config');
 const path = require('node:path');
 const { Deeplink } = require('electron-deeplink');
 const express = require('express');
@@ -23,6 +24,7 @@ const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
 
 let WEB_PORT = 3000;
+let API_PORT = 9001;
 
 const openaiSessionRef = { current: null };
 let deeplink = null; // Initialize as null
@@ -254,6 +256,58 @@ function setupGeneralIpcHandlers() {
         }
     });
 
+    // Network settings IPC handlers
+    ipcMain.handle('get-network-settings', async () => {
+        try {
+            console.log('[IPC] get-network-settings called - API_PORT:', API_PORT, 'WEB_PORT:', WEB_PORT);
+            const settings = {
+                apiPort: config.get('apiPort'),
+                webPort: config.get('webPort'),
+                lockPorts: config.get('lockPorts'),
+                currentApiPort: API_PORT,
+                currentWebPort: WEB_PORT
+            };
+            console.log('[IPC] Retrieved network settings:', settings);
+            return settings;
+        } catch (error) {
+            console.error('[IPC] Failed to get network settings:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('save-network-settings', async (event, settings) => {
+        try {
+            console.log('[IPC] Saving network settings:', settings);
+            
+            config.set('apiPort', settings.apiPort);
+            config.set('webPort', settings.webPort);
+            config.set('lockPorts', settings.lockPorts);
+            config.saveUserConfig();
+            
+            console.log('[IPC] Network settings saved successfully');
+            return { success: true };
+        } catch (error) {
+            console.error('[IPC] Failed to save network settings:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('lock-current-ports', async () => {
+        try {
+            console.log('[IPC] Locking current ports - API:', API_PORT, 'Web:', WEB_PORT);
+            
+            config.set('apiPort', API_PORT);
+            config.set('webPort', WEB_PORT);
+            config.set('lockPorts', true);
+            config.saveUserConfig();
+            
+            console.log('[IPC] Current ports locked successfully');
+            return { success: true };
+        } catch (error) {
+            console.error('[IPC] Failed to lock current ports:', error);
+            throw error;
+        }
+    });
 }
 
 async function handleCustomUrl(url) {
@@ -446,10 +500,67 @@ async function startWebStack() {
     });
   };
 
-  const apiPort = await getAvailablePort();
-  const frontendPort = await getAvailablePort();
+  const checkPortAvailable = (port) => {
+    return new Promise((resolve) => {
+      const server = require('net').createServer();
+      server.listen(port, (err) => {
+        if (err) {
+          resolve(false);
+        } else {
+          server.close(() => resolve(true));
+        }
+      });
+    });
+  };
 
-  console.log(`🔧 Allocated ports: API=${apiPort}, Frontend=${frontendPort}`);
+  // Check user-configured ports
+  const userApiPort = config.get('apiPort');
+  const userWebPort = config.get('webPort');
+  const lockPorts = config.get('lockPorts');
+
+  let apiPort, frontendPort;
+
+  if (lockPorts && userApiPort && userWebPort) {
+    // Use locked ports if configured
+    const apiPortAvailable = await checkPortAvailable(userApiPort);
+    const webPortAvailable = await checkPortAvailable(userWebPort);
+    
+    if (apiPortAvailable && webPortAvailable) {
+      apiPort = userApiPort;
+      frontendPort = userWebPort;
+      console.log(`🔒 Using locked ports: API=${apiPort}, Frontend=${frontendPort}`);
+    } else {
+      console.warn(`⚠️ Locked ports not available, falling back to auto-assignment`);
+      apiPort = await getAvailablePort();
+      frontendPort = await getAvailablePort();
+    }
+  } else if (userApiPort || userWebPort) {
+    // Use configured ports if available, otherwise auto-assign
+    if (userApiPort) {
+      const apiPortAvailable = await checkPortAvailable(userApiPort);
+      apiPort = apiPortAvailable ? userApiPort : await getAvailablePort();
+    } else {
+      apiPort = await getAvailablePort();
+    }
+    
+    if (userWebPort) {
+      const webPortAvailable = await checkPortAvailable(userWebPort);
+      frontendPort = webPortAvailable ? userWebPort : await getAvailablePort();
+    } else {
+      frontendPort = await getAvailablePort();
+    }
+    
+    console.log(`🔧 Using configured ports: API=${apiPort}, Frontend=${frontendPort}`);
+  } else {
+    // Auto-assign ports
+    apiPort = await getAvailablePort();
+    frontendPort = await getAvailablePort();
+    console.log(`🔧 Auto-assigned ports: API=${apiPort}, Frontend=${frontendPort}`);
+  }
+
+  // Update global variables
+  API_PORT = apiPort;
+  WEB_PORT = frontendPort;
 
   process.env.pickleglass_API_PORT = apiPort.toString();
   process.env.pickleglass_API_URL = `http://localhost:${apiPort}`;
@@ -462,6 +573,51 @@ async function startWebStack() {
   });
 
   const createBackendApp = require('../pickleglass_web/backend_node');
+  
+  // Expose IPC to backend for network settings
+  global.electronIpc = {
+    invoke: async (channel, ...args) => {
+      return new Promise((resolve, reject) => {
+        if (channel === 'get-network-settings') {
+          const settings = {
+            apiPort: config.get('apiPort'),
+            webPort: config.get('webPort'),
+            lockPorts: config.get('lockPorts'),
+            currentApiPort: API_PORT,
+            currentWebPort: WEB_PORT
+          };
+          console.log('[Main] Backend requested network settings:', settings);
+          resolve(settings);
+        } else if (channel === 'save-network-settings') {
+          try {
+            const [settings] = args;
+            config.set('apiPort', settings.apiPort);
+            config.set('webPort', settings.webPort);
+            config.set('lockPorts', settings.lockPorts);
+            config.saveUserConfig();
+            console.log('[Main] Backend saved network settings:', settings);
+            resolve({ success: true });
+          } catch (error) {
+            reject(error);
+          }
+        } else if (channel === 'lock-current-ports') {
+          try {
+            config.set('apiPort', API_PORT);
+            config.set('webPort', WEB_PORT);
+            config.set('lockPorts', true);
+            config.saveUserConfig();
+            console.log('[Main] Backend locked current ports - API:', API_PORT, 'Web:', WEB_PORT);
+            resolve({ success: true });
+          } catch (error) {
+            reject(error);
+          }
+        } else {
+          reject(new Error(`Unknown channel: ${channel}`));
+        }
+      });
+    }
+  };
+  
   const nodeApi = createBackendApp();
 
   const staticDir = app.isPackaged

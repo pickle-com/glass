@@ -17,10 +17,11 @@ import { useRouter } from 'next/navigation'
 declare global {
   interface Window {
     ipcRenderer?: any;
+    require?: any;
   }
 }
 
-type Tab = 'profile' | 'privacy' | 'billing'
+type Tab = 'profile' | 'privacy' | 'billing' | 'advanced'
 type BillingCycle = 'monthly' | 'annually'
 
 export default function SettingsPage() {
@@ -32,6 +33,9 @@ export default function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [displayNameInput, setDisplayNameInput] = useState('')
+  
+
+  
   const router = useRouter()
 
   const fetchApiKeyStatus = async () => {
@@ -58,16 +62,18 @@ export default function SettingsPage() {
     }
     fetchProfileData()
 
-    if (window.ipcRenderer) {
-      window.ipcRenderer.on('api-key-updated', () => {
+    if (window.require) {
+      const { ipcRenderer } = window.require('electron')
+      ipcRenderer.on('api-key-updated', () => {
         console.log('Received api-key-updated event from main process.');
         fetchApiKeyStatus();
       });
     }
 
     return () => {
-      if (window.ipcRenderer) {
-        window.ipcRenderer.removeAllListeners('api-key-updated');
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron')
+        ipcRenderer.removeAllListeners('api-key-updated');
       }
     }
   }, [userInfo])
@@ -94,6 +100,7 @@ export default function SettingsPage() {
     { id: 'profile' as Tab, name: 'Personal Profile', href: '/settings' },
     { id: 'privacy' as Tab, name: 'Data & Privacy', href: '/settings/privacy' },
     { id: 'billing' as Tab, name: 'Billing', href: '/settings/billing' },
+    { id: 'advanced' as Tab, name: 'Advanced', href: '/settings/advanced' },
   ]
 
   const handleSaveApiKey = async () => {
@@ -102,8 +109,9 @@ export default function SettingsPage() {
       await saveApiKey(apiKeyInput)
       setHasApiKey(true)
       setApiKeyInput('')
-      if (window.ipcRenderer) {
-        window.ipcRenderer.invoke('save-api-key', apiKeyInput);
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron')
+        ipcRenderer.invoke('save-api-key', apiKeyInput);
       }
     } catch (error) {
       console.error("Failed to save API key:", error)
@@ -147,6 +155,8 @@ export default function SettingsPage() {
       console.error("Logout failed:", error)
     }
   }
+
+
 
   const renderBillingContent = () => (
     <div className="space-y-8">

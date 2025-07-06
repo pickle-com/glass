@@ -12,6 +12,11 @@ class Config {
             
             webUrl: process.env.pickleglass_WEB_URL || 'http://localhost:3000',
             
+            // Network Settings
+            apiPort: null, // null means auto-assign
+            webPort: null, // null means auto-assign
+            lockPorts: false, // whether to lock the current ports
+            
             enableJWT: false,
             fallbackToHeaderAuth: false,
             
@@ -46,6 +51,17 @@ class Config {
         if (process.env.pickleglass_WEB_URL) {
             this.config.webUrl = process.env.pickleglass_WEB_URL;
             console.log(`[Config] Web URL from env: ${this.config.webUrl}`);
+        }
+        
+        // Load port configuration from environment
+        if (process.env.pickleglass_API_PORT) {
+            this.config.apiPort = parseInt(process.env.pickleglass_API_PORT);
+            console.log(`[Config] API Port from env: ${this.config.apiPort}`);
+        }
+        
+        if (process.env.pickleglass_WEB_PORT) {
+            this.config.webPort = parseInt(process.env.pickleglass_WEB_PORT);
+            console.log(`[Config] Web Port from env: ${this.config.webPort}`);
         }
         
         if (process.env.pickleglass_API_TIMEOUT) {

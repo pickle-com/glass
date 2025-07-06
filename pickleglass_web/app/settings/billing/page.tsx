@@ -17,9 +17,10 @@ export default function BillingPage() {
   }
 
   const tabs = [
-    { id: 'profile', name: 'Personal profile', href: '/settings' },
-    { id: 'privacy', name: 'Data & privacy', href: '/settings/privacy' },
+    { id: 'profile', name: 'Personal Profile', href: '/settings' },
+    { id: 'privacy', name: 'Data & Privacy', href: '/settings/privacy' },
     { id: 'billing', name: 'Billing', href: '/settings/billing' },
+    { id: 'advanced', name: 'Advanced', href: '/settings/advanced' },
   ]
 
   return (
