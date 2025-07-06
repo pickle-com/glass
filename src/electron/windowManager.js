@@ -385,10 +385,10 @@ function createWindows() {
 
         if (windowToToggle) {
             if (featureName === 'listen') {
-                const liveSummaryService = require('../features/listen/liveSummaryService');
-                if (liveSummaryService.isSessionActive()) {
+                const listenService = global.listenService;
+                if (listenService && listenService.isSessionActive()) {
                     console.log('[WindowManager] Listen session is active, closing it via toggle.');
-                    await liveSummaryService.closeSession();
+                    await listenService.closeSession();
                     return;
                 }
             }

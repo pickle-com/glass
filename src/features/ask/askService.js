@@ -1,6 +1,5 @@
 const { ipcMain, BrowserWindow } = require('electron');
 const { makeStreamingChatCompletionWithPortkey } = require('../../common/services/aiProviderService');
-const { getConversationHistory } = require('../listen/liveSummaryService');
 const { getStoredApiKey, getStoredProvider, windowPool, captureScreenshot } = require('../../electron/windowManager');
 const authService = require('../../common/services/authService');
 const sessionRepository = require('../../common/repositories/session');
@@ -172,6 +171,12 @@ Make sure to **reference context** fully if it is provided (ex. if all/the entir
 function formatConversationForPrompt(conversationTexts) {
     if (!conversationTexts || conversationTexts.length === 0) return 'No conversation history available.';
     return conversationTexts.slice(-30).join('\n');
+}
+
+// Access conversation history via the global listenService instance created in index.js
+function getConversationHistory() {
+    const listenService = global.listenService;
+    return listenService ? listenService.getConversationHistory() : [];
 }
 
 async function sendMessage(userPrompt) {

@@ -13,7 +13,7 @@ if (require('electron-squirrel-startup')) {
 
 const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const { createWindows } = require('./electron/windowManager.js');
-const { setupLiveSummaryIpcHandlers, stopMacOSAudioCapture } = require('./features/listen/liveSummaryService.js');
+const ListenService = require('./features/listen/listenService');
 const { initializeFirebase } = require('./common/services/firebaseClient');
 const databaseInitializer = require('./common/services/databaseInitializer');
 const authService = require('./common/services/authService');
@@ -29,7 +29,9 @@ const sessionRepository = require('./common/repositories/session');
 const eventBridge = new EventEmitter();
 let WEB_PORT = 3000;
 
-const openaiSessionRef = { current: null };
+const listenService = new ListenService();
+// Make listenService globally accessible so other modules (e.g., windowManager, askService) can reuse the same instance
+global.listenService = listenService;
 let deeplink = null; // Initialize as null
 let pendingDeepLinkUrl = null; // Store any deep link that arrives before initialization
 
@@ -106,7 +108,7 @@ app.whenReady().then(async () => {
             sessionRepository.endAllActiveSessions();
 
             authService.initialize();
-            setupLiveSummaryIpcHandlers(openaiSessionRef);
+            listenService.setupIpcHandlers();
             askService.initialize();
             setupGeneralIpcHandlers();
         })
@@ -123,7 +125,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-    stopMacOSAudioCapture();
+    listenService.stopMacOSAudioCapture();
     if (process.platform !== 'darwin') {
         app.quit();
     }
@@ -131,7 +133,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
     console.log('[Shutdown] App is about to quit.');
-    stopMacOSAudioCapture();
+    listenService.stopMacOSAudioCapture();
     await sessionRepository.endAllActiveSessions();
     databaseInitializer.close();
 });
@@ -210,7 +212,8 @@ function setupGeneralIpcHandlers() {
 
 function setupWebDataHandlers() {
     const sessionRepository = require('./common/repositories/session');
-    const listenRepository = require('./features/listen/repositories');
+    const sttRepository = require('./features/listen/stt/repositories');
+    const summaryRepository = require('./features/listen/summary/repositories');
     const askRepository = require('./features/ask/repositories');
     const userRepository = require('./common/repositories/user');
     const presetRepository = require('./common/repositories/preset');
@@ -230,9 +233,9 @@ function setupWebDataHandlers() {
                         result = null;
                         break;
                     }
-                    const transcripts = await listenRepository.getAllTranscriptsBySessionId(payload);
+                    const transcripts = await sttRepository.getAllTranscriptsBySessionId(payload);
                     const ai_messages = await askRepository.getAllAiMessagesBySessionId(payload);
-                    const summary = await listenRepository.getSummaryBySessionId(payload);
+                    const summary = await summaryRepository.getSummaryBySessionId(payload);
                     result = { session, transcripts, ai_messages, summary };
                     break;
                 case 'delete-session':

@@ -3,7 +3,7 @@ import { CustomizeView } from '../features/customize/CustomizeView.js';
 import { AssistantView } from '../features/listen/AssistantView.js';
 import { AskView } from '../features/ask/AskView.js';
 
-import '../features/listen/renderer.js';
+import '../features/listen/renderer/renderer.js';
 
 export class PickleGlassApp extends LitElement {
     static styles = css`
