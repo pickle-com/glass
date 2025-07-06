@@ -85,7 +85,7 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:600, height:350 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:554, height:350 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     ask.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'ask'}});
@@ -117,6 +117,14 @@ function destroyFeatureWindows() {
         windowPool.delete(name);
     });
 }
+
+function instantHideWindow(win) {
+    if (!win || win.isDestroyed() || !win.isVisible()) return;
+    try {
+      win.webContents.send('cancel-animations'); // ① 렌더러 애니메이션 정지
+    } catch (_) {}
+    win.hide();                                   // ② 지연 없이 바로 hide
+  }
 
 function isAllowed(name) {
     const def = windowDefinitions[name];
@@ -231,7 +239,8 @@ class WindowLayoutManager {
 
         if (!askVisible && !listenVisible) return;
 
-        const PAD = 8;
+        const PAD_H = 12;
+        const PAD_V = -6;
 
         /* ① 헤더 중심 X를 “디스플레이 기준 상대좌표”로 변환  */
         const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
@@ -243,34 +252,34 @@ class WindowLayoutManager {
         /* 두 창 모두 보이는 경우 */
         /* ------------------------------------------------- */
         if (askVisible && listenVisible) {
-            const combinedWidth = listenBounds.width + PAD + askBounds.width;
+            const combinedWidth = listenBounds.width + PAD_H + askBounds.width;
 
             /* ② 모든 X 좌표를 상대좌표로 계산 */
             let groupStartXRel = headerCenterXRel - combinedWidth / 2;
             let listenXRel = groupStartXRel;
-            let askXRel = groupStartXRel + listenBounds.width + PAD;
+            let askXRel = groupStartXRel + listenBounds.width + PAD_H;
 
             /* 좌우 화면 여백 클램프 – 역시 상대좌표로 */
-            if (listenXRel < PAD) {
-                listenXRel = PAD;
-                askXRel = listenXRel + listenBounds.width + PAD;
+            if (listenXRel < PAD_H) {
+                listenXRel = PAD_H;
+                askXRel = listenXRel + listenBounds.width + PAD_H;
             }
-            if (askXRel + askBounds.width > screenWidth - PAD) {
-                askXRel = screenWidth - PAD - askBounds.width;
-                listenXRel = askXRel - listenBounds.width - PAD;
+            if (askXRel + askBounds.width > screenWidth - PAD_H) {
+                askXRel = screenWidth - PAD_H - askBounds.width;
+                listenXRel = askXRel - listenBounds.width - PAD_H;
             }
 
             /* Y 좌표는 이미 상대값으로 계산돼 있음 */
             let yRel;
             switch (strategy.primary) {
                 case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
                 case 'above':
-                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD;
+                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD_V;
                     break;
                 default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
             }
 
@@ -300,19 +309,19 @@ class WindowLayoutManager {
             let yRel;
             switch (strategy.primary) {
                 case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
                 case 'above':
-                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD;
+                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD_V;
                     break;
                 default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
                     break;
             }
 
             /* 화면 경계 클램프 */
-            xRel = Math.max(PAD, Math.min(screenWidth - winBounds.width - PAD, xRel));
-            yRel = Math.max(PAD, Math.min(screenHeight - winBounds.height - PAD, yRel));
+            xRel = Math.max(PAD_H, Math.min(screenWidth - winBounds.width - PAD_H, xRel));
+            yRel = Math.max(PAD_V, Math.min(screenHeight - winBounds.height - PAD_V, yRel));
 
             /* 절대좌표로 변환 후 배치 */
             win.setBounds({
@@ -465,7 +474,7 @@ class SmoothMovementManager {
         this.currentDisplayId = targetDisplay.id;
     }
 
-    hideToEdge(edge, callback) {
+    hideToEdge(edge, callback, { instant = false } = {}) {
         const header = windowPool.get('header');
         if (!header || header.isDestroyed()) {
           if (typeof callback === 'function') callback();
@@ -476,12 +485,24 @@ class SmoothMovementManager {
         this.lastVisiblePosition = { x, y };
         this.hiddenPosition     = { edge };
       
+        // header.webContents.send('window-hide-animation');
+      
+        // setTimeout(() => {
+        //   if (!header.isDestroyed()) header.hide();
+        //   if (typeof callback === 'function') callback();
+        // }, 5);
+        if (instant) {
+            header.hide();
+            callback?.();
+            return;
+        }
+
         header.webContents.send('window-hide-animation');
       
         setTimeout(() => {
           if (!header.isDestroyed()) header.hide();
           if (typeof callback === 'function') callback();
-        }, 105);
+        }, 5);
     }
       
       showFromEdge(callback) {
@@ -757,12 +778,13 @@ function toggleAllWindowsVisibility() {
             if (win.isVisible()) {
                 lastVisibleWindows.add(name);
                 if (name !== 'header') {
-                    win.webContents.send('window-hide-animation');
-                    setTimeout(() => {
-                        if (!win.isDestroyed()) {
-                            win.hide();
-                        }
-                    }, 200);
+                    // win.webContents.send('window-hide-animation');
+                    // setTimeout(() => {
+                    //     if (!win.isDestroyed()) {
+                    //         win.hide();
+                    //     }
+                    // }, 200);
+                    instantHideWindow(win);
                 }
             }
         });
@@ -772,8 +794,13 @@ function toggleAllWindowsVisibility() {
         movementManager.hideToEdge(nearestEdge, () => {
             header.hide();
             console.log('[Visibility] Smart hide completed');
-        });
+        }, { instant: true });
     } else {
+        header.webContents.send('cancel-animations');
+        windowPool.forEach((win, name) => {
+            if (name !== 'header') win.webContents.send('cancel-animations');
+        });
+        
         console.log('[Visibility] Smart showing from hidden position');
         console.log('[Visibility] Restoring windows:', Array.from(lastVisibleWindows));
 
@@ -1183,7 +1210,7 @@ function setupIpcHandlers(openaiSessionRef) {
                 const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
 
                 let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
-                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
+                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 21);
 
                 x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
                 y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
