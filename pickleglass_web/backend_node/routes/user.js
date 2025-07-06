@@ -17,7 +17,7 @@ router.put('/profile', (req, res) => {
 
 router.get('/profile', (req, res) => {
     try {
-        const user = db.prepare('SELECT uid, display_name, email FROM users WHERE uid = ?').get(req.uid);
+        const user = db.prepare('SELECT uid, display_name, email, transcription_language FROM users WHERE uid = ?').get(req.uid);
         if (!user) return res.status(404).json({ error: 'User not found' });
         res.json(user);
     } catch (error) {
@@ -140,5 +140,39 @@ async function getUserBatchData(req, res) {
 }
 
 router.get('/batch', getUserBatchData);
+
+router.put('/transcription-language', (req, res) => {
+    const { language } = req.body;
+    if (!language || typeof language !== 'string') {
+        return res.status(400).json({ error: 'Language is required and must be a string' });
+    }
+
+    // Validate language code (simple validation for common language codes)
+    const validLanguages = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'zh', 'ja', 'ko', 'ar', 'hi', 'nl', 'tr', 'vi', 'bn', 'gu', 'kn', 'ml', 'mr', 'ta', 'te', 'pl', 'th', 'id', 'da', 'no', 'sv', 'fi', 'is'];
+    if (!validLanguages.includes(language)) {
+        return res.status(400).json({ error: 'Invalid language code' });
+    }
+
+    try {
+        db.prepare("UPDATE users SET transcription_language = ? WHERE uid = ?").run(language, req.uid);
+        res.json({ message: 'Transcription language updated successfully' });
+    } catch (error) {
+        console.error('Failed to update transcription language:', error);
+        res.status(500).json({ error: 'Failed to update transcription language' });
+    }
+});
+
+router.get('/transcription-language', (req, res) => {
+    try {
+        const row = db.prepare('SELECT transcription_language FROM users WHERE uid = ?').get(req.uid);
+        if (!row) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.json({ language: row.transcription_language || 'en' });
+    } catch (error) {
+        console.error('Failed to get transcription language:', error);
+        res.status(500).json({ error: 'Failed to get transcription language' });
+    }
+});
 
 module.exports = router;

@@ -610,4 +610,29 @@ export const logout = async () => {
   localStorage.removeItem('user_info');
   
   window.location.href = '/login';
+};
+
+export const getTranscriptionLanguage = async (): Promise<{ language: string }> => {
+  if (isFirebaseMode()) {
+    // For Firebase mode, we can store this in Firebase or use a default for now
+    return { language: 'en' };
+  } else {
+    const response = await apiCall(`/api/user/transcription-language`, { method: 'GET' });
+    if (!response.ok) throw new Error('Failed to get transcription language');
+    return response.json();
+  }
+};
+
+export const setTranscriptionLanguage = async (language: string): Promise<void> => {
+  if (isFirebaseMode()) {
+    // For Firebase mode, we can store this in Firebase or localStorage for now
+    console.log('Transcription language setting not yet implemented in Firebase mode');
+    return;
+  } else {
+    const response = await apiCall(`/api/user/transcription-language`, {
+      method: 'PUT',
+      body: JSON.stringify({ language }),
+    });
+    if (!response.ok) throw new Error('Failed to set transcription language');
+  }
 }; 

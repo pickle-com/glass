@@ -11,6 +11,21 @@ const dataService = require('../../common/services/dataService');
 
 const { isFirebaseLoggedIn, getCurrentFirebaseUser, getStoredProvider } = require('../../electron/windowManager.js');
 
+function getUserId() {
+    try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            const userInfo = localStorage.getItem('pickleglass_user');
+            if (userInfo) {
+                const parsed = JSON.parse(userInfo);
+                return parsed.uid || 'default_user';
+            }
+        }
+    } catch (error) {
+        console.log(`[LiveSummary] Could not get user ID: ${error.message}`);
+    }
+    return 'default_user';
+}
+
 function getApiKey() {
     const { getStoredApiKey } = require('../../electron/windowManager.js');
     const storedKey = getStoredApiKey();
@@ -566,8 +581,40 @@ async function saveConversationTurn(speaker, transcription) {
 }
 
 async function initializeLiveSummarySession(language = 'en') {
-    // Use system environment variable if set, otherwise use the provided language
-    const effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG || language || 'en';
+    // Priority order: user preference > environment variable > function parameter > default 'en'
+    let effectiveLanguage = language || 'en';
+    
+    try {
+        // Check if running in web environment and get user preference
+        if (typeof window !== 'undefined' && window.location) {
+            const response = await fetch('/api/user/transcription-language', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-User-ID': getUserId() || 'default_user'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.language) {
+                    effectiveLanguage = data.language;
+                    console.log(`[LiveSummary] Using user preference language: ${effectiveLanguage}`);
+                }
+            }
+        }
+    } catch (error) {
+        console.log(`[LiveSummary] Could not fetch user language preference: ${error.message}`);
+    }
+    
+    // Fallback to environment variable if user preference not available
+    if (process.env.OPENAI_TRANSCRIBE_LANG) {
+        effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG;
+        console.log(`[LiveSummary] Using environment variable language: ${effectiveLanguage}`);
+    }
+    
+    console.log(`[LiveSummary] Final transcription language: ${effectiveLanguage}`);
+    
     if (isInitializingSession) {
         console.log('Session initialization already in progress.');
         return false;

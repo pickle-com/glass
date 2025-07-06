@@ -10,7 +10,9 @@ import {
   checkApiKeyStatus,
   saveApiKey,
   deleteAccount,
-  logout
+  logout,
+  getTranscriptionLanguage,
+  setTranscriptionLanguage
 } from '@/utils/api'
 import { useRouter } from 'next/navigation'
 
@@ -32,7 +34,41 @@ export default function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [displayNameInput, setDisplayNameInput] = useState('')
+  const [transcriptionLanguage, setTranscriptionLanguageState] = useState('en')
   const router = useRouter()
+
+  const availableLanguages = [
+    { value: 'en', name: 'English' },
+    { value: 'es', name: 'Spanish' },
+    { value: 'fr', name: 'French' },
+    { value: 'de', name: 'German' },
+    { value: 'it', name: 'Italian' },
+    { value: 'pt', name: 'Portuguese' },
+    { value: 'ru', name: 'Russian' },
+    { value: 'zh', name: 'Chinese' },
+    { value: 'ja', name: 'Japanese' },
+    { value: 'ko', name: 'Korean' },
+    { value: 'ar', name: 'Arabic' },
+    { value: 'hi', name: 'Hindi' },
+    { value: 'nl', name: 'Dutch' },
+    { value: 'tr', name: 'Turkish' },
+    { value: 'vi', name: 'Vietnamese' },
+    { value: 'bn', name: 'Bengali' },
+    { value: 'gu', name: 'Gujarati' },
+    { value: 'kn', name: 'Kannada' },
+    { value: 'ml', name: 'Malayalam' },
+    { value: 'mr', name: 'Marathi' },
+    { value: 'ta', name: 'Tamil' },
+    { value: 'te', name: 'Telugu' },
+    { value: 'pl', name: 'Polish' },
+    { value: 'th', name: 'Thai' },
+    { value: 'id', name: 'Indonesian' },
+    { value: 'da', name: 'Danish' },
+    { value: 'no', name: 'Norwegian' },
+    { value: 'sv', name: 'Swedish' },
+    { value: 'fi', name: 'Finnish' },
+    { value: 'is', name: 'Icelandic' },
+  ]
 
   const fetchApiKeyStatus = async () => {
       try {
@@ -41,6 +77,15 @@ export default function SettingsPage() {
       } catch (error) {
         console.error("Failed to fetch API key status:", error);
       }
+  }
+
+  const fetchTranscriptionLanguage = async () => {
+    try {
+      const languageData = await getTranscriptionLanguage()
+      setTranscriptionLanguageState(languageData.language)
+    } catch (error) {
+      console.error("Failed to fetch transcription language:", error);
+    }
   }
 
   useEffect(() => {
@@ -52,6 +97,7 @@ export default function SettingsPage() {
         setProfile(userProfile)
         setDisplayNameInput(userProfile.display_name)
         await fetchApiKeyStatus();
+        await fetchTranscriptionLanguage();
       } catch (error) {
         console.error("Failed to fetch profile data:", error)
       }
@@ -145,6 +191,17 @@ export default function SettingsPage() {
       await logout()
     } catch (error) {
       console.error("Logout failed:", error)
+    }
+  }
+
+  const handleUpdateTranscriptionLanguage = async () => {
+    setIsSaving(true);
+    try {
+      await setTranscriptionLanguage(transcriptionLanguage);
+    } catch (error) {
+      console.error("Failed to update transcription language:", error);
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -401,6 +458,38 @@ export default function SettingsPage() {
                   >
                     Update
                   </button>
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Transcription Language</h3>
+              <p className="text-sm text-gray-600 mb-4">Choose the language for audio transcription during live sessions.</p>
+              <div className="max-w-sm">
+                <label htmlFor="transcription-language" className="block text-sm font-medium text-gray-700 mb-1">
+                  Language
+                </label>
+                <select
+                  id="transcription-language"
+                  value={transcriptionLanguage}
+                  onChange={(e) => setTranscriptionLanguageState(e.target.value)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm text-black"
+                >
+                  {availableLanguages.map(lang => (
+                    <option key={lang.value} value={lang.value}>
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-2">This will be used for speech-to-text conversion.</p>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end">
+                <button
+                  onClick={handleUpdateTranscriptionLanguage}
+                  disabled={isSaving}
+                  className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
               </div>
             </div>
 
