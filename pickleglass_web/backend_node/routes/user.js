@@ -1,16 +1,24 @@
 const express = require('express');
+const db = require('../db');
+const { createValidationMiddleware } = require('../middleware/validation');
+const { createRateLimitMiddleware } = require('../middleware/rateLimiting');
 const router = express.Router();
 const { ipcRequest } = require('../ipcBridge');
 
-router.put('/profile', async (req, res) => {
-    try {
-        await ipcRequest(req, 'update-user-profile', req.body);
-        res.json({ message: 'Profile updated successfully' });
-    } catch (error) {
-        console.error('Failed to update profile via IPC:', error);
-        res.status(500).json({ error: 'Failed to update profile' });
-    }
-});
+router.put('/profile', 
+    createRateLimitMiddleware('profile'),
+    createValidationMiddleware('updateProfile'),
+    (req, res) => {
+        const { displayName } = req.body;
+        
+        try {
+            db.prepare("UPDATE users SET display_name = ? WHERE uid = ?").run(displayName, req.uid);
+            res.json({ message: 'Profile updated successfully' });
+        } catch (error) {
+            console.error('Failed to update profile:', error);
+            res.status(500).json({ error: 'Failed to update profile' });
+        }
+    });
 
 router.get('/profile', async (req, res) => {
     try {
@@ -23,36 +31,43 @@ router.get('/profile', async (req, res) => {
     }
 });
 
-router.post('/find-or-create', async (req, res) => {
-    try {
-        console.log('[API] find-or-create request received:', req.body);
-        
-        if (!req.body || !req.body.uid) {
-            return res.status(400).json({ error: 'User data with uid is required' });
-        }
-        
-        const user = await ipcRequest(req, 'find-or-create-user', req.body);
-        console.log('[API] find-or-create response:', user);
-        res.status(200).json(user);
-    } catch (error) {
-        console.error('Failed to find or create user via IPC:', error);
-        console.error('Request body:', req.body);
-        res.status(500).json({ 
-            error: 'Failed to find or create user',
-            details: error.message 
-        });
-    }
-});
+router.post('/find-or-create', 
+    createRateLimitMiddleware('auth'),
+    createValidationMiddleware('createUser'),
+    (req, res) => {
+        const { uid, displayName, email } = req.body;
 
-router.post('/api-key', async (req, res) => {
-    try {
-        await ipcRequest(req, 'save-api-key', req.body.apiKey);
-        res.json({ message: 'API key saved successfully' });
-    } catch (error) {
-        console.error('Failed to save API key via IPC:', error);
-        res.status(500).json({ error: 'Failed to save API key' });
-    }
-});
+        try {
+            const now = Math.floor(Date.now() / 1000);
+            db.prepare(
+                `INSERT INTO users (uid, display_name, email, created_at)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(uid) DO NOTHING`
+            ).run(uid, displayName, email, now);
+            
+            const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
+            res.status(200).json(user);
+
+        } catch (error) {
+            console.error('Failed to find or create user:', error);
+            res.status(500).json({ error: 'Failed to find or create user' });
+        }
+    });
+
+router.post('/api-key', 
+    createRateLimitMiddleware('profile'),
+    createValidationMiddleware('apiKey'),
+    (req, res) => {
+        const { apiKey } = req.body;
+        
+        try {
+            db.prepare("UPDATE users SET api_key = ? WHERE uid = ?").run(apiKey, req.uid);
+            res.json({ message: 'API key saved successfully' });
+        } catch (error) {
+            console.error('Failed to save API key:', error);
+            res.status(500).json({ error: 'Failed to save API key' });
+        }
+    });
 
 router.get('/api-key-status', async (req, res) => {
     try {
@@ -74,14 +89,17 @@ router.delete('/profile', async (req, res) => {
     }
 });
 
-router.get('/batch', async (req, res) => {
-    try {
-        const result = await ipcRequest(req, 'get-batch-data', req.query.include);
-        res.json(result);
-    } catch(error) {
-        console.error('Failed to get batch data via IPC:', error);
-        res.status(500).json({ error: 'Failed to get batch data' });
-    }
-});
+router.get('/batch', 
+    createRateLimitMiddleware('general'),
+    createValidationMiddleware('batchQuery'),
+    async (req, res) => {
+        try {
+            const result = await ipcRequest(req, 'get-batch-data', req.query.include);
+            res.json(result);
+        } catch(error) {
+            console.error('Failed to get batch data via IPC:', error);
+            res.status(500).json({ error: 'Failed to get batch data' });
+        }
+    });
 
 module.exports = router;

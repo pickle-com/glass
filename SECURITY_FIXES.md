@@ -162,6 +162,11 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 - `pickleglass_WEB_URL`: Configure CORS origins
 - Consider adding rate limit configuration via environment variables
 
+### Production Considerations
+- Consider using Redis for rate limiting in distributed environments
+- Implement proper logging and monitoring
+- Set up alerting for security violations
+
 ## Summary
 
 All identified input validation vulnerabilities have been addressed through:
