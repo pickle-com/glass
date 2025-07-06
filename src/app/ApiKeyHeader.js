@@ -335,9 +335,26 @@ export class ApiKeyHeader extends LitElement {
     }
 
     handleInput(e) {
-        this.apiKey = e.target.value;
-        this.errorMessage = '';
+        let value = e.target.value;
+        
+        // Basic input sanitization - remove null bytes and control characters
+        value = value.replace(/\x00/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+        
+        // Limit input length to prevent memory issues
+        if (value.length > 200) {
+            value = value.substring(0, 200);
+            this.errorMessage = 'API key is too long (max 200 characters)';
+        } else {
+            this.errorMessage = '';
+        }
+        
+        this.apiKey = value;
         console.log('Input changed:', this.apiKey?.length || 0, 'chars');
+
+        // Real-time validation feedback
+        if (this.apiKey.length > 0) {
+            this.performBasicValidation();
+        }
 
         this.requestUpdate();
         this.updateComplete.then(() => {
@@ -358,14 +375,28 @@ export class ApiKeyHeader extends LitElement {
     handlePaste(e) {
         e.preventDefault();
         this.errorMessage = '';
-        const clipboardText = (e.clipboardData || window.clipboardData).getData('text');
+        let clipboardText = (e.clipboardData || window.clipboardData).getData('text');
         console.log('Paste event detected:', clipboardText?.substring(0, 10) + '...');
 
         if (clipboardText) {
-            this.apiKey = clipboardText.trim();
+            // Sanitize pasted content
+            clipboardText = clipboardText.trim().replace(/\x00/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+            
+            // Limit length
+            if (clipboardText.length > 200) {
+                clipboardText = clipboardText.substring(0, 200);
+                this.errorMessage = 'Pasted content was truncated (max 200 characters)';
+            }
+            
+            this.apiKey = clipboardText;
 
             const inputElement = e.target;
             inputElement.value = this.apiKey;
+            
+            // Perform validation after paste
+            if (this.apiKey.length > 0) {
+                this.performBasicValidation();
+            }
         }
 
         this.requestUpdate();
@@ -395,6 +426,11 @@ export class ApiKeyHeader extends LitElement {
             return;
         }
 
+        // Perform basic validation first
+        if (!this.performBasicValidation()) {
+            return;
+        }
+
         console.log('Starting API key validation...');
         this.isLoading = true;
         this.errorMessage = '';
@@ -403,12 +439,12 @@ export class ApiKeyHeader extends LitElement {
         const apiKey = this.apiKey.trim();
         let isValid = false;
         try {
-            const isValid = await this.validateApiKey(this.apiKey.trim(), this.selectedProvider);
+            const isValid = await this.validateApiKey(apiKey, this.selectedProvider);
             
             if (isValid) {
                 console.log('API key valid - starting slide out animation');
-                    this.startSlideOutAnimation();
-                    this.validatedApiKey = this.apiKey.trim();
+                this.startSlideOutAnimation();
+                this.validatedApiKey = apiKey;
                 this.validatedProvider = this.selectedProvider;
             } else {
                 this.errorMessage = 'Invalid API key - please check and try again';
@@ -423,11 +459,43 @@ export class ApiKeyHeader extends LitElement {
         }
     }
 
+    performBasicValidation() {
+        if (!this.apiKey || this.apiKey.length < 15) {
+            this.errorMessage = 'API key must be at least 15 characters long';
+            return false;
+        }
+        
+        if (this.selectedProvider === 'openai') {
+            if (!this.apiKey.match(/^sk-[A-Za-z0-9_-]+$/)) {
+                this.errorMessage = 'OpenAI API keys must start with "sk-" and contain only letters, numbers, hyphens, and underscores';
+                return false;
+            }
+        } else if (this.selectedProvider === 'gemini') {
+            if (!this.apiKey.match(/^[A-Za-z0-9_-]+$/)) {
+                this.errorMessage = 'Gemini API keys must contain only letters, numbers, hyphens, and underscores';
+                return false;
+            }
+        }
+        
+        this.errorMessage = '';
+        return true;
+    }
+
     async validateApiKey(apiKey, provider = 'openai') {
-        if (!apiKey || apiKey.length < 15) return false;
+        // Enhanced validation with better security checks
+        if (!apiKey || typeof apiKey !== 'string') {
+            return false;
+        }
+        
+        // Sanitize the API key
+        apiKey = apiKey.trim().replace(/\x00/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+        
+        if (apiKey.length < 15 || apiKey.length > 200) {
+            return false;
+        }
         
         if (provider === 'openai') {
-            if (!apiKey.match(/^[A-Za-z0-9_-]+$/)) return false;
+            if (!apiKey.match(/^sk-[A-Za-z0-9_-]+$/)) return false;
             
             try {
                 console.log('Validating OpenAI API key...');

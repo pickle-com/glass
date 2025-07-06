@@ -1,19 +1,23 @@
 const express = require('express');
 const db = require('../db');
+const { createValidationMiddleware } = require('../middleware/validation');
+const { createRateLimitMiddleware } = require('../middleware/rateLimiting');
 const router = express.Router();
 
-router.put('/profile', (req, res) => {
-    const { displayName } = req.body;
-    if (!displayName) return res.status(400).json({ error: 'displayName is required' });
-
-    try {
-        db.prepare("UPDATE users SET display_name = ? WHERE uid = ?").run(displayName, req.uid);
-        res.json({ message: 'Profile updated successfully' });
-    } catch (error) {
-        console.error('Failed to update profile:', error);
-        res.status(500).json({ error: 'Failed to update profile' });
-    }
-});
+router.put('/profile', 
+    createRateLimitMiddleware('profile'),
+    createValidationMiddleware('updateProfile'),
+    (req, res) => {
+        const { displayName } = req.body;
+        
+        try {
+            db.prepare("UPDATE users SET display_name = ? WHERE uid = ?").run(displayName, req.uid);
+            res.json({ message: 'Profile updated successfully' });
+        } catch (error) {
+            console.error('Failed to update profile:', error);
+            res.status(500).json({ error: 'Failed to update profile' });
+        }
+    });
 
 router.get('/profile', (req, res) => {
     try {
@@ -26,43 +30,43 @@ router.get('/profile', (req, res) => {
     }
 });
 
-router.post('/find-or-create', (req, res) => {
-    const { uid, displayName, email } = req.body;
-    if (!uid || !displayName || !email) {
-        return res.status(400).json({ error: 'uid, displayName, and email are required' });
-    }
+router.post('/find-or-create', 
+    createRateLimitMiddleware('auth'),
+    createValidationMiddleware('createUser'),
+    (req, res) => {
+        const { uid, displayName, email } = req.body;
 
-    try {
-        const now = Math.floor(Date.now() / 1000);
-        db.prepare(
-            `INSERT INTO users (uid, display_name, email, created_at)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(uid) DO NOTHING`
-        ).run(uid, displayName, email, now);
+        try {
+            const now = Math.floor(Date.now() / 1000);
+            db.prepare(
+                `INSERT INTO users (uid, display_name, email, created_at)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(uid) DO NOTHING`
+            ).run(uid, displayName, email, now);
+            
+            const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
+            res.status(200).json(user);
+
+        } catch (error) {
+            console.error('Failed to find or create user:', error);
+            res.status(500).json({ error: 'Failed to find or create user' });
+        }
+    });
+
+router.post('/api-key', 
+    createRateLimitMiddleware('profile'),
+    createValidationMiddleware('apiKey'),
+    (req, res) => {
+        const { apiKey } = req.body;
         
-        const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
-        res.status(200).json(user);
-
-    } catch (error) {
-        console.error('Failed to find or create user:', error);
-        res.status(500).json({ error: 'Failed to find or create user' });
-    }
-});
-
-router.post('/api-key', (req, res) => {
-    const { apiKey } = req.body;
-    if (typeof apiKey !== 'string') {
-        return res.status(400).json({ error: 'API key must be a string' });
-    }
-    
-    try {
-        db.prepare("UPDATE users SET api_key = ? WHERE uid = ?").run(apiKey, req.uid);
-    res.json({ message: 'API key saved successfully' });
-    } catch (error) {
-        console.error('Failed to save API key:', error);
-        res.status(500).json({ error: 'Failed to save API key' });
-    }
-});
+        try {
+            db.prepare("UPDATE users SET api_key = ? WHERE uid = ?").run(apiKey, req.uid);
+            res.json({ message: 'API key saved successfully' });
+        } catch (error) {
+            console.error('Failed to save API key:', error);
+            res.status(500).json({ error: 'Failed to save API key' });
+        }
+    });
 
 router.get('/api-key-status', (req, res) => {
     try {
@@ -139,6 +143,10 @@ async function getUserBatchData(req, res) {
     }
 }
 
-router.get('/batch', getUserBatchData);
+router.get('/batch', 
+    createRateLimitMiddleware('general'),
+    createValidationMiddleware('batchQuery'),
+    getUserBatchData
+);
 
 module.exports = router;

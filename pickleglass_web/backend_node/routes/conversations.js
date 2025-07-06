@@ -2,7 +2,8 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 const crypto = require('crypto');
-const validator = require('validator');
+const { createValidationMiddleware } = require('../middleware/validation');
+const { createRateLimitMiddleware } = require('../middleware/rateLimiting');
 
 router.get('/', (req, res) => {
     try {
@@ -16,23 +17,26 @@ router.get('/', (req, res) => {
     }
 });
 
-router.post('/', (req, res) => {
-    const { title } = req.body;
-    const sessionId = crypto.randomUUID();
-    const now = Math.floor(Date.now() / 1000);
+router.post('/', 
+    createRateLimitMiddleware('inputHeavy'),
+    createValidationMiddleware('createConversation'),
+    (req, res) => {
+        const { title } = req.body;
+        const sessionId = crypto.randomUUID();
+        const now = Math.floor(Date.now() / 1000);
 
-    try {
-        db.prepare(
-            `INSERT INTO sessions (id, uid, title, started_at, updated_at)
-             VALUES (?, ?, ?, ?, ?)`
-        ).run(sessionId, req.uid, title || 'New Conversation', now, now);
+        try {
+            db.prepare(
+                `INSERT INTO sessions (id, uid, title, started_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?)`
+            ).run(sessionId, req.uid, title || 'New Conversation', now, now);
 
-        res.status(201).json({ id: sessionId, message: 'Session created successfully' });
-    } catch (error) {
-        console.error('Failed to create session:', error);
-        res.status(500).json({ error: 'Failed to create session' });
-    }
-});
+            res.status(201).json({ id: sessionId, message: 'Session created successfully' });
+        } catch (error) {
+            console.error('Failed to create session:', error);
+            res.status(500).json({ error: 'Failed to create session' });
+        }
+    });
 
 router.get('/:session_id', (req, res) => {
     const { session_id } = req.params;
@@ -80,42 +84,38 @@ router.delete('/:session_id', (req, res) => {
     }
 });
 
-router.get('/search', (req, res) => {
-    const { q } = req.query;
-    if (!q || !validator.isLength(q, { min: 3 })) {
-        return res.status(400).json({ error: 'Query parameter "q" is required' });
-    }
-    // Sanitize and validate input
-    const sanitizedQuery = validator.escape(q.trim()); // Escapes HTML and special chars
-    if (sanitizedQuery.length === 0 || sanitizedQuery.length > 255) {
-        return res.status(400).json({ error: 'Query parameter "q" must be between 3 and 255 characters' });
-    }
-    try {
-        const searchQuery = `%${sanitizedQuery}%`;
-        const sessionIds = db.prepare(`
-            SELECT DISTINCT session_id FROM (
-                SELECT session_id FROM transcripts WHERE text LIKE ?
-                UNION
-                SELECT session_id FROM ai_messages WHERE content LIKE ?
-                UNION
-                SELECT session_id FROM summaries WHERE text LIKE ? OR tldr LIKE ?
-            )
-        `).all(searchQuery, searchQuery, searchQuery, searchQuery).map(row => row.session_id);
+router.get('/search', 
+    createRateLimitMiddleware('search'),
+    createValidationMiddleware('search'),
+    (req, res) => {
+        const { q } = req.query;
+        
+        try {
+            const searchQuery = `%${q}%`;
+            const sessionIds = db.prepare(`
+                SELECT DISTINCT session_id FROM (
+                    SELECT session_id FROM transcripts WHERE text LIKE ?
+                    UNION
+                    SELECT session_id FROM ai_messages WHERE content LIKE ?
+                    UNION
+                    SELECT session_id FROM summaries WHERE text LIKE ? OR tldr LIKE ?
+                )
+            `).all(searchQuery, searchQuery, searchQuery, searchQuery).map(row => row.session_id);
 
-        if (sessionIds.length === 0) {
-            return res.json([]);
+            if (sessionIds.length === 0) {
+                return res.json([]);
+            }
+
+            const placeholders = sessionIds.map(() => '?').join(',');
+            const sessions = db.prepare(
+                `SELECT id, uid, title, started_at, ended_at, sync_state, updated_at FROM sessions WHERE id IN (${placeholders}) ORDER BY started_at DESC`
+            ).all(sessionIds);
+
+            res.json(sessions);
+        } catch (error) {
+            console.error('Search failed:', error);
+            res.status(500).json({ error: 'Failed to perform search' });
         }
-
-        const placeholders = sessionIds.map(() => '?').join(',');
-        const sessions = db.prepare(
-            `SELECT id, uid, title, started_at, ended_at, sync_state, updated_at FROM sessions WHERE id IN (${placeholders}) ORDER BY started_at DESC`
-        ).all(sessionIds);
-
-        res.json(sessions);
-    } catch (error) {
-        console.error('Search failed:', error);
-        res.status(500).json({ error: 'Failed to perform search' });
-    }
-});
+    });
 
 module.exports = router; 
