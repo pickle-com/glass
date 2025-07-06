@@ -3,7 +3,7 @@ const Store = require('electron-store');
 const authService = require('../../common/services/authService');
 const userRepository = require('../../common/repositories/user');
 const settingsRepository = require('./repositories');
-const { getStoredApiKey, getStoredProvider, windowPool } = require('../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider } = require('../../electron/windowManager');
 
 const store = new Store({
     name: 'pickle-glass-settings',
@@ -22,7 +22,8 @@ const NOTIFICATION_CONFIG = {
 
 // window targeting system
 class WindowNotificationManager {
-    constructor() {
+    constructor(windowPool) {
+        this.windowPool = windowPool;
         this.pendingNotifications = new Map();
     }
 
@@ -77,7 +78,7 @@ class WindowNotificationManager {
         allWindows.forEach(win => {
             if (win.isDestroyed()) return;
 
-            for (const [windowName, poolWindow] of windowPool || []) {
+            for (const [windowName, poolWindow] of this.windowPool || []) {
                 if (poolWindow === win && windowTypes.includes(windowName)) {
                     if (windowName === 'settings' || win.isVisible()) {
                         relevantWindows.push(win);
@@ -113,7 +114,8 @@ class WindowNotificationManager {
 }
 
 // Global instance
-const windowNotificationManager = new WindowNotificationManager();
+const { windowPool } = require('../../electron/windowManager');
+const windowNotificationManager = new WindowNotificationManager(windowPool);
 
 // Default keybinds configuration
 const DEFAULT_KEYBINDS = {

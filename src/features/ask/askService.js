@@ -1,6 +1,7 @@
 const { ipcMain, BrowserWindow } = require('electron');
 const { createStreamingLLM } = require('../../common/ai/factory');
-const { getStoredApiKey, getStoredProvider, windowPool, captureScreenshot } = require('../../electron/windowManager');
+const { getStoredApiKey, getStoredProvider, captureScreenshot } = require('../../electron/windowManager');
+const { windowPool } = require('../../electron/windowManager');
 const authService = require('../../common/services/authService');
 const sessionRepository = require('../../common/repositories/session');
 const askRepository = require('./repositories');

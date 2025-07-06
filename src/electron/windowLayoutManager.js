@@ -1,4 +1,5 @@
 const { screen } = require('electron');
+const { determineLayoutStrategy, boundsOverlap } = require('./utils/layoutUtils');
 
 /**
  * 주어진 창이 현재 어느 디스플레이에 속해 있는지 반환합니다.
@@ -59,33 +60,10 @@ class WindowLayoutManager {
         const relativeX = headerCenterX / screenWidth;
         const relativeY = headerCenterY / screenHeight;
 
-        const strategy = this.determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY);
+        const strategy = determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY);
 
         this.positionFeatureWindows(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
         this.positionSettingsWindow(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
-    }
-
-    /**
-     * 헤더 창의 위치에 따라 기능 창들을 배치할 최적의 전략을 결정합니다.
-     * @returns {{name: string, primary: string, secondary: string}} 레이아웃 전략
-     */
-    determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY) {
-        const spaceBelow = screenHeight - (headerBounds.y + headerBounds.height);
-        const spaceAbove = headerBounds.y;
-        const spaceLeft = headerBounds.x;
-        const spaceRight = screenWidth - (headerBounds.x + headerBounds.width);
-
-        if (spaceBelow >= 400) {
-            return { name: 'below', primary: 'below', secondary: relativeX < 0.5 ? 'right' : 'left' };
-        } else if (spaceAbove >= 400) {
-            return { name: 'above', primary: 'above', secondary: relativeX < 0.5 ? 'right' : 'left' };
-        } else if (relativeX < 0.3 && spaceRight >= 800) {
-            return { name: 'right-side', primary: 'right', secondary: spaceBelow > spaceAbove ? 'below' : 'above' };
-        } else if (relativeX > 0.7 && spaceLeft >= 800) {
-            return { name: 'left-side', primary: 'left', secondary: spaceBelow > spaceAbove ? 'below' : 'above' };
-        } else {
-            return { name: 'adaptive', primary: spaceBelow > spaceAbove ? 'below' : 'above', secondary: spaceRight > spaceLeft ? 'right' : 'left' };
-        }
     }
 
     /**
@@ -195,22 +173,6 @@ class WindowLayoutManager {
 
         settings.setBounds({ x: Math.round(x), y: Math.round(y) });
         settings.moveTop();
-    }
-    
-    /**
-     * 두 사각형 영역이 겹치는지 확인합니다.
-     * @param {Rectangle} bounds1
-     * @param {Rectangle} bounds2
-     * @returns {boolean} 겹침 여부
-     */
-    boundsOverlap(bounds1, bounds2) {
-        const margin = 10;
-        return !(
-            bounds1.x + bounds1.width + margin < bounds2.x ||
-            bounds2.x + bounds2.width + margin < bounds1.x ||
-            bounds1.y + bounds1.height + margin < bounds2.y ||
-            bounds2.y + bounds2.height + margin < bounds1.y
-        );
     }
 }
 

@@ -1,6 +1,11 @@
 const { BrowserWindow, globalShortcut, ipcMain, screen, app, shell, desktopCapturer } = require('electron');
 const WindowLayoutManager = require('./windowLayoutManager');
 const SmoothMovementManager = require('./smoothMovementManager');
+const windowPoolModule = require('./windowPool');
+const windowPool = windowPoolModule.windowPool;
+const { createFeatureWindows, destroyFeatureWindows } = require('./windowCreation');
+const { registerIpc } = require('./ipcSetup');
+const { isAllowed, updateLayout } = require('./windowManagerUtils');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('os');
@@ -10,7 +15,6 @@ const sharp = require('sharp');
 const authService = require('../common/services/authService');
 const systemSettingsRepository = require('../common/repositories/systemSettings');
 const userRepository = require('../common/repositories/user');
-const fetch = require('node-fetch');
 
 
 /* ────────────────[ GLASS BYPASS ]─────────────── */
@@ -43,7 +47,6 @@ const HEADER_HEIGHT = 47;
 const DEFAULT_WINDOW_WIDTH = 353;
 
 let currentHeaderState = 'apikey';
-const windowPool = new Map();
 let fixedYPosition = 0;
 let lastScreenshot = null;
 
@@ -52,152 +55,12 @@ let settingsHideTimer = null;
 let selectedCaptureSourceId = null;
 
 let layoutManager = null;
-function updateLayout() {
-    if (layoutManager) {
-        layoutManager.updateLayout();
-    }
-}
 
 let movementManager = null;
 
 let storedProvider = 'openai';
 
 const featureWindows = ['listen','ask','settings'];
-function isAllowed(name) {
-    if (name === 'header') return true;
-    return featureWindows.includes(name) && currentHeaderState === 'main';
-}
-
-function createFeatureWindows(header) {
-    if (windowPool.has('listen')) return;
-
-    const commonChildOptions = {
-        parent: header,
-        show: false,
-        frame: false,
-        transparent: true,
-        vibrancy: false,
-        hasShadow: false,
-        skipTaskbar: true,
-        hiddenInMissionControl: true,
-        resizable: false,
-        webPreferences: { nodeIntegration: true, contextIsolation: false },
-    };
-
-    // listen
-    const listen = new BrowserWindow({
-        ...commonChildOptions, width:400,minWidth:400,maxWidth:400,
-        maxHeight:700,
-    });
-    listen.setContentProtection(isContentProtectionOn);
-    listen.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-    if (process.platform === 'darwin') {
-        listen.setWindowButtonVisibility(false);
-    }
-    const listenLoadOptions = { query: { view: 'listen' } };
-    if (!shouldUseLiquidGlass) {
-        listen.loadFile(path.join(__dirname, '../app/content.html'), listenLoadOptions);
-    }
-    else {
-        listenLoadOptions.query.glass = 'true';
-        listen.loadFile(path.join(__dirname, '../app/content.html'), listenLoadOptions);
-        listen.webContents.once('did-finish-load', () => {
-            const viewId = liquidGlass.addView(listen.getNativeWindowHandle(), {
-                cornerRadius: 12,
-                tintColor: '#FF00001A', // Red tint
-                opaque: false, 
-            });
-            if (viewId !== -1) {
-                liquidGlass.unstable_setVariant(viewId, 2);
-                // liquidGlass.unstable_setScrim(viewId, 1);
-                // liquidGlass.unstable_setSubdued(viewId, 1);
-            }
-        });
-    }
-
-
-    windowPool.set('listen', listen);
-
-    // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:600 });
-    ask.setContentProtection(isContentProtectionOn);
-    ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-    if (process.platform === 'darwin') {
-        ask.setWindowButtonVisibility(false);
-    }
-    const askLoadOptions = { query: { view: 'ask' } };
-    if (!shouldUseLiquidGlass) {
-        ask.loadFile(path.join(__dirname, '../app/content.html'), askLoadOptions);
-    }
-    else {
-        askLoadOptions.query.glass = 'true';
-        ask.loadFile(path.join(__dirname, '../app/content.html'), askLoadOptions);
-        ask.webContents.once('did-finish-load', () => {
-            const viewId = liquidGlass.addView(ask.getNativeWindowHandle(), {
-                cornerRadius: 12,
-                tintColor: '#FF00001A', // Red tint
-                opaque: false, 
-            });
-            if (viewId !== -1) {
-                liquidGlass.unstable_setVariant(viewId, 2);
-                // liquidGlass.unstable_setScrim(viewId, 1);
-                // liquidGlass.unstable_setSubdued(viewId, 1);
-            }
-        });
-    }
-
-    ask.on('blur',()=>ask.webContents.send('window-blur'));
-    
-    // Open DevTools in development
-    if (!app.isPackaged) {
-        ask.webContents.openDevTools({ mode: 'detach' });
-    }
-    windowPool.set('ask', ask);
-
-    // settings
-    const settings = new BrowserWindow({ ...commonChildOptions, width:240, maxHeight:400, parent:undefined });
-    settings.setContentProtection(isContentProtectionOn);
-    settings.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-    if (process.platform === 'darwin') {
-        settings.setWindowButtonVisibility(false);
-    }
-    const settingsLoadOptions = { query: { view: 'settings' } };
-    if (!shouldUseLiquidGlass) {
-        settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
-            .catch(console.error);
-    }
-    else {
-        settingsLoadOptions.query.glass = 'true';
-        settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
-            .catch(console.error);
-        settings.webContents.once('did-finish-load', () => {
-            const viewId = liquidGlass.addView(settings.getNativeWindowHandle(), {
-                cornerRadius: 12,
-                tintColor: '#FF00001A', // Red tint
-                opaque: false, 
-            });
-            if (viewId !== -1) {
-                liquidGlass.unstable_setVariant(viewId, 2);
-                // liquidGlass.unstable_setScrim(viewId, 1);
-                // liquidGlass.unstable_setSubdued(viewId, 1);
-            }
-        });
-    }
-    windowPool.set('settings', settings);   
-}
-
-function destroyFeatureWindows() {
-    if (settingsHideTimer) {
-        clearTimeout(settingsHideTimer);
-        settingsHideTimer = null;
-    }
-    featureWindows.forEach(name=>{
-        const win = windowPool.get(name);
-        if (win && !win.isDestroyed()) win.destroy();
-        windowPool.delete(name);
-    });
-}
-
 
 function getCurrentDisplay(window) {
     if (!window || window.isDestroyed()) return screen.getPrimaryDisplay();
@@ -354,7 +217,7 @@ function createWindows() {
     setupIpcHandlers(movementManager);
 
     if (currentHeaderState === 'main') {
-        createFeatureWindows(header);
+        createFeatureWindows(windowPool, header, isContentProtectionOn, shouldUseLiquidGlass, liquidGlass);
     }
 
     header.setContentProtection(isContentProtectionOn);
@@ -383,7 +246,7 @@ function createWindows() {
         }
     });
 
-    header.on('resize', updateLayout);
+    header.on('resize', () => updateLayout(layoutManager));
 
     // header.webContents.once('dom-ready', () => {
     //     loadAndRegisterShortcuts();
@@ -393,7 +256,7 @@ function createWindows() {
 
     ipcMain.handle('toggle-feature', async (event, featureName) => {
         if (!windowPool.get(featureName) && currentHeaderState === 'main') {
-            createFeatureWindows(windowPool.get('header'));
+            createFeatureWindows(windowPool, windowPool.get('header'), isContentProtectionOn, shouldUseLiquidGlass, liquidGlass);
         }
 
         const windowToToggle = windowPool.get(featureName);
@@ -764,16 +627,16 @@ function setupIpcHandlers(movementManager) {
         currentHeaderState = state;
 
         if (state === 'main') {
-            createFeatureWindows(windowPool.get('header'));
+            createFeatureWindows(windowPool, windowPool.get('header'), isContentProtectionOn, shouldUseLiquidGlass, liquidGlass);
         } else {         // 'apikey' | 'permission'
-            destroyFeatureWindows();
+            destroyFeatureWindows(windowPool, featureWindows, settingsHideTimer);
         }
 
         for (const [name, win] of windowPool) {
-            if (!isAllowed(name) && !win.isDestroyed()) {
+            if (!isAllowed(name, featureWindows, currentHeaderState) && !win.isDestroyed()) {
                 win.hide();
             }
-            if (isAllowed(name) && win.isVisible()) {
+            if (isAllowed(name, featureWindows, currentHeaderState) && win.isVisible()) {
                 win.show();
             }
         }
@@ -1490,6 +1353,9 @@ async function captureScreenshot(options = {}) {
         };
     }
 }
+
+// Register IPC handlers
+registerIpc(windowPool, ipcMain);
 
 module.exports = {
     createWindows,

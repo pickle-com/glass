@@ -1,10 +1,10 @@
 const { screen } = require('electron');
+const { animateToPosition } = require('./utils/animationUtils');
+const { getDisplayById, getCurrentDisplay } = require('./utils/displayUtils');
 
 class SmoothMovementManager {
-    constructor(windowPool, getDisplayById, getCurrentDisplay, updateLayout) {
+    constructor(windowPool, updateLayout) {
         this.windowPool = windowPool;
-        this.getDisplayById = getDisplayById;
-        this.getCurrentDisplay = getCurrentDisplay;
         this.updateLayout = updateLayout;
         this.stepSize = 80;
         this.animationDuration = 300;
@@ -39,11 +39,11 @@ class SmoothMovementManager {
         const header = this.windowPool.get('header');
         if (!this._isWindowValid(header) || !header.isVisible() || this.isAnimating) return;
 
-        const targetDisplay = this.getDisplayById(displayId);
+        const targetDisplay = getDisplayById(displayId);
         if (!targetDisplay) return;
 
         const currentBounds = header.getBounds();
-        const currentDisplay = this.getCurrentDisplay(header);
+        const currentDisplay = getCurrentDisplay(header);
 
         if (currentDisplay.id === targetDisplay.id) return;
 
@@ -56,7 +56,7 @@ class SmoothMovementManager {
         const finalY = Math.max(targetDisplay.workArea.y, Math.min(targetDisplay.workArea.y + targetDisplay.workAreaSize.height - currentBounds.height, targetY));
 
         this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
-        this.animateToPosition(header, finalX, finalY);
+        animateToPosition(this, header, finalX, finalY);
         this.currentDisplayId = targetDisplay.id;
     }
 
@@ -142,60 +142,14 @@ class SmoothMovementManager {
         }
 
         if (targetX === this.headerPosition.x && targetY === this.headerPosition.y) return;
-        this.animateToPosition(header, targetX, targetY);
-    }
-
-    animateToPosition(header, targetX, targetY) {
-        if (!this._isWindowValid(header)) return;
-        
-        this.isAnimating = true;
-        const startX = this.headerPosition.x;
-        const startY = this.headerPosition.y;
-        const startTime = Date.now();
-
-        if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(startX) || !Number.isFinite(startY)) {
-            this.isAnimating = false;
-            return;
-        }
-
-        const animate = () => {
-            if (!this._isWindowValid(header)) return;
-
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / this.animationDuration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            const currentX = startX + (targetX - startX) * eased;
-            const currentY = startY + (targetY - startY) * eased;
-
-            if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
-                this.isAnimating = false;
-                return;
-            }
-
-            if (!this._isWindowValid(header)) return;
-            header.setPosition(Math.round(currentX), Math.round(currentY));
-
-            if (progress < 1) {
-                this.animationFrameId = setTimeout(animate, 8);
-            } else {
-                this.animationFrameId = null;
-                this.headerPosition = { x: targetX, y: targetY };
-                if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    if (!this._isWindowValid(header)) return;
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
-                }
-                this.isAnimating = false;
-                this.updateLayout();
-            }
-        };
-        animate();
+        animateToPosition(this, header, targetX, targetY);
     }
 
     moveToEdge(direction) {
         const header = this.windowPool.get('header');
         if (!this._isWindowValid(header) || !header.isVisible() || this.isAnimating) return;
 
-        const display = this.getCurrentDisplay(header);
+        const display = getCurrentDisplay(header);
         const { width, height } = display.workAreaSize;
         const { x: workAreaX, y: workAreaY } = display.workArea;
         const headerBounds = header.getBounds();
@@ -211,7 +165,7 @@ class SmoothMovementManager {
         }
 
         this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
-        this.animateToPosition(header, targetX, targetY);
+        animateToPosition(this, header, targetX, targetY);
     }
 
     destroy() {
