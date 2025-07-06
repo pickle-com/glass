@@ -38,8 +38,8 @@ let currentDisplayId = null;
 
 let mouseEventsIgnored = false;
 let lastVisibleWindows = new Set(['header']);
-const HEADER_HEIGHT = 47;
-const DEFAULT_WINDOW_WIDTH = 353;
+const HEADER_HEIGHT = 60;
+const DEFAULT_WINDOW_WIDTH = 336;
 
 let currentHeaderState = 'apikey';
 const windowPool = new Map();
@@ -118,7 +118,7 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:600 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:554, height:350 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     if (process.platform === 'darwin') {
@@ -207,8 +207,655 @@ function getDisplayById(displayId) {
 }
 
 
-layoutManager = new WindowLayoutManager();
-movementManager = null;
+class WindowLayoutManager {
+    constructor() {
+        this.isUpdating = false;
+        this._updateTimer = null;
+    }
+
+    updateLayout() {
+        if (this.isUpdating) return;
+        this.isUpdating = true;
+
+        setImmediate(() => {
+            this.positionWindows();
+            this.isUpdating = false;
+        });
+    }
+
+    positionWindows() {
+        const header = windowPool.get('header');
+        if (!header?.getBounds) return;
+
+        const headerBounds = header.getBounds();
+        const display = getCurrentDisplay(header);
+        const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+        const { x: workAreaX, y: workAreaY } = display.workArea;
+
+        const headerCenterX = headerBounds.x - workAreaX + headerBounds.width / 2;
+        const headerCenterY = headerBounds.y - workAreaY + headerBounds.height / 2;
+
+        const relativeX = headerCenterX / screenWidth;
+        const relativeY = headerCenterY / screenHeight;
+
+        const strategy = this.determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY);
+
+        this.positionFeatureWindows(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
+        this.positionSettingsWindow(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
+    }
+
+    determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY) {
+        const spaceBelow = screenHeight - (headerBounds.y + headerBounds.height);
+        const spaceAbove = headerBounds.y;
+        const spaceLeft = headerBounds.x;
+        const spaceRight = screenWidth - (headerBounds.x + headerBounds.width);
+
+        const spaces = {
+            below: spaceBelow,
+            above: spaceAbove,
+            left: spaceLeft,
+            right: spaceRight,
+        };
+
+        if (spaceBelow >= 400) {
+            return {
+                name: 'below',
+                primary: 'below',
+                secondary: relativeX < 0.5 ? 'right' : 'left',
+            };
+        } else if (spaceAbove >= 400) {
+            return {
+                name: 'above',
+                primary: 'above',
+                secondary: relativeX < 0.5 ? 'right' : 'left',
+            };
+        } else if (relativeX < 0.3 && spaceRight >= 800) {
+            return {
+                name: 'right-side',
+                primary: 'right',
+                secondary: spaceBelow > spaceAbove ? 'below' : 'above',
+            };
+        } else if (relativeX > 0.7 && spaceLeft >= 800) {
+            return {
+                name: 'left-side',
+                primary: 'left',
+                secondary: spaceBelow > spaceAbove ? 'below' : 'above',
+            };
+        } else {
+            return {
+                name: 'adaptive',
+                primary: spaceBelow > spaceAbove ? 'below' : 'above',
+                secondary: spaceRight > spaceLeft ? 'right' : 'left',
+            };
+        }
+    }
+
+    positionFeatureWindows(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY) {
+        const ask = windowPool.get('ask');
+        const listen = windowPool.get('listen');
+        const askVisible = ask && ask.isVisible() && !ask.isDestroyed();
+        const listenVisible = listen && listen.isVisible() && !listen.isDestroyed();
+
+        if (!askVisible && !listenVisible) return;
+
+        // const PAD = 3;
+        const PAD_H = 8;
+        const PAD_V = -4;
+
+        /* ① 헤더 중심 X를 "디스플레이 기준 상대좌표"로 변환  */
+        const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
+
+        let askBounds = askVisible ? ask.getBounds() : null;
+        let listenBounds = listenVisible ? listen.getBounds() : null;
+
+        /* ------------------------------------------------- */
+        /* 두 창 모두 보이는 경우 */
+        /* ------------------------------------------------- */
+        if (askVisible && listenVisible) {
+            const combinedWidth = listenBounds.width + PAD_H + askBounds.width;
+
+            /* ② 모든 X 좌표를 상대좌표로 계산 */
+            let groupStartXRel = headerCenterXRel - combinedWidth / 2;
+            let listenXRel = groupStartXRel;
+            let askXRel = groupStartXRel + listenBounds.width + PAD_H;
+
+            /* 좌우 화면 여백 클램프 – 역시 상대좌표로 */
+            if (listenXRel < PAD_H) {
+                listenXRel = PAD_H;
+                askXRel = listenXRel + listenBounds.width + PAD_H;
+            }
+            if (askXRel + askBounds.width > screenWidth - PAD_H) {
+                askXRel = screenWidth - PAD_H - askBounds.width;
+                listenXRel = askXRel - listenBounds.width - PAD_H;
+            }
+
+            /* Y 좌표는 이미 상대값으로 계산돼 있음 */
+            let yRel;
+            switch (strategy.primary) {
+                case 'below':
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    break;
+                case 'above':
+                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD_V;
+                    break;
+                default:
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    break;
+            }
+
+            /* ③ setBounds 직전에 workAreaX/Y를 더해 절대좌표로 변환 */
+            listen.setBounds({
+                x: Math.round(listenXRel + workAreaX),
+                y: Math.round(yRel + workAreaY),
+                width: listenBounds.width,
+                height: listenBounds.height,
+            });
+            ask.setBounds({
+                x: Math.round(askXRel + workAreaX),
+                y: Math.round(yRel + workAreaY),
+                width: askBounds.width,
+                height: askBounds.height,
+            });
+
+            /* ------------------------------------------------- */
+            /* 하나만 보이는 경우 */
+            /* ------------------------------------------------- */
+        } else {
+            const win = askVisible ? ask : listen;
+            const winBounds = askVisible ? askBounds : listenBounds;
+
+            /* X, Y 둘 다 상대좌표로 계산 */
+            let xRel = headerCenterXRel - winBounds.width / 2;
+            let yRel;
+            switch (strategy.primary) {
+                case 'below':
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    break;
+                case 'above':
+                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD_V;
+                    break;
+                default:
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    break;
+            }
+
+            /* 화면 경계 클램프 */
+            xRel = Math.max(PAD_H, Math.min(screenWidth - winBounds.width - PAD_H, xRel));
+            yRel = Math.max(PAD_H, Math.min(screenHeight - winBounds.height - PAD_H, yRel));
+
+            /* 절대좌표로 변환 후 배치 */
+            win.setBounds({
+                x: Math.round(xRel + workAreaX),
+                y: Math.round(yRel + workAreaY),
+                width: winBounds.width,
+                height: winBounds.height,
+            });
+        }
+    }
+
+    positionSettingsWindow(headerBounds, strategy, screenWidth, screenHeight) {
+        const settings = windowPool.get('settings');
+        if (!settings?.getBounds || !settings.isVisible()) return;
+
+        // if (settings.__lockedByButton) return;
+        if (settings.__lockedByButton) {
+            const headerDisplay = getCurrentDisplay(windowPool.get('header'));
+            const settingsDisplay = getCurrentDisplay(settings);
+            if (headerDisplay.id !== settingsDisplay.id) {
+                settings.__lockedByButton = false;
+            } else {
+                return; // 같은 화면이면 그대로 둔다
+            }
+        }
+
+        const settingsBounds = settings.getBounds();
+        const PAD = -5;
+
+        const buttonPadding = 17;
+        let x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
+        let y = headerBounds.y + headerBounds.height + PAD;
+
+        const otherVisibleWindows = [];
+        ['listen', 'ask'].forEach(name => {
+            const win = windowPool.get(name);
+            if (win && win.isVisible() && !win.isDestroyed()) {
+                otherVisibleWindows.push({
+                    name,
+                    bounds: win.getBounds(),
+                });
+            }
+        });
+
+        const settingsNewBounds = { x, y, width: settingsBounds.width, height: settingsBounds.height };
+        let hasOverlap = false;
+
+        for (const otherWin of otherVisibleWindows) {
+            if (this.boundsOverlap(settingsNewBounds, otherWin.bounds)) {
+                hasOverlap = true;
+                break;
+            }
+        }
+
+        if (hasOverlap) {
+            x = headerBounds.x + headerBounds.width + PAD;
+            y = headerBounds.y;
+            settingsNewBounds.x = x;
+            settingsNewBounds.y = y;
+
+            if (x + settingsBounds.width > screenWidth - 10) {
+                x = headerBounds.x - settingsBounds.width - PAD;
+                settingsNewBounds.x = x;
+            }
+
+            if (x < 10) {
+                x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
+                y = headerBounds.y - settingsBounds.height - PAD;
+                settingsNewBounds.x = x;
+                settingsNewBounds.y = y;
+
+                if (y < 10) {
+                    x = headerBounds.x + headerBounds.width - settingsBounds.width;
+                    y = headerBounds.y + headerBounds.height + PAD;
+                }
+            }
+        }
+
+        x = Math.max(10, Math.min(screenWidth - settingsBounds.width - 10, x));
+        y = Math.max(10, Math.min(screenHeight - settingsBounds.height - 10, y));
+
+        settings.setBounds({ x, y });
+        settings.moveTop();
+
+        // console.log(`[Layout] Settings positioned at (${x}, ${y}) ${hasOverlap ? '(adjusted for overlap)' : '(default position)'}`);
+    }
+
+    boundsOverlap(bounds1, bounds2) {
+        const margin = 10;
+        return !(
+            bounds1.x + bounds1.width + margin < bounds2.x ||
+            bounds2.x + bounds2.width + margin < bounds1.x ||
+            bounds1.y + bounds1.height + margin < bounds2.y ||
+            bounds2.y + bounds2.height + margin < bounds1.y
+        );
+    }
+
+    isWindowVisible(windowName) {
+        const window = windowPool.get(windowName);
+        return window && !window.isDestroyed() && window.isVisible();
+    }
+
+    destroy() {}
+}
+
+class SmoothMovementManager {
+    constructor() {
+        this.stepSize = 80;
+        this.animationDuration = 300;
+        this.headerPosition = { x: 0, y: 0 };
+        this.isAnimating = false;
+        this.hiddenPosition = null;
+        this.lastVisiblePosition = null;
+        this.currentDisplayId = null;
+        this.currentAnimationTimer = null;
+        this.animationAbortController = null; 
+        this.animationFrameRate = 16; // ~60fps
+    }
+
+    safeSetPosition(window, x, y) {
+        if (!window || window.isDestroyed()) {
+            return false;
+        }
+        
+        let safeX = Number.isFinite(x) ? Math.round(x) : 0;
+        let safeY = Number.isFinite(y) ? Math.round(y) : 0;
+        
+        if (Object.is(safeX, -0)) safeX = 0;
+        if (Object.is(safeY, -0)) safeY = 0;
+        
+        safeX = parseInt(safeX, 10);
+        safeY = parseInt(safeY, 10);
+        
+        if (!Number.isInteger(safeX) || !Number.isInteger(safeY)) {
+            console.error('[Movement] Invalid position after conversion:', { x: safeX, y: safeY, originalX: x, originalY: y });
+            return false;
+        }
+        
+        try {
+            window.setPosition(safeX, safeY);
+            return true;
+        } catch (err) {
+            console.error('[Movement] setPosition failed with values:', { x: safeX, y: safeY }, err);
+            return false;
+        }
+    }
+
+    cancelCurrentAnimation() {
+        if (this.currentAnimationTimer) {
+            clearTimeout(this.currentAnimationTimer);
+            this.currentAnimationTimer = null;
+        }
+        if (this.animationAbortController) {
+            this.animationAbortController.abort();
+            this.animationAbortController = null;
+        }
+        this.isAnimating = false;
+    }
+
+    moveToDisplay(displayId) {
+        const header = windowPool.get('header');
+        if (!header || !header.isVisible() || this.isAnimating) return;
+
+        const targetDisplay = getDisplayById(displayId);
+        if (!targetDisplay) return;
+
+        const currentBounds = header.getBounds();
+        const currentDisplay = getCurrentDisplay(header);
+
+        if (currentDisplay.id === targetDisplay.id) {
+            console.log('[Movement] Already on target display');
+            return;
+        }
+
+        const relativeX = (currentBounds.x - currentDisplay.workArea.x) / currentDisplay.workAreaSize.width;
+        const relativeY = (currentBounds.y - currentDisplay.workArea.y) / currentDisplay.workAreaSize.height;
+
+        const targetX = targetDisplay.workArea.x + targetDisplay.workAreaSize.width * relativeX;
+        const targetY = targetDisplay.workArea.y + targetDisplay.workAreaSize.height * relativeY;
+
+        const finalX = Math.max(
+            targetDisplay.workArea.x,
+            Math.min(targetDisplay.workArea.x + targetDisplay.workAreaSize.width - currentBounds.width, targetX)
+        );
+        const finalY = Math.max(
+            targetDisplay.workArea.y,
+            Math.min(targetDisplay.workArea.y + targetDisplay.workAreaSize.height - currentBounds.height, targetY)
+        );
+
+        this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
+        this.animateToPosition(header, finalX, finalY);
+
+        this.currentDisplayId = targetDisplay.id;
+    }
+
+    hideToEdge(edge, callback) {
+        const header = windowPool.get('header');
+        if (!header || header.isDestroyed()) {
+          if (typeof callback === 'function') callback();
+          return;
+        }
+      
+        const { x, y } = header.getBounds();
+        this.lastVisiblePosition = { x, y };
+        this.hiddenPosition     = { edge };
+      
+        header.webContents.send('window-hide-animation');
+      
+        setTimeout(() => {
+          if (!header.isDestroyed()) header.hide();
+          if (typeof callback === 'function') callback();
+        }, 5);
+    }
+
+      showFromEdge(callback) {
+        const header = windowPool.get('header');
+        if (!header || header.isDestroyed()) {
+          if (typeof callback === 'function') callback();
+          return;
+        }
+      
+        if (this.lastVisiblePosition) {
+          header.setPosition(
+            this.lastVisiblePosition.x,
+            this.lastVisiblePosition.y,
+            false   // animate: false
+          );
+        }
+      
+        header.show();
+        header.webContents.send('window-show-animation');
+      
+        this.hiddenPosition      = null;
+        this.lastVisiblePosition = null;
+      
+        if (typeof callback === 'function') callback();
+    }
+
+    moveStep(direction) {
+        const header = windowPool.get('header');
+        if (!header || !header.isVisible() || this.isAnimating) return;
+
+        console.log(`[Movement] Step ${direction}`);
+
+        const currentBounds = header.getBounds();
+        this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
+
+        let targetX = this.headerPosition.x;
+        let targetY = this.headerPosition.y;
+
+        switch (direction) {
+            case 'left':
+                targetX -= this.stepSize;
+                break;
+            case 'right':
+                targetX += this.stepSize;
+                break;
+            case 'up':
+                targetY -= this.stepSize;
+                break;
+            case 'down':
+                targetY += this.stepSize;
+                break;
+            default:
+                return;
+        }
+
+        const displays = screen.getAllDisplays();
+        let validPosition = false;
+
+        for (const display of displays) {
+            const { x, y, width, height } = display.workArea;
+            const headerBounds = header.getBounds();
+
+            if (targetX >= x && targetX + headerBounds.width <= x + width && targetY >= y && targetY + headerBounds.height <= y + height) {
+                validPosition = true;
+                break;
+            }
+        }
+
+        if (!validPosition) {
+            const nearestDisplay = screen.getDisplayNearestPoint({ x: targetX, y: targetY });
+            const { x, y, width, height } = nearestDisplay.workArea;
+            const headerBounds = header.getBounds();
+
+            targetX = Math.max(x, Math.min(x + width - headerBounds.width, targetX));
+            targetY = Math.max(y, Math.min(y + height - headerBounds.height, targetY));
+        }
+
+        if (targetX === this.headerPosition.x && targetY === this.headerPosition.y) {
+            console.log(`[Movement] Already at boundary for ${direction}`);
+            return;
+        }
+
+        this.animateToPosition(header, targetX, targetY);
+    }
+
+    animateToPosition(header, targetX, targetY) {
+        // cancel animation
+        this.cancelCurrentAnimation();
+        
+        this.isAnimating = true;
+
+        const startX = this.headerPosition.x;
+        const startY = this.headerPosition.y;
+        const startTime = Date.now();
+
+        if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(startX) || !Number.isFinite(startY)) {
+            console.error('[Movement] Invalid position values:', { startX, startY, targetX, targetY });
+            this.isAnimating = false;
+            return;
+        }
+
+
+        this.animationAbortController = new AbortController();
+        const signal = this.animationAbortController.signal;
+
+        const animate = () => {
+            if (signal.aborted || !header || header.isDestroyed()) {
+                this.isAnimating = false;
+                this.currentAnimationTimer = null;
+                return;
+            }
+
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / this.animationDuration, 1);
+
+            const eased = 1 - Math.pow(1 - progress, 3);
+
+            const currentX = startX + (targetX - startX) * eased;
+            const currentY = startY + (targetY - startY) * eased;
+
+            const success = this.safeSetPosition(header, currentX, currentY);
+            if (!success) {
+                this.isAnimating = false;
+                this.currentAnimationTimer = null;
+                return;
+            }
+
+            if (progress < 1) {
+                this.currentAnimationTimer = setTimeout(animate, this.animationFrameRate);
+            } else {
+                this.headerPosition = { x: targetX, y: targetY };
+                
+
+                this.safeSetPosition(header, targetX, targetY);
+                
+                this.isAnimating = false;
+                this.currentAnimationTimer = null;
+                this.animationAbortController = null;
+
+                updateLayout();
+
+                console.log(`[Movement] Step completed to (${targetX}, ${targetY})`);
+            }
+        };
+
+        animate();
+    }
+
+    moveToEdge(direction) {
+        const header = windowPool.get('header');
+        if (!header || !header.isVisible()) return;
+        this.cancelCurrentAnimation();
+
+        console.log(`[Movement] Move to edge: ${direction}`);
+
+        const display = getCurrentDisplay(header);
+        const { width, height } = display.workAreaSize;
+        const { x: workAreaX, y: workAreaY } = display.workArea;
+        
+        let currentBounds;
+        try {
+            currentBounds = header.getBounds();
+        } catch (err) {
+            console.error('[Movement] Failed to get header bounds:', err);
+            return;
+        }
+
+        let targetX = currentBounds.x;
+        let targetY = currentBounds.y;
+
+        switch (direction) {
+            case 'left':
+                targetX = workAreaX;
+                break;
+            case 'right':
+                targetX = workAreaX + width - currentBounds.width;
+                break;
+            case 'up':
+                targetY = workAreaY;
+                break;
+            case 'down':
+                targetY = workAreaY + height - currentBounds.height;
+                break;
+        }
+
+        this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
+
+        this.animationAbortController = new AbortController();
+        const signal = this.animationAbortController.signal;
+
+        this.isAnimating = true;
+        const startX = this.headerPosition.x;
+        const startY = this.headerPosition.y;
+        const duration = 350;
+        const startTime = Date.now();
+
+        if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(startX) || !Number.isFinite(startY)) {
+            console.error('[Movement] Invalid edge position values:', { startX, startY, targetX, targetY });
+            this.isAnimating = false;
+            return;
+        }
+
+        const animate = () => {
+            if (signal.aborted || !header || header.isDestroyed()) {
+                this.isAnimating = false;
+                this.currentAnimationTimer = null;
+                return;
+            }
+
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            const eased = 1 - Math.pow(1 - progress, 4);
+
+            const currentX = startX + (targetX - startX) * eased;
+            const currentY = startY + (targetY - startY) * eased;
+
+
+            const success = this.safeSetPosition(header, currentX, currentY);
+            if (!success) {
+                this.isAnimating = false;
+                this.currentAnimationTimer = null;
+                return;
+            }
+
+            if (progress < 1) {
+                this.currentAnimationTimer = setTimeout(animate, this.animationFrameRate);
+            } else {
+
+                this.safeSetPosition(header, targetX, targetY);
+                
+                this.headerPosition = { x: targetX, y: targetY };
+                this.isAnimating = false;
+                this.currentAnimationTimer = null;
+                this.animationAbortController = null;
+
+                updateLayout();
+
+                console.log(`[Movement] Edge movement completed: ${direction}`);
+            }
+        };
+
+        animate();
+    }
+
+    handleKeyPress(direction) {}
+
+    handleKeyRelease(direction) {}
+
+    forceStopMovement() {
+        this.isAnimating = false;
+    }
+
+    destroy() {
+        this.cancelCurrentAnimation();
+        this.isAnimating = false;
+        console.log('[Movement] Destroyed');
+    }
+}
+
+const layoutManager = new WindowLayoutManager();
+let movementManager = null;
 
 function isWindowSafe(window) {
     return window && !window.isDestroyed() && typeof window.getBounds === 'function';
@@ -856,7 +1503,7 @@ function setupIpcHandlers(movementManager) {
                 const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
 
                 let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
-                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 21);
+                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 23);
 
                 x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
                 y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
