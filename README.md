@@ -99,7 +99,7 @@ npm run setup
 
 ## Contributing
 
-We love contributions! Feel free to open issues for bugs or feature requests.
+We love contributions! Feel free to open issues for bugs or feature requests. For detailed guide, please see our [contributing guide](/CONTRIBUTING.md).
 > Currently, we're working on a full code refactor and modularization. Once that's completed, we'll jump into addressing the major issues.
 
 ### Contributors
