@@ -1,47 +1,63 @@
 # electron-builder.yml
 
-# The unique application ID
+# Application metadata
 appId: com.pickle.glass
-
-# The user-facing application name
 productName: Glass
 
-# Publish configuration for GitHub releases
-publish:
-    provider: github
-    owner: pickle-com
-    repo: glass
-    releaseType: draft
+# Build settings
+asar: true
+artifactName: "${productName}-Setup-${version}.${ext}"
+directories:
+  output: "dist"
 
-# List of files to be included in the app package
+# Files to include in the app
 files:
-    - src/**/*
-    - package.json
-    - pickleglass_web/backend_node/**/*
-    - '!**/node_modules/electron/**'
-    - public/build/**/*
+  - src/**/*
+  - package.json
+  - pickleglass_web/backend_node/**/*
+  - '!**/node_modules/electron/**'
+  - public/build/**/*
 
-# Additional resources to be copied into the app's resources directory
+# Additional resources
 extraResources:
-    - from: pickleglass_web/out
-      to: out
+  - from: pickleglass_web/out
+    to: out
+  - from: src/assets/SystemAudioDump
+    to: SystemAudioDump
 
+# Unpack specific files from ASAR archive
 asarUnpack:
-    - "src/assets/SystemAudioDump"
+  - "src/assets/SystemAudioDump"
 
-# macOS specific configuration
-mac:
-    # The application category type
-    category: public.app-category.utilities
-    # Path to the .icns icon file
-    icon: src/assets/logo.icns
-    # Minimum macOS version (supports both Intel and Apple Silicon)
-    minimumSystemVersion: '11.0'
-    hardenedRuntime: true
-    entitlements: entitlements.plist
-    entitlementsInherit: entitlements.plist
-    target:
-      - target: dmg
-        arch: universal
-      - target: zip
-        arch: universal
+# Windows specific configuration
+win:
+  target: nsis
+  icon: src/assets/logo.ico
+  requestedExecutionLevel: asInvoker  # Changed from requireAdministrator to asInvoker
+  compression: maximum
+  
+  # File associations
+  fileAssociations:
+    - ext: pglass
+      name: Glass Project
+      description: Glass Project File
+      icon: src/assets/logo.ico
+
+# NSIS configuration for Windows installer
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Glass
+  deleteAppDataOnUninstall: true
+  installerIcon: src/assets/logo.ico
+  uninstallerIcon: src/assets/logo.ico
+
+# Publish configuration
+publish:
+  provider: github
+  owner: pickle-com
+  repo: glass
+  releaseType: draft

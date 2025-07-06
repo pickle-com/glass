@@ -24,6 +24,49 @@
 
 To have fun building with us, join our [Discord](https://discord.gg/UCZH5B5Hpd)!
 
+## Windows Release
+
+### Glass for Windows
+
+**Version**: Latest Release  
+**Platform**: Windows 10/11 (64-bit)  
+**Size**: ~200MB (varies by version)  
+**License**: MIT  
+
+### Features
+
+- 🚀 **Lightning Fast** - Optimized for Windows with minimal system impact
+- 🎯 **Native Experience** - Seamless Windows integration with system tray support
+- 🔒 **Privacy Focused** - Runs locally on your machine, no data leaves your computer
+- 🎨 **Dark/Light Theme** - Automatically adapts to your Windows theme
+- 📁 **File Association** - Open `.pglass` files directly with Glass
+
+### System Requirements
+
+- Windows 10/11 (64-bit)
+- 4GB RAM (8GB recommended)
+- 500MB free disk space
+- .NET Framework 4.7.2 or later
+- WebView2 Runtime (installed automatically if missing)
+
+### Installation
+
+1. Download the latest `Glass-Setup-x.x.x.exe` from the [Releases](https://github.com/pickle-com/glass/releases) page
+2. Run the installer
+3. Follow the on-screen instructions
+4. Launch Glass from the Start Menu or Desktop shortcut
+
+### Silent Installation
+For enterprise deployment or silent installation:
+```powershell
+Glass-Setup-x.x.x.exe /S
+```
+
+### Uninstallation
+1. Open Windows Settings > Apps > Apps & features
+2. Find "Glass" in the list
+3. Click Uninstall
+
 ## Instant Launch
 
 ⚡️  Skip the setup—launch instantly with our ready-to-run macOS app.  [[Download Here]](https://www.dropbox.com/scl/fi/znid09apxiwtwvxer6oc9/Glass_latest.dmg?rlkey=gwvvyb3bizkl25frhs4k1zwds&st=37q31b4w&dl=1)

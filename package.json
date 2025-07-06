@@ -1,15 +1,33 @@
 {
     "name": "pickle-glass",
     "productName": "Glass",
-    "version": "0.1.2",
+    "version": "0.1.2-unassigned",
     "description": "Cl*ely for Free",
     "main": "src/index.js",
+    "build": {
+        "win": {
+            "target": "nsis",
+            "icon": "src/assets/logo.ico"
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": true,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "Glass",
+            "deleteAppDataOnUninstall": true,
+            "installerIcon": "src/assets/logo.ico",
+            "uninstallerIcon": "src/assets/logo.ico"
+        }
+    },
     "scripts": {
         "setup": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
         "start": "npm run build:renderer && electron-forge start",
         "package": "npm run build:renderer && electron-forge package",
         "make": "npm run build:renderer && electron-forge make",
         "build": "npm run build:renderer && electron-builder --config electron-builder.yml --publish never",
+        "build:win": "npm run build:renderer && node build-simple.js",
         "publish": "npm run build:renderer && electron-builder --config electron-builder.yml --publish always",
         "lint": "eslint --ext .ts,.tsx,.js .",
         "postinstall": "electron-builder install-app-deps",
