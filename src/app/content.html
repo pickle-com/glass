@@ -298,6 +298,20 @@
                             app.classList.remove('listen-window-moving');
                         }, 350);
                     });
+
+                    ipcRenderer.on('cancel-animations', () => {
+                        if (animationTimeout) clearTimeout(animationTimeout);
+
+                        // 애니메이션 관련 class 전부 제거
+                        app.classList.remove(
+                            'window-sliding-down',
+                            'window-sliding-up',
+                            'settings-window-show',
+                            'settings-window-hide'
+                        );
+                        // 바로 투명 + pointer-off 상태로
+                        app.classList.add('window-hidden');
+                    });
                 }
             });
         </script>

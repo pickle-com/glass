@@ -131,6 +131,11 @@ function toggleAllWindowsVisibility(movementManager) {
             console.log('[Visibility] Smart hide completed');
         }, { instant: true });
     } else {
+        header.webContents.send('cancel-animations');
+        windowPool.forEach((win, name) => {
+            if (name !== 'header') win.webContents.send('cancel-animations');
+        });
+        
         console.log('[Visibility] Smart showing from hidden position');
         console.log('[Visibility] Restoring windows:', Array.from(lastVisibleWindows));
 
