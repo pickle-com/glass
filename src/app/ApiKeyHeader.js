@@ -48,7 +48,7 @@ export class ApiKeyHeader extends LitElement {
             width: 285px;
             min-height: 260px;
             padding: 18px 20px;
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.6);
             border-radius: 16px;
             overflow: visible;
             position: relative;

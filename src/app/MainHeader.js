@@ -100,8 +100,8 @@ export class MainHeader extends LitElement {
 
         .header {
             width: 100%;
-            height: 47px;
-            padding: 2px 10px 2px 13px;
+            height: 40px;
+            padding: 2px 6px 2px 8px;
             background: transparent;
             overflow: hidden;
             border-radius: 9000px;
@@ -198,8 +198,8 @@ export class MainHeader extends LitElement {
             align-items: center;
             gap: 9px;
             display: flex;
-            padding: 0 8px;
-            border-radius: 6px;
+            padding: 0 5px 0 8px;
+            border-radius: 4px;
             transition: background 0.15s ease;
         }
 
@@ -234,7 +234,7 @@ export class MainHeader extends LitElement {
             color: white;
             font-size: 12px;
             font-family: 'Helvetica Neue', sans-serif;
-            font-weight: 500; /* Medium */
+            font-weight: 400; /* Medium */
             word-wrap: break-word;
         }
 

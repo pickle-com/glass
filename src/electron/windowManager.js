@@ -537,7 +537,7 @@ function setupIpcHandlers(movementManager) {
                 const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
 
                 let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
-                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
+                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 23);
 
                 x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
                 y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
