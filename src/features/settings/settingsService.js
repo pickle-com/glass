@@ -1,8 +1,16 @@
 const { ipcMain, BrowserWindow } = require('electron');
+const Store = require('electron-store');
 const authService = require('../../common/services/authService');
 const userRepository = require('../../common/repositories/user');
 const settingsRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, windowPool } = require('../../electron/windowManager');
+
+const store = new Store({
+    name: 'pickle-glass-settings',
+    defaults: {
+        users: {}
+    }
+});
 
 // Configuration constants
 const NOTIFICATION_CONFIG = {
@@ -142,22 +150,6 @@ const DEFAULT_KEYBINDS = {
 // Service state
 let currentSettings = null;
 
-async function getSettings() {
-    try {
-        const uid = authService.getCurrentUserId();
-        if (!uid) {
-            throw new Error("User not logged in, cannot get settings.");
-        }
-        
-        const settings = await settingsRepository.getSettings(uid);
-        currentSettings = settings;
-        return settings;
-    } catch (error) {
-        console.error('[SettingsService] Error getting settings:', error);
-        return null;
-    }
-}
-
 function getDefaultSettings() {
     const isMac = process.platform === 'darwin';
     return {
@@ -177,18 +169,39 @@ function getDefaultSettings() {
     };
 }
 
+async function getSettings() {
+    try {
+        const uid = authService.getCurrentUserId();
+        const userSettingsKey = uid ? `users.${uid}` : 'users.default';
+        
+        const defaultSettings = getDefaultSettings();
+        const savedSettings = store.get(userSettingsKey, {});
+        
+        currentSettings = { ...defaultSettings, ...savedSettings };
+        return currentSettings;
+    } catch (error) {
+        console.error('[SettingsService] Error getting settings from store:', error);
+        return getDefaultSettings();
+    }
+}
+
 async function saveSettings(settings) {
     try {
         const uid = authService.getCurrentUserId();
-        if (!uid) {
-            throw new Error("User not logged in, cannot save settings.");
-        }
+        const userSettingsKey = uid ? `users.${uid}` : 'users.default';
         
-        await settingsRepository.saveSettings(uid, settings);
-        currentSettings = settings;
+        const currentSaved = store.get(userSettingsKey, {});
+        const newSettings = { ...currentSaved, ...settings };
+        
+        store.set(userSettingsKey, newSettings);
+        currentSettings = newSettings;
+        
+        // Use smart notification system
+        windowNotificationManager.notifyRelevantWindows('settings-updated', currentSettings);
+
         return { success: true };
     } catch (error) {
-        console.error('[SettingsService] Error saving settings:', error);
+        console.error('[SettingsService] Error saving settings to store:', error);
         return { success: false, error: error.message };
     }
 }
@@ -197,7 +210,8 @@ async function getPresets() {
     try {
         const uid = authService.getCurrentUserId();
         if (!uid) {
-            throw new Error("User not logged in, cannot get presets.");
+            // Logged out users only see default presets
+            return await settingsRepository.getPresetTemplates();
         }
         
         const presets = await settingsRepository.getPresets(uid);
