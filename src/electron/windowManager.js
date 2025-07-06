@@ -142,30 +142,9 @@ function createFeatureWindows(header) {
     const settings = new BrowserWindow({ ...commonChildOptions, width:240, maxHeight:350, parent:undefined });
     settings.setContentProtection(isContentProtectionOn);
     settings.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-    settings.setWindowButtonVisibility(false);
-    const settingsLoadOptions = { query: { view: 'customize' } };
-    if (!shouldUseLiquidGlass) {
-        settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
-            .catch(console.error);
-    }
-    else {
-        settingsLoadOptions.query.glass = 'true';
-        settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
-            .catch(console.error);
-        settings.webContents.once('did-finish-load', () => {
-            const viewId = liquidGlass.addView(settings.getNativeWindowHandle(), {
-                cornerRadius: 12,
-                tintColor: '#FF00001A', // Red tint
-                opaque: false, 
-            });
-            if (viewId !== -1) {
-                liquidGlass.unstable_setVariant(viewId, 2);
-                // liquidGlass.unstable_setScrim(viewId, 1);
-                // liquidGlass.unstable_setSubdued(viewId, 1);
-            }
-        });
-    }
-    windowPool.set('settings', settings);   
+    settings.loadFile(path.join(__dirname,'../app/content.html'),{query:{view:'settings'}})
+    .catch(console.error);
+    windowPool.set('settings', settings);
 }
 
 function destroyFeatureWindows() {
@@ -1212,7 +1191,10 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
     // Unregister all existing shortcuts
     globalShortcut.unregisterAll();
 
-    let toggleVisibilityDebounceTimer = null;
+    if (movementManager) {
+        movementManager.destroy();nd
+    }
+    movementManager = new SmoothMovementManager();
 
     const isMac = process.platform === 'darwin';
     const modifier = isMac ? 'Cmd' : 'Ctrl';
@@ -1419,6 +1401,48 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
     }
 }
 
+function setupWindowIpcHandlers(mainWindow, sendToRenderer, openaiSessionRef) {
+    ipcMain.handle('resize-window', async (event, args) => {
+        try {
+            const { isMainViewVisible, view } = args;
+            let targetHeight = HEADER_HEIGHT;
+            let targetWidth = DEFAULT_WINDOW_WIDTH;
+
+            if (isMainViewVisible) {
+                const viewHeights = {
+                    listen: 400,
+                    settings: 600,
+                    help: 550,
+                    history: 550,
+                    setup: 200,
+                };
+                targetHeight = viewHeights[view] || 400;
+            }
+
+            const [currentWidth, currentHeight] = mainWindow.getSize();
+            if (currentWidth !== targetWidth || currentHeight !== targetHeight) {
+                console.log('Window resize requested but disabled for manual resize prevention');
+            }
+        } catch (error) {
+            console.error('Error resizing window:', error);
+        }
+    });
+
+    ipcMain.handle('toggle-window-visibility', async event => {
+        if (mainWindow.isVisible()) {
+            mainWindow.hide();
+        } else {
+            mainWindow.show();
+        }
+    });
+
+    ipcMain.handle('quit-application', async () => {
+        app.quit();
+    });
+
+    // Keep other essential IPC handlers
+    // ... other handlers like open-external, etc. can be added from the old file if needed
+}
 
 async function captureScreenshot(options = {}) {
     if (process.platform === 'darwin') {
