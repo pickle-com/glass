@@ -2235,6 +2235,13 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessi
             globalShortcut.register(keybinds.nextStep, () => {
                 console.log('⌘/Ctrl+Enter Ask shortcut triggered');
 
+                const headerWin = windowPool.get('header');
+
+                if (!headerWin || headerWin.isDestroyed() || !headerWin.isVisible()) {
+                    console.error('Header window not found or destroyed');
+                    return;
+                }
+
                 const askWindow = windowPool.get('ask');
                 if (!askWindow || askWindow.isDestroyed()) {
                     console.error('Ask window not found or destroyed');
@@ -2246,6 +2253,8 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, openaiSessi
                 } else {
                     try {
                         askWindow.show();
+
+                        askWindow.webContents.send('window-did-show');
 
                         const header = windowPool.get('header');
                         if (header) {

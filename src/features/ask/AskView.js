@@ -1206,7 +1206,7 @@ export class AskView extends LitElement {
         const textInput = this.shadowRoot?.getElementById('textInput');
         if (!textInput) return;
         const text = textInput.value.trim();
-        if (!text) return;
+        // if (!text) return;
 
         textInput.value = '';
 
@@ -1261,7 +1261,7 @@ export class AskView extends LitElement {
 
         textInput.focus();
 
-        if (!textInput.value.trim()) return;
+        // if (!textInput.value.trim()) return;
 
         this.handleSendText();
     }
