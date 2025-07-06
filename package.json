@@ -1,0 +1,73 @@
+{
+    "name": "pickle-glass",
+    "productName": "Glass",
+    "version": "0.1.2",
+    "description": "Cl*ely for Free",
+    "main": "src/index.js",
+    "scripts": {
+        "setup": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
+        "start": "npm run build:renderer && electron-forge start",
+        "package": "npm run build:renderer && electron-forge package",
+        "make": "npm run build:renderer && electron-forge make",
+        "build": "npm run build:renderer && electron-builder --config electron-builder.yml --publish never",
+        "publish": "npm run build:renderer && electron-builder --config electron-builder.yml --publish always",
+        "lint": "eslint --ext .ts,.tsx,.js .",
+        "postinstall": "electron-builder install-app-deps",
+        "build:renderer": "node build.js",
+        "watch:renderer": "node build.js --watch"
+    },
+    "keywords": [
+        "glass",
+        "pickle glass",
+        "ai assistant",
+        "real-time",
+        "live summary",
+        "contextual ai"
+    ],
+    "author": {
+        "name": "Pickle Team"
+    },
+    "license": "GPL-3.0",
+    "dependencies": {
+        "@google/genai": "^1.8.0",
+        "@google/generative-ai": "^0.24.1",
+        "axios": "^1.10.0",
+        "sqlite3": "^5.1.7",
+        "cors": "^2.8.5",
+        "dotenv": "^17.0.0",
+        "electron-squirrel-startup": "^1.0.1",
+        "electron-store": "^8.2.0",
+        "electron-updater": "^6.6.2",
+        "express": "^4.18.2",
+        "firebase": "^11.10.0",
+        "firebase-admin": "^13.4.0",
+        "jsonwebtoken": "^9.0.2",
+        "node-fetch": "^2.7.0",
+        "openai": "^4.70.0",
+        "react-hot-toast": "^2.5.2",
+        "sharp": "^0.34.2",
+        "validator": "^13.11.0",
+        "wait-on": "^8.0.3",
+        "ws": "^8.18.0"
+    },
+    "devDependencies": {
+        "@electron-forge/cli": "^7.8.1",
+        "@electron-forge/maker-deb": "^7.8.1",
+        "@electron-forge/maker-dmg": "^7.8.1",
+        "@electron-forge/maker-rpm": "^7.8.1",
+        "@electron-forge/maker-squirrel": "^7.8.1",
+        "@electron-forge/maker-zip": "^7.8.1",
+        "@electron-forge/plugin-auto-unpack-natives": "^7.8.1",
+        "@electron-forge/plugin-fuses": "^7.8.1",
+        "@electron/fuses": "^1.8.0",
+        "@electron/notarize": "^2.5.0",
+        "electron": "^30.5.1",
+        "electron-builder": "^26.0.12",
+        "electron-reloader": "^1.2.3",
+        "esbuild": "^0.25.5"
+    },
+    "optionalDependencies": {
+        "@img/sharp-darwin-x64": "^0.34.2",
+        "@img/sharp-libvips-darwin-x64": "^1.1.0"
+    }
+}
