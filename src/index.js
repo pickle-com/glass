@@ -278,30 +278,15 @@ function setupWebDataHandlers() {
                     break;
                 case 'create-preset':
                     result = await presetRepository.create({ ...payload, uid: currentUserId });
-                    // 모든 윈도우에 프리셋 업데이트 알림
-                    BrowserWindow.getAllWindows().forEach(win => {
-                        if (!win.isDestroyed()) {
-                            win.webContents.send('presets-updated');
-                        }
-                    });
+                    settingsService.notifyPresetUpdate('created', result.id, payload.title);
                     break;
                 case 'update-preset':
                     result = await presetRepository.update(payload.id, payload.data, currentUserId);
-                    // 모든 윈도우에 프리셋 업데이트 알림
-                    BrowserWindow.getAllWindows().forEach(win => {
-                        if (!win.isDestroyed()) {
-                            win.webContents.send('presets-updated');
-                        }
-                    });
+                    settingsService.notifyPresetUpdate('updated', payload.id, payload.data.title);
                     break;
                 case 'delete-preset':
                     result = await presetRepository.delete(payload, currentUserId);
-                    // 모든 윈도우에 프리셋 업데이트 알림
-                    BrowserWindow.getAllWindows().forEach(win => {
-                        if (!win.isDestroyed()) {
-                            win.webContents.send('presets-updated');
-                        }
-                    });
+                    settingsService.notifyPresetUpdate('deleted', payload);
                     break;
                 
                 // BATCH

@@ -4,6 +4,109 @@ const userRepository = require('../../common/repositories/user');
 const settingsRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, windowPool } = require('../../electron/windowManager');
 
+// Configuration constants
+const NOTIFICATION_CONFIG = {
+    RELEVANT_WINDOW_TYPES: ['settings', 'main'],
+    DEBOUNCE_DELAY: 300, // prevent spam during bulk operations (ms)
+    MAX_RETRY_ATTEMPTS: 3,
+    RETRY_BASE_DELAY: 1000, // exponential backoff base (ms)
+};
+
+// window targeting system
+class WindowNotificationManager {
+    constructor() {
+        this.pendingNotifications = new Map();
+    }
+
+    /**
+     * Send notifications only to relevant windows
+     * @param {string} event - Event name
+     * @param {*} data - Event data
+     * @param {object} options - Notification options
+     */
+    notifyRelevantWindows(event, data = null, options = {}) {
+        const { 
+            windowTypes = NOTIFICATION_CONFIG.RELEVANT_WINDOW_TYPES,
+            debounce = NOTIFICATION_CONFIG.DEBOUNCE_DELAY 
+        } = options;
+
+        if (debounce > 0) {
+            this.debounceNotification(event, () => {
+                this.sendToTargetWindows(event, data, windowTypes);
+            }, debounce);
+        } else {
+            this.sendToTargetWindows(event, data, windowTypes);
+        }
+    }
+
+    sendToTargetWindows(event, data, windowTypes) {
+        const relevantWindows = this.getRelevantWindows(windowTypes);
+        
+        if (relevantWindows.length === 0) {
+            console.log(`[WindowNotificationManager] No relevant windows found for event: ${event}`);
+            return;
+        }
+
+        console.log(`[WindowNotificationManager] Sending ${event} to ${relevantWindows.length} relevant windows`);
+        
+        relevantWindows.forEach(win => {
+            try {
+                if (data) {
+                    win.webContents.send(event, data);
+                } else {
+                    win.webContents.send(event);
+                }
+            } catch (error) {
+                console.warn(`[WindowNotificationManager] Failed to send ${event} to window:`, error.message);
+            }
+        });
+    }
+
+    getRelevantWindows(windowTypes) {
+        const allWindows = BrowserWindow.getAllWindows();
+        const relevantWindows = [];
+
+        allWindows.forEach(win => {
+            if (win.isDestroyed()) return;
+
+            for (const [windowName, poolWindow] of windowPool || []) {
+                if (poolWindow === win && windowTypes.includes(windowName)) {
+                    if (windowName === 'settings' || win.isVisible()) {
+                        relevantWindows.push(win);
+                    }
+                    break;
+                }
+            }
+        });
+
+        return relevantWindows;
+    }
+
+    debounceNotification(key, fn, delay) {
+        // Clear existing timeout
+        if (this.pendingNotifications.has(key)) {
+            clearTimeout(this.pendingNotifications.get(key));
+        }
+
+        // Set new timeout
+        const timeoutId = setTimeout(() => {
+            fn();
+            this.pendingNotifications.delete(key);
+        }, delay);
+
+        this.pendingNotifications.set(key, timeoutId);
+    }
+
+    cleanup() {
+        // Clear all pending notifications
+        this.pendingNotifications.forEach(timeoutId => clearTimeout(timeoutId));
+        this.pendingNotifications.clear();
+    }
+}
+
+// Global instance
+const windowNotificationManager = new WindowNotificationManager();
+
 // Default keybinds configuration
 const DEFAULT_KEYBINDS = {
     mac: {
@@ -124,11 +227,10 @@ async function createPreset(title, prompt) {
         
         const result = await settingsRepository.createPreset({ uid, title, prompt });
         
-        // 모든 윈도우에 프리셋 업데이트 알림
-        BrowserWindow.getAllWindows().forEach(win => {
-            if (!win.isDestroyed()) {
-                win.webContents.send('presets-updated');
-            }
+        windowNotificationManager.notifyRelevantWindows('presets-updated', {
+            action: 'created',
+            presetId: result.id,
+            title
         });
         
         return { success: true, id: result.id };
@@ -147,11 +249,10 @@ async function updatePreset(id, title, prompt) {
         
         await settingsRepository.updatePreset(id, { title, prompt }, uid);
         
-        // 모든 윈도우에 프리셋 업데이트 알림
-        BrowserWindow.getAllWindows().forEach(win => {
-            if (!win.isDestroyed()) {
-                win.webContents.send('presets-updated');
-            }
+        windowNotificationManager.notifyRelevantWindows('presets-updated', {
+            action: 'updated',
+            presetId: id,
+            title
         });
         
         return { success: true };
@@ -170,11 +271,9 @@ async function deletePreset(id) {
         
         await settingsRepository.deletePreset(id, uid);
         
-        // 모든 윈도우에 프리셋 업데이트 알림
-        BrowserWindow.getAllWindows().forEach(win => {
-            if (!win.isDestroyed()) {
-                win.webContents.send('presets-updated');
-            }
+        windowNotificationManager.notifyRelevantWindows('presets-updated', {
+            action: 'deleted',
+            presetId: id
         });
         
         return { success: true };
@@ -271,6 +370,9 @@ async function updateContentProtection(enabled) {
 }
 
 function initialize() {
+    // cleanup 
+    windowNotificationManager.cleanup();
+    
     // IPC handlers for settings
     ipcMain.handle('settings:getSettings', async () => {
         return await getSettings();
@@ -316,8 +418,23 @@ function initialize() {
     console.log('[SettingsService] Initialized and ready.');
 }
 
+// Cleanup function
+function cleanup() {
+    windowNotificationManager.cleanup();
+    console.log('[SettingsService] Cleaned up resources.');
+}
+
+function notifyPresetUpdate(action, presetId, title = null) {
+    const data = { action, presetId };
+    if (title) data.title = title;
+    
+    windowNotificationManager.notifyRelevantWindows('presets-updated', data);
+}
+
 module.exports = {
     initialize,
+    cleanup,
+    notifyPresetUpdate,
     getSettings,
     saveSettings,
     getPresets,
