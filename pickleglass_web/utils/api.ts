@@ -87,7 +87,11 @@ export interface SessionDetails {
 
 
 const isFirebaseMode = (): boolean => {
-  return firebaseAuth.currentUser !== null;
+  // The web frontend can no longer directly access Firebase state,
+  // so we assume communication always goes through the backend API.
+  // In the future, we can create an endpoint like /api/auth/status 
+  // in the backend to retrieve the authentication state.
+  return false;
 };
 
 const timestampToUnix = (timestamp: Timestamp): number => {
@@ -185,41 +189,13 @@ const loadRuntimeConfig = async (): Promise<string | null> => {
   return null;
 };
 
-const getApiUrlFromElectron = (): string | null => {
-  if (typeof window !== 'undefined') {
-    try {
-      const { ipcRenderer } = window.require?.('electron') || {};
-      if (ipcRenderer) {
-        try {
-          const apiUrl = ipcRenderer.sendSync('get-api-url-sync');
-          if (apiUrl) {
-            console.log('✅ API URL from Electron IPC:', apiUrl);
-            return apiUrl;
-          }
-        } catch (error) {
-          console.log('⚠️ Electron IPC failed:', error);
-        }
-      }
-    } catch (error) {
-      console.log('ℹ️ Not in Electron environment');
-    }
-  }
-  return null;
-};
-
 let apiUrlInitialized = false;
 let initializationPromise: Promise<void> | null = null;
 
 const initializeApiUrl = async () => {
   if (apiUrlInitialized) return;
   
-  const electronUrl = getApiUrlFromElectron();
-  if (electronUrl) {
-    API_ORIGIN = electronUrl;
-    apiUrlInitialized = true;
-    return;
-  }
-
+  // Electron IPC 관련 코드를 모두 제거하고 runtime-config.json 또는 fallback에만 의존합니다.
   const runtimeUrl = await loadRuntimeConfig();
   if (runtimeUrl) {
     API_ORIGIN = runtimeUrl;

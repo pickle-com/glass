@@ -703,9 +703,10 @@ export class AskView extends LitElement {
 
     handleWindowBlur() {
         if (!this.currentResponse && !this.isLoading && !this.isStreaming) {
-            const askWindow = window.require('electron').remote.getCurrentWindow();
-            if (!askWindow.isFocused()) {
-                this.closeIfNoContent();
+            // If there's no active content, ask the main process to close this window.
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.invoke('close-ask-window-if-empty');
             }
         }
     }
@@ -793,13 +794,10 @@ export class AskView extends LitElement {
             this.processAssistantQuestion(question);
         };
 
-
-
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.on('ask-global-send', this.handleGlobalSendRequest);
             ipcRenderer.on('toggle-text-input', this.handleToggleTextInput);
-            ipcRenderer.on('clear-ask-content', this.clearResponseContent);
             ipcRenderer.on('receive-question-from-assistant', this.handleQuestionFromAssistant);
             ipcRenderer.on('hide-text-input', () => {
                 console.log('📤 Hide text input signal received');
@@ -865,7 +863,6 @@ export class AskView extends LitElement {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeListener('ask-global-send', this.handleGlobalSendRequest);
             ipcRenderer.removeListener('toggle-text-input', this.handleToggleTextInput);
-            ipcRenderer.removeListener('clear-ask-content', this.clearResponseContent);
             ipcRenderer.removeListener('clear-ask-response', () => {});
             ipcRenderer.removeListener('hide-text-input', () => {});
             ipcRenderer.removeListener('window-hide-animation', () => {});
@@ -1054,8 +1051,6 @@ export class AskView extends LitElement {
         }, 1500);
     }
 
-
-
     renderMarkdown(content) {
         if (!content) return '';
 
@@ -1125,13 +1120,16 @@ export class AskView extends LitElement {
         this.requestUpdate();
         this.renderContent();
 
-        window.pickleGlass.sendMessage(question).catch(error => {
-            console.error('Error processing assistant question:', error);
-            this.isLoading = false;
-            this.isStreaming = false;
-            this.currentResponse = `Error: ${error.message}`;
-            this.renderContent();
-        });
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('ask:sendMessage', question).catch(error => {
+                console.error('Error processing assistant question:', error);
+                this.isLoading = false;
+                this.isStreaming = false;
+                this.currentResponse = `Error: ${error.message}`;
+                this.renderContent();
+            });
+        }
     }
 
     async handleCopy() {
@@ -1221,16 +1219,24 @@ export class AskView extends LitElement {
         this.requestUpdate();
         this.renderContent();
 
-        window.pickleGlass.sendMessage(text).catch(error => {
-            console.error('Error sending text:', error);
-            this.isLoading = false;
-            this.isStreaming = false;
-            this.currentResponse = `Error: ${error.message}`;
-            this.renderContent();
-        });
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.invoke('ask:sendMessage', text).catch(error => {
+                console.error('Error sending text:', error);
+                this.isLoading = false;
+                this.isStreaming = false;
+                this.currentResponse = `Error: ${error.message}`;
+                this.renderContent();
+            });
+        }
     }
 
     handleTextKeydown(e) {
+        // Fix for IME composition issue: Ignore Enter key presses while composing.
+        if (e.isComposing) {
+            return;
+        }
+
         const isPlainEnter = e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey;
         const isModifierEnter = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
 

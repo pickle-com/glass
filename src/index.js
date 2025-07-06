@@ -14,14 +14,19 @@ if (require('electron-squirrel-startup')) {
 const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const { createWindows } = require('./electron/windowManager.js');
 const { setupLiveSummaryIpcHandlers, stopMacOSAudioCapture } = require('./features/listen/liveSummaryService.js');
+const { initializeFirebase } = require('./common/services/firebaseClient');
 const databaseInitializer = require('./common/services/databaseInitializer');
-const dataService = require('./common/services/dataService');
+const authService = require('./common/services/authService');
 const path = require('node:path');
 const { Deeplink } = require('electron-deeplink');
 const express = require('express');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
+const { EventEmitter } = require('events');
+const askService = require('./features/ask/askService');
+const sessionRepository = require('./common/repositories/session');
 
+const eventBridge = new EventEmitter();
 let WEB_PORT = 3000;
 
 const openaiSessionRef = { current: null };
@@ -91,19 +96,27 @@ app.whenReady().then(async () => {
         });
     }
 
-    const dbInitSuccess = await databaseInitializer.initialize();
-    if (!dbInitSuccess) {
-        console.error('>>> [index.js] Database initialization failed - some features may not work');
-    } else {
-        console.log('>>> [index.js] Database initialized successfully');
-    }
+    initializeFirebase();
+    
+    databaseInitializer.initialize()
+        .then(() => {
+            console.log('>>> [index.js] Database initialized successfully');
+            
+            // Clean up any zombie sessions from previous runs first
+            sessionRepository.endAllActiveSessions();
+
+            authService.initialize();
+            setupLiveSummaryIpcHandlers(openaiSessionRef);
+            askService.initialize();
+            setupGeneralIpcHandlers();
+        })
+        .catch(err => {
+            console.error('>>> [index.js] Database initialization failed - some features may not work', err);
+        });
 
     WEB_PORT = await startWebStack();
     console.log('Web front-end listening on', WEB_PORT);
     
-    setupLiveSummaryIpcHandlers(openaiSessionRef);
-    setupGeneralIpcHandlers();
-
     createMainWindows();
 
     initAutoUpdater();
@@ -116,8 +129,10 @@ app.on('window-all-closed', () => {
     }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
+    console.log('[Shutdown] App is about to quit.');
     stopMacOSAudioCapture();
+    await sessionRepository.endAllActiveSessions();
     databaseInitializer.close();
 });
 
@@ -145,19 +160,12 @@ app.on('open-url', (event, url) => {
 app.setAsDefaultProtocolClient('pickleglass');
 
 function setupGeneralIpcHandlers() {
-    ipcMain.handle('open-external', async (event, url) => {
-        try {
-            await shell.openExternal(url);
-            return { success: true };
-        } catch (error) {
-            console.error('Error opening external URL:', error);
-            return { success: false, error: error.message };
-        }
-    });
+    const userRepository = require('./common/repositories/user');
+    const presetRepository = require('./common/repositories/preset');
 
     ipcMain.handle('save-api-key', async (event, apiKey) => {
         try {
-            await dataService.saveApiKey(apiKey);
+            await userRepository.saveApiKey(apiKey, authService.getCurrentUserId());
             BrowserWindow.getAllWindows().forEach(win => {
                 win.webContents.send('api-key-updated');
             });
@@ -168,21 +176,12 @@ function setupGeneralIpcHandlers() {
         }
     });
 
-    ipcMain.handle('check-api-key', async () => {
-        return await dataService.checkApiKey();
-    });
-
     ipcMain.handle('get-user-presets', async () => {
-        return await dataService.getUserPresets();
+        return await presetRepository.getPresets(authService.getCurrentUserId());
     });
 
     ipcMain.handle('get-preset-templates', async () => {
-        return await dataService.getPresetTemplates();
-    });
-
-    ipcMain.on('set-current-user', (event, uid) => {
-        console.log(`[IPC] set-current-user: ${uid}`);
-        dataService.setCurrentUser(uid);
+        return await presetRepository.getPresetTemplates();
     });
 
     ipcMain.handle('start-firebase-auth', async () => {
@@ -197,63 +196,119 @@ function setupGeneralIpcHandlers() {
         }
     });
 
-    ipcMain.on('firebase-auth-success', async (event, firebaseUser) => {
-        console.log('[IPC] firebase-auth-success:', firebaseUser.uid);
-        try {
-            await dataService.findOrCreateUser(firebaseUser);
-            dataService.setCurrentUser(firebaseUser.uid);
-            
-            BrowserWindow.getAllWindows().forEach(win => {
-                if (win !== event.sender.getOwnerBrowserWindow()) {
-                    win.webContents.send('user-changed', firebaseUser);
-                }
-            });
-        } catch (error) {
-            console.error('[IPC] Failed to handle firebase-auth-success:', error);
-        }
-    });
-
-    ipcMain.handle('get-api-url', () => {
-        return process.env.pickleglass_API_URL || 'http://localhost:9001';
-    });
-
     ipcMain.handle('get-web-url', () => {
         return process.env.pickleglass_WEB_URL || 'http://localhost:3000';
     });
 
-    ipcMain.on('get-api-url-sync', (event) => {
-        event.returnValue = process.env.pickleglass_API_URL || 'http://localhost:9001';
-    });
-
-    ipcMain.handle('get-database-status', async () => {
-        return await databaseInitializer.getStatus();
-    });
-
-    ipcMain.handle('reset-database', async () => {
-        return await databaseInitializer.reset();
-    });
-
     ipcMain.handle('get-current-user', async () => {
-        try {
-            const user = await dataService.sqliteClient.getUser(dataService.currentUserId);
-            if (user) {
-            return {
-                    id: user.uid,
-                    name: user.display_name,
-                    isAuthenticated: user.uid !== 'default_user'
-            };
-            }
-            throw new Error('User not found in DataService');
-        } catch (error) {
-            console.error('Failed to get current user via DataService:', error);
-            return {
-                id: 'default_user',
-                name: 'Default User',
-                isAuthenticated: false
-            };
-        }
+        return authService.getCurrentUser();
     });
 
+    // --- Web UI Data Handlers (New) ---
+    setupWebDataHandlers();
+}
+
+function setupWebDataHandlers() {
+    const sessionRepository = require('./common/repositories/session');
+    const listenRepository = require('./features/listen/repositories');
+    const askRepository = require('./features/ask/repositories');
+    const userRepository = require('./common/repositories/user');
+    const presetRepository = require('./common/repositories/preset');
+
+    const handleRequest = async (channel, responseChannel, payload) => {
+        let result;
+        const currentUserId = authService.getCurrentUserId();
+        try {
+            switch (channel) {
+                // SESSION
+                case 'get-sessions':
+                    result = await sessionRepository.getAllByUserId(currentUserId);
+                    break;
+                case 'get-session-details':
+                    const session = await sessionRepository.getById(payload);
+                    if (!session) {
+                        result = null;
+                        break;
+                    }
+                    const transcripts = await listenRepository.getAllTranscriptsBySessionId(payload);
+                    const ai_messages = await askRepository.getAllAiMessagesBySessionId(payload);
+                    const summary = await listenRepository.getSummaryBySessionId(payload);
+                    result = { session, transcripts, ai_messages, summary };
+                    break;
+                case 'delete-session':
+                    result = await sessionRepository.deleteWithRelatedData(payload);
+                    break;
+                case 'create-session':
+                    const id = await sessionRepository.create(currentUserId, 'ask');
+                    if (payload.title) {
+                        await sessionRepository.updateTitle(id, payload.title);
+                    }
+                    result = { id };
+                    break;
+                
+                // USER
+                case 'get-user-profile':
+                    result = await userRepository.getById(currentUserId);
+                    break;
+                case 'update-user-profile':
+                    result = await userRepository.update({ uid: currentUserId, ...payload });
+                    break;
+                case 'find-or-create-user':
+                    result = await userRepository.findOrCreate(payload);
+                    break;
+                case 'save-api-key':
+                    result = await userRepository.saveApiKey(payload, currentUserId);
+                    break;
+                case 'check-api-key-status':
+                    const user = await userRepository.getById(currentUserId);
+                    result = { hasApiKey: !!user?.api_key && user.api_key.length > 0 };
+                    break;
+                case 'delete-account':
+                    result = await userRepository.deleteById(currentUserId);
+                    break;
+
+                // PRESET
+                case 'get-presets':
+                    result = await presetRepository.getPresets(currentUserId);
+                    break;
+                case 'create-preset':
+                    result = await presetRepository.create({ ...payload, uid: currentUserId });
+                    break;
+                case 'update-preset':
+                    result = await presetRepository.update(payload.id, payload.data, currentUserId);
+                    break;
+                case 'delete-preset':
+                    result = await presetRepository.delete(payload, currentUserId);
+                    break;
+                
+                // BATCH
+                case 'get-batch-data':
+                    const includes = payload ? payload.split(',').map(item => item.trim()) : ['profile', 'presets', 'sessions'];
+                    const batchResult = {};
+            
+                    if (includes.includes('profile')) {
+                        batchResult.profile = await userRepository.getById(currentUserId);
+                    }
+                    if (includes.includes('presets')) {
+                        batchResult.presets = await presetRepository.getPresets(currentUserId);
+                    }
+                    if (includes.includes('sessions')) {
+                        batchResult.sessions = await sessionRepository.getAllByUserId(currentUserId);
+                    }
+                    result = batchResult;
+                    break;
+
+                default:
+                    throw new Error(`Unknown web data channel: ${channel}`);
+            }
+            eventBridge.emit(responseChannel, { success: true, data: result });
+        } catch (error) {
+            console.error(`Error handling web data request for ${channel}:`, error);
+            eventBridge.emit(responseChannel, { success: false, error: error.message });
+        }
+    };
+    
+    eventBridge.on('web-data-request', handleRequest);
 }
 
 async function handleCustomUrl(url) {
@@ -293,18 +348,12 @@ async function handleCustomUrl(url) {
 }
 
 async function handleFirebaseAuthCallback(params) {
+    const userRepository = require('./common/repositories/user');
     const { token: idToken } = params;
 
     if (!idToken) {
         console.error('[Auth] Firebase auth callback is missing ID token.');
-        const { windowPool } = require('./electron/windowManager');
-        const header = windowPool.get('header');
-        if (header) {
-            header.webContents.send('login-successful', {
-                error: 'authentication_failed',
-                message: 'ID token not provided in deep link.'
-            });
-        }
+        // No need to send IPC, the UI won't transition without a successful auth state change.
         return;
     }
 
@@ -320,8 +369,6 @@ async function handleFirebaseAuthCallback(params) {
 
         const data = await response.json();
 
-
-
         if (!response.ok || !data.success) {
             throw new Error(data.error || 'Failed to exchange token.');
         }
@@ -336,71 +383,32 @@ async function handleFirebaseAuthCallback(params) {
             photoURL: user.picture
         };
 
-        await dataService.findOrCreateUser(firebaseUser);
-        dataService.setCurrentUser(user.uid);
+        // 1. Sync user data to local DB
+        await userRepository.findOrCreate(firebaseUser);
         console.log('[Auth] User data synced with local DB.');
 
-        // if (firebaseUser.email && idToken) {
-        //     try {
-        //         const { getVirtualKeyByEmail, setApiKey } = require('./electron/windowManager');
-        //         console.log('[Auth] Fetching virtual key for:', firebaseUser.email);
-        //         const vKey = await getVirtualKeyByEmail(firebaseUser.email, idToken);
-        //         console.log('[Auth] Virtual key fetched successfully');
-                
-        //         await setApiKey(vKey);
-        //         console.log('[Auth] Virtual key saved successfully');
-                
-        //         const { setCurrentFirebaseUser } = require('./electron/windowManager');
-        //         setCurrentFirebaseUser(firebaseUser);
-                
-        //         const { windowPool } = require('./electron/windowManager');
-        //         windowPool.forEach(win => {
-        //             if (win && !win.isDestroyed()) {
-        //                 win.webContents.send('api-key-updated');
-        //                 win.webContents.send('firebase-user-updated', firebaseUser);
-        //             }
-        //         });
-        //     } catch (error) {
-        //         console.error('[Auth] Virtual key fetch failed:', error);
-        //     }
-        // }
+        // 2. Sign in using the authService in the main process
+        await authService.signInWithCustomToken(customToken);
+        console.log('[Auth] Main process sign-in initiated. Waiting for onAuthStateChanged...');
 
+        // 3. Focus the app window
         const { windowPool } = require('./electron/windowManager');
         const header = windowPool.get('header');
-
         if (header) {
             if (header.isMinimized()) header.restore();
             header.focus();
-            
-            console.log('[Auth] Sending custom token to renderer for sign-in.');
-            header.webContents.send('login-successful', { 
-                customToken: customToken, 
-                user: firebaseUser,
-                success: true 
-            });
-
-            BrowserWindow.getAllWindows().forEach(win => {
-                if (win !== header) {
-                    win.webContents.send('user-changed', firebaseUser);
-                }
-            });
-
-            console.log('[Auth] Firebase authentication completed successfully');
-
         } else {
-            console.error('[Auth] Header window not found after getting custom token.');
+            console.error('[Auth] Header window not found after auth callback.');
         }
         
     } catch (error) {
-        console.error('[Auth] Error during custom token exchange:', error);
-        
+        console.error('[Auth] Error during custom token exchange or sign-in:', error);
+        // The UI will not change, and the user can try again.
+        // Optionally, send a generic error event to the renderer.
         const { windowPool } = require('./electron/windowManager');
         const header = windowPool.get('header');
         if (header) {
-            header.webContents.send('login-successful', { 
-                error: 'authentication_failed',
-                message: error.message 
-            });
+            header.webContents.send('auth-failed', { message: error.message });
         }
     }
 }
@@ -462,7 +470,7 @@ async function startWebStack() {
   });
 
   const createBackendApp = require('../pickleglass_web/backend_node');
-  const nodeApi = createBackendApp();
+  const nodeApi = createBackendApp(eventBridge);
 
   const staticDir = app.isPackaged
     ? path.join(process.resourcesPath, 'out')

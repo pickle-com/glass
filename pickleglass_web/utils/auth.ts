@@ -36,21 +36,12 @@ export const useAuth = () => {
 
         setUser(profile);
         setUserInfo(profile);
-        
-        if (window.ipcRenderer) {
-          window.ipcRenderer.send('set-current-user', profile.uid);
-        }
-
       } else {
         console.log('🏠 Local mode activated');
         setMode('local');
         
         setUser(defaultLocalUser);
         setUserInfo(defaultLocalUser);
-
-        if (window.ipcRenderer) {
-          window.ipcRenderer.send('set-current-user', defaultLocalUser.uid);
-        }
       }
       setIsLoading(false);
     });

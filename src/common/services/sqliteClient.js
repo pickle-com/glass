@@ -34,6 +34,13 @@ class SQLiteClient {
         });
     }
 
+    getDb() {
+        if (!this.db) {
+            throw new Error("Database not connected. Call connect() first.");
+        }
+        return this.db;
+    }
+
     async synchronizeSchema() {
         console.log('[DB Sync] Starting schema synchronization...');
         const tablesInDb = await this.getTablesFromDb();
@@ -194,231 +201,19 @@ class SQLiteClient {
         });
     }
 
-    async findOrCreateUser(user) {
-        return new Promise((resolve, reject) => {
-            const { uid, display_name, email } = user;
-            const now = Math.floor(Date.now() / 1000);
-
-            const query = `
-                INSERT INTO users (uid, display_name, email, created_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(uid) DO UPDATE SET 
-                    display_name=excluded.display_name, 
-                    email=excluded.email
-            `;
-            
-            this.db.run(query, [uid, display_name, email, now], (err) => {
-                if (err) {
-                    console.error('Failed to find or create user in SQLite:', err);
-                    return reject(err);
-                }
-                this.getUser(uid).then(resolve).catch(reject);
-            });
-        });
+    async markPermissionsAsCompleted() {
+        return this.query(
+            'INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)',
+            ['permissions_completed', 'true']
+        );
     }
 
-    async getUser(uid) {
-        return new Promise((resolve, reject) => {
-            this.db.get('SELECT * FROM users WHERE uid = ?', [uid], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-            });
-        });
-    }
-
-    async saveApiKey(apiKey, uid = this.defaultUserId, provider = 'openai') {
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                'UPDATE users SET api_key = ?, provider = ? WHERE uid = ?',
-                [apiKey, provider, uid],
-                function(err) {
-                    if (err) {
-                        console.error('SQLite: Failed to save API key:', err);
-                        reject(err);
-                    } else {
-                        console.log(`SQLite: API key saved for user ${uid} with provider ${provider}.`);
-                        resolve({ changes: this.changes });
-                    }
-                }
-            );
-        });
-    }
-
-    async getPresets(uid) {
-        return new Promise((resolve, reject) => {
-            const query = `
-                SELECT * FROM prompt_presets 
-                WHERE uid = ? OR is_default = 1 
-                ORDER BY is_default DESC, title ASC
-            `;
-            this.db.all(query, [uid], (err, rows) => {
-                if (err) {
-                    console.error('SQLite: Failed to get presets:', err);
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
-            });
-        });
-    }
-
-    async getPresetTemplates() {
-        return new Promise((resolve, reject) => {
-            const query = `
-                SELECT * FROM prompt_presets 
-                WHERE is_default = 1 
-                ORDER BY title ASC
-            `;
-            this.db.all(query, [], (err, rows) => {
-                if (err) {
-                    console.error('SQLite: Failed to get preset templates:', err);
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
-            });
-        });
-    }
-
-    async getSession(id) {
-        return new Promise((resolve, reject) => {
-            this.db.get('SELECT * FROM sessions WHERE id = ?', [id], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-            });
-        });
-    }
-
-    async updateSessionType(id, type) {
-        return new Promise((resolve, reject) => {
-            const now = Math.floor(Date.now() / 1000);
-            const query = 'UPDATE sessions SET session_type = ?, updated_at = ? WHERE id = ?';
-            this.db.run(query, [type, now, id], function(err) {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve({ changes: this.changes });
-                }
-            });
-        });
-    }
-
-    async touchSession(id) {
-        return new Promise((resolve, reject) => {
-            const now = Math.floor(Date.now() / 1000);
-            const query = 'UPDATE sessions SET updated_at = ? WHERE id = ?';
-            this.db.run(query, [now, id], function(err) {
-                if (err) reject(err);
-                else resolve({ changes: this.changes });
-            });
-        });
-    }
-
-    async createSession(uid, type = 'ask') {
-        return new Promise((resolve, reject) => {
-            const sessionId = require('crypto').randomUUID();
-            const now = Math.floor(Date.now() / 1000);
-            const query = `INSERT INTO sessions (id, uid, title, session_type, started_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`;
-            
-            this.db.run(query, [sessionId, uid, `Session @ ${new Date().toLocaleTimeString()}`, type, now, now], function(err) {
-                if (err) {
-                    console.error('SQLite: Failed to create session:', err);
-                    reject(err);
-                } else {
-                    console.log(`SQLite: Created session ${sessionId} for user ${uid} (type: ${type})`);
-                    resolve(sessionId);
-                }
-            });
-        });
-    }
-
-    async endSession(sessionId) {
-        return new Promise((resolve, reject) => {
-            const now = Math.floor(Date.now() / 1000);
-            const query = `UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?`;
-            this.db.run(query, [now, now, sessionId], function(err) {
-                if (err) reject(err);
-                else resolve({ changes: this.changes });
-            });
-        });
-    }
-
-    async addTranscript({ sessionId, speaker, text }) {
-        return new Promise((resolve, reject) => {
-            this.touchSession(sessionId).catch(err => console.error("Failed to touch session", err));
-            const transcriptId = require('crypto').randomUUID();
-            const now = Math.floor(Date.now() / 1000);
-            const query = `INSERT INTO transcripts (id, session_id, start_at, speaker, text, created_at) VALUES (?, ?, ?, ?, ?, ?)`;
-            this.db.run(query, [transcriptId, sessionId, now, speaker, text, now], function(err) {
-                if (err) reject(err);
-                else resolve({ id: transcriptId });
-            });
-        });
-    }
-
-    async addAiMessage({ sessionId, role, content, model = 'gpt-4.1' }) {
-         return new Promise((resolve, reject) => {
-            this.touchSession(sessionId).catch(err => console.error("Failed to touch session", err));
-            const messageId = require('crypto').randomUUID();
-            const now = Math.floor(Date.now() / 1000);
-            const query = `INSERT INTO ai_messages (id, session_id, sent_at, role, content, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-            this.db.run(query, [messageId, sessionId, now, role, content, model, now], function(err) {
-                if (err) reject(err);
-                else resolve({ id: messageId });
-            });
-        });
-    }
-
-    async saveSummary({ sessionId, tldr, text, bullet_json, action_json, model = 'gpt-4.1' }) {
-        return new Promise((resolve, reject) => {
-            this.touchSession(sessionId).catch(err => console.error("Failed to touch session", err));
-            const now = Math.floor(Date.now() / 1000);
-            const query = `
-                INSERT INTO summaries (session_id, generated_at, model, text, tldr, bullet_json, action_json, updated_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET
-                    generated_at=excluded.generated_at,
-                    model=excluded.model,
-                    text=excluded.text,
-                    tldr=excluded.tldr,
-                    bullet_json=excluded.bullet_json,
-                    action_json=excluded.action_json,
-                    updated_at=excluded.updated_at
-            `;
-            this.db.run(query, [sessionId, now, model, text, tldr, bullet_json, action_json, now], function(err) {
-                if (err) reject(err);
-                else resolve({ changes: this.changes });
-            });
-        });
-    }
-
-    async runMigrations() {
-        return new Promise((resolve, reject) => {
-            console.log('[DB Migration] Checking schema for `sessions` table...');
-            this.db.all("PRAGMA table_info(sessions)", (err, columns) => {
-                if (err) {
-                    console.error('[DB Migration] Error checking sessions table schema:', err);
-                    return reject(err);
-                }
-
-                const hasSessionTypeCol = columns.some(col => col.name === 'session_type');
-
-                if (!hasSessionTypeCol) {
-                    console.log('[DB Migration] `session_type` column missing. Altering table...');
-                    this.db.run("ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT 'ask'", (alterErr) => {
-                        if (alterErr) {
-                            console.error('[DB Migration] Failed to add `session_type` column:', alterErr);
-                            return reject(alterErr);
-                        }
-                        console.log('[DB Migration] `sessions` table updated successfully.');
-                        resolve();
-                    });
-                } else {
-                    console.log('[DB Migration] Schema is up to date.');
-                    resolve();
-                }
-            });
-        });
+    async checkPermissionsCompleted() {
+        const result = await this.query(
+            'SELECT value FROM system_settings WHERE key = ?',
+            ['permissions_completed']
+        );
+        return result.length > 0 && result[0].value === 'true';
     }
 
     close() {

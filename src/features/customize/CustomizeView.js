@@ -338,26 +338,17 @@ export class CustomizeView extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             
-            ipcRenderer.on('firebase-user-updated', (event, user) => {
-                this.firebaseUser = user;
-                
-                if (!user) {
-                    this.apiKey = null;
+            this._userStateListener = (event, userState) => {
+                console.log('[CustomizeView] Received user-state-changed:', userState);
+                if (userState && userState.isLoggedIn) {
+                    this.firebaseUser = userState;
+                } else {
+                    this.firebaseUser = null;
                 }
-                
+                this.getApiKeyFromStorage(); // Also update API key display
                 this.requestUpdate();
-            });
-
-            ipcRenderer.on('user-changed', (event, firebaseUser) => {
-                console.log('[CustomizeView] Received user-changed:', firebaseUser);
-                this.firebaseUser = {
-                    uid: firebaseUser.uid,
-                    email: firebaseUser.email,
-                    name: firebaseUser.displayName,
-                    photoURL: firebaseUser.photoURL,
-                };
-                this.requestUpdate();
-            });
+            };
+            ipcRenderer.on('user-state-changed', this._userStateListener);
 
             ipcRenderer.on('api-key-validated', (event, newApiKey) => {
                 console.log('[CustomizeView] Received api-key-validated, updating state.');
@@ -376,12 +367,7 @@ export class CustomizeView extends LitElement {
                 this.requestUpdate();
             });
 
-            this.loadInitialFirebaseUser();
-            
-            ipcRenderer.invoke('get-current-api-key').then(key => {
-                this.apiKey = key;
-                this.requestUpdate();
-            });
+            this.loadInitialUser();
         }
     }
 
@@ -393,8 +379,9 @@ export class CustomizeView extends LitElement {
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('firebase-user-updated');
-            ipcRenderer.removeAllListeners('user-changed');
+            if (this._userStateListener) {
+                ipcRenderer.removeListener('user-state-changed', this._userStateListener);
+            }
             ipcRenderer.removeAllListeners('api-key-validated');
             ipcRenderer.removeAllListeners('api-key-updated');
             ipcRenderer.removeAllListeners('api-key-removed');
@@ -1073,37 +1060,20 @@ export class CustomizeView extends LitElement {
         }
     }
 
-    async loadInitialFirebaseUser() {
-        if (!window.require) {
-            console.log('[CustomizeView] Electron not available');
-            return;
-        }
-
+    async loadInitialUser() {
+        if (!window.require) return;
         const { ipcRenderer } = window.require('electron');
-        
         try {
-            console.log('[CustomizeView] Loading initial Firebase user...');
-            
-            for (let i = 0; i < 3; i++) {
-                const user = await ipcRenderer.invoke('get-current-firebase-user');
-                console.log(`[CustomizeView] Attempt ${i + 1} - Firebase user:`, user);
-                
-                if (user) {
-                    this.firebaseUser = user;
-                    this.requestUpdate();
-                    console.log('[CustomizeView] Firebase user loaded successfully:', user.email);
-                    return;
-                }
-                
-                await new Promise(resolve => setTimeout(resolve, 100));
+            console.log('[CustomizeView] Loading initial user state...');
+            const userState = await ipcRenderer.invoke('get-current-user');
+            if (userState && userState.isLoggedIn) {
+                this.firebaseUser = userState;
+            } else {
+                this.firebaseUser = null;
             }
-            
-            console.log('[CustomizeView] No Firebase user found after 3 attempts');
-            this.firebaseUser = null;
             this.requestUpdate();
-            
         } catch (error) {
-            console.error('[CustomizeView] Failed to load Firebase user:', error);
+            console.error('[CustomizeView] Failed to load initial user:', error);
             this.firebaseUser = null;
             this.requestUpdate();
         }
@@ -1112,7 +1082,7 @@ export class CustomizeView extends LitElement {
     getApiKeyFromStorage() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.invoke('get-current-api-key').then(key => {
+            ipcRenderer.invoke('get-stored-api-key').then(key => {
                 this.apiKey = key;
                 this.requestUpdate();
             }).catch(error => {

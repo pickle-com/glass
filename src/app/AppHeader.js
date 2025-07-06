@@ -304,19 +304,6 @@ export class AppHeader extends LitElement {
         this.settingsHideTimer = null;
         this.isSessionActive = false;
         this.animationEndTimer = null;
-
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            
-            ipcRenderer.on('toggle-header-visibility', () => {
-                this.toggleVisibility();
-            });
-
-            ipcRenderer.on('cancel-hide-settings', () => {
-                this.cancelHideWindow('settings');
-            });
-        }
-
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.handleMouseUp = this.handleMouseUp.bind(this);
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
@@ -478,8 +465,6 @@ export class AppHeader extends LitElement {
         
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('toggle-header-visibility');
-            ipcRenderer.removeAllListeners('cancel-hide-settings');
             if (this._sessionStateListener) {
                 ipcRenderer.removeListener('session-state-changed', this._sessionStateListener);
             }

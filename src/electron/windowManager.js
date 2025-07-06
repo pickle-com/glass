@@ -5,10 +5,11 @@ const os = require('os');
 const util = require('util');
 const execFile = util.promisify(require('child_process').execFile);
 const sharp = require('sharp');
-const sqliteClient = require('../common/services/sqliteClient');
+const authService = require('../common/services/authService');
+const systemSettingsRepository = require('../common/repositories/systemSettings');
+const userRepository = require('../common/repositories/user');
 const fetch = require('node-fetch');
 
-let currentFirebaseUser = null;
 let isContentProtectionOn = true;
 let currentDisplayId = null;
 
@@ -242,7 +243,7 @@ class WindowLayoutManager {
         const PAD_H = 12;
         const PAD_V = -6;
 
-        /* ① 헤더 중심 X를 “디스플레이 기준 상대좌표”로 변환  */
+        /* ① 헤더 중심 X를 "디스플레이 기준 상대좌표"로 변환  */
         const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
 
         let askBounds = askVisible ? ask.getBounds() : null;
@@ -875,13 +876,6 @@ function createWindows() {
         createFeatureWindows(header);
     }
 
-
-    windowPool.set('header', header);
-
-    if (currentHeaderState === 'app') {
-        createFeatureWindows(header);
-    }
-
     header.setContentProtection(isContentProtectionOn);
     header.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     header.loadFile(path.join(__dirname, '../app/header.html'));
@@ -917,10 +911,6 @@ function createWindows() {
     ipcMain.handle('toggle-all-windows-visibility', toggleAllWindowsVisibility);
 
     ipcMain.handle('toggle-feature', async (event, featureName) => {
-        if (!windowPool.get(featureName) && currentHeaderState === 'app') {
-            createFeatureWindows(windowPool.get('header'));
-        }
-
         if (!windowPool.get(featureName) && currentHeaderState === 'app') {
             createFeatureWindows(windowPool.get('header'));
         }
@@ -1271,17 +1261,6 @@ function setupIpcHandlers(openaiSessionRef) {
         app.quit();
     });
 
-    ipcMain.handle('message-sending', async event => {
-        console.log('📨 Main: Received message-sending signal');
-        const askWindow = windowPool.get('ask');
-        if (askWindow && !askWindow.isDestroyed()) {
-            console.log('📤 Main: Sending hide-text-input to ask window');
-            askWindow.webContents.send('hide-text-input');
-            return { success: true };
-        }
-        return { success: false };
-    });
-
     ipcMain.handle('is-window-visible', (event, windowName) => {
         const window = windowPool.get(windowName);
         if (window && !window.isDestroyed()) {
@@ -1348,46 +1327,6 @@ function setupIpcHandlers(openaiSessionRef) {
                 })
                 .catch(console.error);
         }
-    });
-
-    ipcMain.handle('get-available-screens', async () => {
-        try {
-            const sources = await desktopCapturer.getSources({
-                types: ['screen'],
-                thumbnailSize: { width: 300, height: 200 },
-            });
-
-            const displays = screen.getAllDisplays();
-
-            return sources.map((source, index) => {
-                const display = displays[index] || displays[0];
-                return {
-                    id: source.id,
-                    name: source.name,
-                    thumbnail: source.thumbnail.toDataURL(),
-                    display: {
-                        id: display.id,
-                        bounds: display.bounds,
-                        workArea: display.workArea,
-                        scaleFactor: display.scaleFactor,
-                        isPrimary: display.id === screen.getPrimaryDisplay().id,
-                    },
-                };
-            });
-        } catch (error) {
-            console.error('Failed to get available screens:', error);
-            return [];
-        }
-    });
-
-    ipcMain.handle('set-capture-source', (event, sourceId) => {
-        selectedCaptureSourceId = sourceId;
-        console.log(`[Capture] Selected source: ${sourceId}`);
-        return { success: true };
-    });
-
-    ipcMain.handle('get-capture-source', () => {
-        return selectedCaptureSourceId;
     });
 
     ipcMain.on('update-keybinds', (event, newKeybinds) => {
@@ -1487,12 +1426,6 @@ function setupIpcHandlers(openaiSessionRef) {
         }
     });
 
-    ipcMain.on('move-to-edge', (event, direction) => {
-        if (movementManager) {
-            movementManager.moveToEdge(direction);
-        }
-    });
-
     ipcMain.handle('force-close-window', (event, windowName) => {
         const window = windowPool.get(windowName);
         if (window && !window.isDestroyed()) {
@@ -1533,68 +1466,7 @@ function setupIpcHandlers(openaiSessionRef) {
     });
 
     ipcMain.handle('capture-screenshot', async (event, options = {}) => {
-        if (process.platform === 'darwin') {
-            try {
-                const tempPath = path.join(os.tmpdir(), `screenshot-${Date.now()}.jpg`);
-
-                await execFile('screencapture', ['-x', '-t', 'jpg', tempPath]);
-
-                const imageBuffer = await fs.promises.readFile(tempPath);
-                await fs.promises.unlink(tempPath);
-
-                const resizedBuffer = await sharp(imageBuffer)
-                    // .resize({ height: 1080 })
-                    .resize({ height: 384 })
-                    .jpeg({ quality: 80 })
-                    .toBuffer();
-
-                const base64 = resizedBuffer.toString('base64');
-                const metadata = await sharp(resizedBuffer).metadata();
-
-                lastScreenshot = {
-                    base64,
-                    width: metadata.width,
-                    height: metadata.height,
-                    timestamp: Date.now(),
-                };
-
-                return { success: true, base64, width: metadata.width, height: metadata.height };
-            } catch (error) {
-                console.error('Failed to capture and resize screenshot:', error);
-                return { success: false, error: error.message };
-            }
-        }
-
-        try {
-            const sources = await desktopCapturer.getSources({
-                types: ['screen'],
-                thumbnailSize: {
-                    width: 1920,
-                    height: 1080,
-                },
-            });
-
-            if (sources.length === 0) {
-                throw new Error('No screen sources available');
-            }
-            const source = sources[0];
-            const buffer = source.thumbnail.toJPEG(70);
-            const base64 = buffer.toString('base64');
-            const size = source.thumbnail.getSize();
-
-            return {
-                success: true,
-                base64,
-                width: size.width,
-                height: size.height,
-            };
-        } catch (error) {
-            console.error('Failed to capture screenshot using desktopCapturer:', error);
-            return {
-                success: false,
-                error: error.message,
-            };
-        }
+        return captureScreenshot(options);
     });
 
     ipcMain.handle('get-current-screenshot', async event => {
@@ -1621,131 +1493,17 @@ function setupIpcHandlers(openaiSessionRef) {
         }
     });
 
-    ipcMain.handle('firebase-auth-state-changed', (event, user) => {
-        console.log('[WindowManager] Firebase auth state changed:', user ? user.email : 'null');
-        const previousUser = currentFirebaseUser;
-
-        // 🛡️  Guard: ignore duplicate events where auth state did not actually change
-        const sameUser = user && previousUser && user.uid && previousUser.uid && user.uid === previousUser.uid;
-        const bothNull = !user && !previousUser;
-        if (sameUser || bothNull) {
-            // No real state change ➜ skip further processing
-            console.log('[WindowManager] No real state change, skipping further processing');
-            return;
-        }
-
-        currentFirebaseUser = user;
-
-        if (user && user.email) {
-            (async () => {
-                try {
-                    const existingKey = getStoredApiKey();
-                    if (existingKey) {
-                        console.log('[WindowManager] Virtual key already exists, skipping fetch');
-                        return;
-                    }
-
-                    if (!user.idToken) {
-                        console.warn('[WindowManager] No ID token available, cannot fetch virtual key');
-                        return;
-                    }
-
-                    console.log('[WindowManager] Fetching virtual key via onAuthStateChanged');
-                    const vKey = await getVirtualKeyByEmail(user.email, user.idToken);
-                    console.log('[WindowManager] Virtual key fetched successfully');
-
-                    setApiKey(vKey)
-                        .then(() => {
-                            windowPool.forEach(win => {
-                                if (win && !win.isDestroyed()) {
-                                    win.webContents.send('api-key-updated');
-                                }
-                            });
-                        })
-                        .catch(err => console.error('[WindowManager] Failed to save virtual key:', err));
-                } catch (err) {
-                    console.error('[WindowManager] Virtual key fetch failed:', err);
-
-                    if (err.message.includes('token') || err.message.includes('Authentication')) {
-                        windowPool.forEach(win => {
-                            if (win && !win.isDestroyed()) {
-                                win.webContents.send('auth-error', {
-                                    message: 'Authentication expired. Please login again.',
-                                    shouldLogout: true,
-                                });
-                            }
-                        });
-                    }
-                }
-            })();
-        }
-
-        // If the user logged out, also hide the settings window
-        if (!user && previousUser) {
-            // ADDED: Only trigger on actual state change from logged in to logged out
-            console.log('[WindowManager] User logged out, clearing API key and notifying renderers');
-
-            setApiKey(null)
-                .then(() => {
-                    console.log('[WindowManager] API key cleared successfully after logout');
-                    windowPool.forEach(win => {
-                        if (win && !win.isDestroyed()) {
-                            win.webContents.send('api-key-removed');
-                        }
-                    });
-                })
-                .catch(err => {
-                    console.error('[WindowManager] setApiKey error:', err);
-                    windowPool.forEach(win => {
-                        if (win && !win.isDestroyed()) {
-                            win.webContents.send('api-key-removed');
-                        }
-                    });
-                });
-
-            const settingsWindow = windowPool.get('settings');
-            if (settingsWindow && settingsWindow.isVisible()) {
-                settingsWindow.hide();
-                console.log('[WindowManager] Settings window hidden after logout.');
-            }
-        }
-        // Broadcast to all windows
+    ipcMain.handle('firebase-logout', async () => {
+        console.log('[WindowManager] Received request to log out.');
+        
+        await authService.signOut();
+        await setApiKey(null);
+        
         windowPool.forEach(win => {
             if (win && !win.isDestroyed()) {
-                win.webContents.send('firebase-user-updated', user);
+                win.webContents.send('api-key-removed');
             }
         });
-    });
-
-    ipcMain.handle('get-current-firebase-user', () => {
-        return currentFirebaseUser;
-    });
-
-    ipcMain.handle('firebase-logout', () => {
-        console.log('[WindowManager] Received request to log out.');
-        setApiKey(null)
-            .then(() => {
-                console.log('[WindowManager] API key cleared successfully after logout');
-                windowPool.forEach(win => {
-                    if (win && !win.isDestroyed()) {
-                        win.webContents.send('api-key-removed');
-                    }
-                });
-            })
-            .catch(err => {
-                console.error('[WindowManager] setApiKey error:', err);
-                windowPool.forEach(win => {
-                    if (win && !win.isDestroyed()) {
-                        win.webContents.send('api-key-removed');
-                    }
-                });
-            });
-
-        const header = windowPool.get('header');
-        if (header && !header.isDestroyed()) {
-            console.log('[WindowManager] Header window exists, sending to renderer...');
-            header.webContents.send('request-firebase-logout');
-        }
     });
 
     ipcMain.handle('check-system-permissions', async () => {
@@ -1804,7 +1562,7 @@ function setupIpcHandlers(openaiSessionRef) {
             // Req mic permission
             const granted = await systemPreferences.askForMediaAccess('microphone');
             return { 
-                success: granted,
+                success: granted, 
                 status: granted ? 'granted' : 'denied'
             };
         } catch (error) {
@@ -1850,11 +1608,8 @@ function setupIpcHandlers(openaiSessionRef) {
 
     ipcMain.handle('mark-permissions-completed', async () => {
         try {
-            // Store in SQLite that permissions have been completed
-            await sqliteClient.query(
-                'INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)',
-                ['permissions_completed', 'true']
-            );
+            // This is a system-level setting, not user-specific.
+            await systemSettingsRepository.markPermissionsAsCompleted();
             console.log('[Permissions] Marked permissions as completed');
             return { success: true };
         } catch (error) {
@@ -1865,11 +1620,7 @@ function setupIpcHandlers(openaiSessionRef) {
 
     ipcMain.handle('check-permissions-completed', async () => {
         try {
-            const result = await sqliteClient.query(
-                'SELECT value FROM system_settings WHERE key = ?',
-                ['permissions_completed']
-            );
-            const completed = result.length > 0 && result[0].value === 'true';
+            const completed = await systemSettingsRepository.checkPermissionsCompleted();
             console.log('[Permissions] Permissions completed status:', completed);
             return completed;
         } catch (error) {
@@ -1877,21 +1628,27 @@ function setupIpcHandlers(openaiSessionRef) {
             return false;
         }
     });
+
+    ipcMain.handle('close-ask-window-if-empty', async () => {
+        const askWindow = windowPool.get('ask');
+        if (askWindow && !askWindow.isFocused()) {
+            askWindow.hide();
+        }
+    });
 }
 
-
-
-let storedApiKey = null;
 let storedProvider = 'openai';
 
 async function setApiKey(apiKey, provider = 'openai') {
-    storedApiKey = apiKey;
-    storedProvider = provider;
-    console.log('[WindowManager] API key and provider stored (and will be persisted to DB)');
+    console.log('[WindowManager] Persisting API key and provider to DB');
 
     try {
-        await sqliteClient.saveApiKey(apiKey, sqliteClient.defaultUserId, provider);
+        await userRepository.saveApiKey(apiKey, authService.getCurrentUserId(), provider);
         console.log('[WindowManager] API key and provider saved to SQLite');
+        
+        // Notify authService that the key status may have changed
+        await authService.updateApiKeyStatus();
+
     } catch (err) {
         console.error('[WindowManager] Failed to save API key to SQLite:', err);
     }
@@ -1910,55 +1667,25 @@ async function setApiKey(apiKey, provider = 'openai') {
     });
 }
 
-async function loadApiKeyFromDb() {
-    try {
-        const user = await sqliteClient.getUser(sqliteClient.defaultUserId);
-        if (user && user.api_key) {
-            console.log('[WindowManager] API key and provider loaded from SQLite for default user.');
-            storedApiKey = user.api_key;
-            storedProvider = user.provider || 'openai';
-            return user.api_key;
-        }
-        return null;
-    } catch (error) {
-        console.error('[WindowManager] Failed to load API key from SQLite:', error);
-        return null;
-    }
+async function getStoredApiKey() {
+    const userId = authService.getCurrentUserId();
+    if (!userId) return null;
+    const user = await userRepository.getById(userId);
+    return user?.api_key || null;
 }
 
-function getCurrentFirebaseUser() {
-    return currentFirebaseUser;
-}
-
-function isFirebaseLoggedIn() {
-    return !!currentFirebaseUser;
-}
-
-function setCurrentFirebaseUser(user) {
-    currentFirebaseUser = user;
-    console.log('[WindowManager] Firebase user updated:', user ? user.email : 'null');
-}
-
-function getStoredApiKey() {
-    return storedApiKey;
-}
-
-function getStoredProvider() {
-    return storedProvider || 'openai';
+async function getStoredProvider() {
+    const userId = authService.getCurrentUserId();
+    if (!userId) return 'openai';
+    const user = await userRepository.getById(userId);
+    return user?.provider || 'openai';
 }
 
 function setupApiKeyIPC() {
     const { ipcMain } = require('electron');
 
-    ipcMain.handle('get-stored-api-key', async () => {
-        if (storedApiKey === null) {
-            const dbKey = await loadApiKeyFromDb();
-            if (dbKey) {
-                await setApiKey(dbKey, storedProvider);
-            }
-        }
-        return storedApiKey;
-    });
+    // Both handlers now do the same thing: fetch the key from the source of truth.
+    ipcMain.handle('get-stored-api-key', getStoredApiKey);
 
     ipcMain.handle('api-key-validated', async (event, data) => {
         console.log('[WindowManager] API key validation completed, saving...');
@@ -1996,21 +1723,8 @@ function setupApiKeyIPC() {
 
         return { success: true };
     });
-
-    ipcMain.handle('get-current-api-key', async () => {
-        if (storedApiKey === null) {
-            const dbKey = await loadApiKeyFromDb();
-            if (dbKey) {
-                await setApiKey(dbKey, storedProvider);
-            }
-        }
-        return storedApiKey;
-    });
     
-    ipcMain.handle('get-ai-provider', async () => {
-        console.log('[WindowManager] AI provider requested from renderer');
-        return storedProvider || 'openai';
-    });
+    ipcMain.handle('get-ai-provider', getStoredProvider);
 
     console.log('[WindowManager] API key related IPC handlers registered (SQLite-backed)');
 }
@@ -2385,42 +2099,40 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, openaiSessionRef) {
     // ... other handlers like open-external, etc. can be added from the old file if needed
 }
 
-function clearApiKey() {
-    setApiKey(null);
-}
+async function captureScreenshot(options = {}) {
+    if (process.platform === 'darwin') {
+        try {
+            const tempPath = path.join(os.tmpdir(), `screenshot-${Date.now()}.jpg`);
 
-async function getVirtualKeyByEmail(email, idToken) {
-    if (!idToken) {
-        throw new Error('Firebase ID token is required for virtual key request');
+            await execFile('screencapture', ['-x', '-t', 'jpg', tempPath]);
+
+            const imageBuffer = await fs.promises.readFile(tempPath);
+            await fs.promises.unlink(tempPath);
+
+            const resizedBuffer = await sharp(imageBuffer)
+                // .resize({ height: 1080 })
+                .resize({ height: 384 })
+                .jpeg({ quality: 80 })
+                .toBuffer();
+
+            const base64 = resizedBuffer.toString('base64');
+            const metadata = await sharp(resizedBuffer).metadata();
+
+            lastScreenshot = {
+                base64,
+                width: metadata.width,
+                height: metadata.height,
+                timestamp: Date.now(),
+            };
+
+            return { success: true, base64, width: metadata.width, height: metadata.height };
+        } catch (error) {
+            console.error('Failed to capture and resize screenshot:', error);
+            return { success: false, error: error.message };
+        }
     }
 
-    const resp = await fetch('https://serverless-api-sf3o.vercel.app/api/virtual_key', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
-        redirect: 'follow',
-    });
-
-    const json = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-        console.error('[VK] API request failed:', json.message || 'Unknown error');
-        throw new Error(json.message || `HTTP ${resp.status}: Virtual key request failed`);
-    }
-
-    const vKey = json?.data?.virtualKey || json?.data?.virtual_key || json?.data?.newVKey?.slug;
-
-    if (!vKey) throw new Error('virtual key missing in response');
-    return vKey;
-}
-
-// Helper function to avoid code duplication
-async function captureScreenshotInternal(options = {}) {
     try {
-        const quality = options.quality || 'medium';
-
         const sources = await desktopCapturer.getSources({
             types: ['screen'],
             thumbnailSize: {
@@ -2432,28 +2144,10 @@ async function captureScreenshotInternal(options = {}) {
         if (sources.length === 0) {
             throw new Error('No screen sources available');
         }
-
         const source = sources[0];
-        const thumbnail = source.thumbnail;
-
-        let jpegQuality;
-        switch (quality) {
-            case 'high':
-                jpegQuality = 90;
-                break;
-            case 'low':
-                jpegQuality = 50;
-                break;
-            case 'medium':
-            default:
-                jpegQuality = 70;
-                break;
-        }
-
-        const buffer = thumbnail.toJPEG(jpegQuality);
+        const buffer = source.thumbnail.toJPEG(70);
         const base64 = buffer.toString('base64');
-
-        const size = thumbnail.getSize();
+        const size = source.thumbnail.getSize();
 
         return {
             success: true,
@@ -2462,7 +2156,11 @@ async function captureScreenshotInternal(options = {}) {
             height: size.height,
         };
     } catch (error) {
-        throw error;
+        console.error('Failed to capture screenshot using desktopCapturer:', error);
+        return {
+            success: false,
+            error: error.message,
+        };
     }
 }
 
@@ -2473,9 +2171,5 @@ module.exports = {
     setApiKey,
     getStoredApiKey,
     getStoredProvider,
-    clearApiKey,
-    getCurrentFirebaseUser,
-    isFirebaseLoggedIn,
-    setCurrentFirebaseUser,
-    getVirtualKeyByEmail,
+    captureScreenshot,
 };

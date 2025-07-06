@@ -6,14 +6,17 @@ const { getSystemPrompt } = require('../../common/prompts/promptBuilder.js');
 const { connectToGeminiSession } = require('../../common/services/googleGeminiClient.js');
 const { connectToOpenAiSession, createOpenAiGenerativeClient, getOpenAiGenerativeModel } = require('../../common/services/openAiClient.js');
 const { makeChatCompletionWithPortkey } = require('../../common/services/aiProviderService.js');
-const sqliteClient = require('../../common/services/sqliteClient');
-const dataService = require('../../common/services/dataService');
+const authService = require('../../common/services/authService');
+const sessionRepository = require('../../common/repositories/session');
+const listenRepository = require('./repositories');
 
-const { isFirebaseLoggedIn, getCurrentFirebaseUser, getStoredProvider } = require('../../electron/windowManager.js');
+const { getStoredApiKey, getStoredProvider } = require('../../electron/windowManager');
 
-function getApiKey() {
-    const { getStoredApiKey } = require('../../electron/windowManager.js');
-    const storedKey = getStoredApiKey();
+const MAX_BUFFER_LENGTH_CHARS = 2000;
+const COMPLETION_DEBOUNCE_MS = 2000;
+
+async function getApiKey() {
+    const storedKey = await getStoredApiKey();
 
     if (storedKey) {
         console.log('[LiveSummaryService] Using stored API key');
@@ -37,7 +40,6 @@ async function getAiProvider() {
         return provider || 'openai';
     } catch (error) {
         // If we're in the main process, get it directly
-        const { getStoredProvider } = require('../../electron/windowManager.js');
         return getStoredProvider ? getStoredProvider() : 'openai';
     }
 }
@@ -70,8 +72,6 @@ let analysisHistory = [];
 // of those micro-turns we debounce the *completed* events per speaker.  Any
 // completions that arrive within this window are concatenated and flushed as
 // **one** final turn.
-
-const COMPLETION_DEBOUNCE_MS = 2000;
 
 let myCompletionBuffer = '';
 let theirCompletionBuffer = '';
@@ -185,6 +185,9 @@ Please build upon this context while analyzing the new conversation segments.
     const systemPrompt = basePrompt.replace('{{CONVERSATION_HISTORY}}', recentConversation);
 
     try {
+        if (currentSessionId) {
+            await sessionRepository.touch(currentSessionId);
+        }
         const messages = [
             {
                 role: 'system',
@@ -218,13 +221,13 @@ Keep all points concise and build upon previous analysis if provided.`,
 
         console.log('🤖 Sending analysis request to OpenAI...');
 
-        const API_KEY = getApiKey();
+        const API_KEY = await getApiKey();
         if (!API_KEY) {
             throw new Error('No API key available');
         }
         
         const provider = getStoredProvider ? getStoredProvider() : 'openai';
-        const loggedIn = isFirebaseLoggedIn(); // true ➜ vKey, false ➜ apiKey
+        const loggedIn = authService.getCurrentUser().isLoggedIn; // true ➜ vKey, false ➜ apiKey
         const usePortkey = loggedIn && provider === 'openai'; // Only use Portkey for OpenAI with Firebase
         
         console.log(`[LiveSummary] provider: ${provider}, usePortkey: ${usePortkey}`);
@@ -245,7 +248,7 @@ Keep all points concise and build upon previous analysis if provided.`,
         const structuredData = parseResponseText(responseText, previousAnalysisResult);
 
         if (currentSessionId) {
-            sqliteClient.saveSummary({
+            listenRepository.saveSummary({
                 sessionId: currentSessionId,
                 tldr: structuredData.summary.join('\n'),
                 bullet_json: JSON.stringify(structuredData.topic.bullets),
@@ -455,51 +458,13 @@ function getCurrentSessionData() {
 }
 
 // Conversation management functions
-async function getOrCreateActiveSession(requestedType = 'ask') {
-    // 1. Check for an existing, valid session
-    if (currentSessionId) {
-        const session = await sqliteClient.getSession(currentSessionId);
-
-        if (session && !session.ended_at) {
-            // Ask sessions can expire, Listen sessions can't (they are closed explicitly)
-            const isExpired = session.session_type === 'ask' && 
-                              (Date.now() / 1000) - session.updated_at > SESSION_IDLE_TIMEOUT_SECONDS;
-
-            if (!isExpired) {
-                // Session is valid, potentially promote it
-                if (requestedType === 'listen' && session.session_type === 'ask') {
-                    await sqliteClient.updateSessionType(currentSessionId, 'listen');
-                    console.log(`[Session] Promoted session ${currentSessionId} to 'listen'.`);
-                } else {
-                    await sqliteClient.touchSession(currentSessionId);
-                }
-                return currentSessionId;
-            } else {
-                console.log(`[Session] Ask session ${currentSessionId} expired. Closing it.`);
-                await sqliteClient.endSession(currentSessionId);
-                currentSessionId = null; // Important: clear the expired session ID
-            }
-        }
-    }
-
-    // 2. If no valid session, create a new one
-    console.log(`[Session] No active session found. Creating a new one with type: ${requestedType}`);
-    const uid = dataService.currentUserId;
-    currentSessionId = await sqliteClient.createSession(uid, requestedType);
-    
-    // Clear old conversation data for the new session
-    conversationHistory = [];
-    myCurrentUtterance = '';
-    theirCurrentUtterance = '';
-    previousAnalysisResult = null;
-    analysisHistory = [];
-
-    return currentSessionId;
-}
-
 async function initializeNewSession() {
     try {
-        currentSessionId = await getOrCreateActiveSession('listen');
+        const uid = authService.getCurrentUserId();
+        if (!uid) {
+            throw new Error("Cannot initialize session: user not logged in.");
+        }
+        currentSessionId = await sessionRepository.getOrCreateActive(uid, 'listen');
         console.log(`[DB] New listen session ensured: ${currentSessionId}`);
 
         conversationHistory = [];
@@ -541,7 +506,8 @@ async function saveConversationTurn(speaker, transcription) {
     if (transcription.trim() === '') return;
 
     try {
-        await sqliteClient.addTranscript({
+        await sessionRepository.touch(currentSessionId);
+        await listenRepository.addTranscript({
             sessionId: currentSessionId,
             speaker: speaker,
             text: transcription.trim(),
@@ -573,14 +539,15 @@ async function initializeLiveSummarySession(language = 'en') {
         return false;
     }
 
-    const loggedIn = isFirebaseLoggedIn();
+    const userState = authService.getCurrentUser();
+    const loggedIn = userState.isLoggedIn;
     const keyType = loggedIn ? 'vKey' : 'apiKey';
 
     isInitializingSession = true;
     sendToRenderer('session-initializing', true);
     sendToRenderer('update-status', 'Initializing sessions...');
 
-    const API_KEY = getApiKey();
+    const API_KEY = await getApiKey();
     if (!API_KEY) {
         console.error('FATAL ERROR: API Key is not defined.');
         sendToRenderer('update-status', 'API Key not configured.');
@@ -886,7 +853,7 @@ async function closeSession() {
         stopAnalysisInterval();
 
         if (currentSessionId) {
-            await sqliteClient.endSession(currentSessionId);
+            await sessionRepository.end(currentSessionId);
             console.log(`[DB] Session ${currentSessionId} ended.`);
         }
 
@@ -971,38 +938,8 @@ function setupLiveSummaryIpcHandlers() {
         }
     });
 
-    ipcMain.handle('get-conversation-history', async () => {
-        try {
-            const formattedHistory = formatConversationForPrompt(conversationHistory);
-            console.log(`📤 Sending conversation history to renderer: ${conversationHistory.length} texts`);
-            return { success: true, data: formattedHistory };
-        } catch (error) {
-            console.error('Error getting conversation history:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
     ipcMain.handle('close-session', async () => {
         return await closeSession();
-    });
-
-    ipcMain.handle('get-current-session', async event => {
-        try {
-            return { success: true, data: getCurrentSessionData() };
-        } catch (error) {
-            console.error('Error getting current session:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('start-new-session', async event => {
-        try {
-            initializeNewSession();
-            return { success: true, sessionId: currentSessionId };
-        } catch (error) {
-            console.error('Error starting new session:', error);
-            return { success: false, error: error.message };
-        }
     });
 
     ipcMain.handle('update-google-search-setting', async (event, enabled) => {
@@ -1014,33 +951,10 @@ function setupLiveSummaryIpcHandlers() {
             return { success: false, error: error.message };
         }
     });
+}
 
-    ipcMain.handle('save-ask-message', async (event, { userPrompt, aiResponse }) => {
-        try {
-            const sessionId = await getOrCreateActiveSession('ask');
-            if (!sessionId) {
-                throw new Error('Could not get or create a session for the ASK message.');
-            }
-    
-            await sqliteClient.addAiMessage({
-                sessionId: sessionId,
-                role: 'user',
-                content: userPrompt
-            });
-    
-            await sqliteClient.addAiMessage({
-                sessionId: sessionId,
-                role: 'assistant',
-                content: aiResponse
-            });
-    
-            console.log(`[DB] Saved ask/answer pair to session ${sessionId}`);
-            return { success: true };
-        } catch(error) {
-            console.error('[IPC] Failed to save ask message:', error);
-            return { success: false, error: error.message };
-        }
-    });
+function getConversationHistory() {
+    return conversationHistory;
 }
 
 module.exports = {
@@ -1055,4 +969,5 @@ module.exports = {
     setupLiveSummaryIpcHandlers,
     isSessionActive,
     closeSession,
+    getConversationHistory,
 };

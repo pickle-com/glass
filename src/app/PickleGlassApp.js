@@ -83,10 +83,6 @@ export class PickleGlassApp extends LitElement {
             ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
-            ipcRenderer.on('show-view', (_, view) => {
-                this.currentView = view;
-                this.isMainViewVisible = true;
-            });
             ipcRenderer.on('start-listening-session', () => {
                 console.log('Received start-listening-session command, calling handleListenClick.');
                 this.handleListenClick();
@@ -100,7 +96,6 @@ export class PickleGlassApp extends LitElement {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
-            ipcRenderer.removeAllListeners('show-view');
             ipcRenderer.removeAllListeners('start-listening-session');
         }
     }
@@ -110,10 +105,7 @@ export class PickleGlassApp extends LitElement {
             this.requestWindowResize();
         }
 
-        if (changedProperties.has('currentView') && window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.send('view-changed', this.currentView);
-
+        if (changedProperties.has('currentView')) {
             const viewContainer = this.shadowRoot?.querySelector('.view-container');
             if (viewContainer) {
                 viewContainer.classList.add('entering');
