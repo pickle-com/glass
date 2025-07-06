@@ -17,7 +17,11 @@ const { setupLiveSummaryIpcHandlers, stopMacOSAudioCapture } = require('./featur
 const databaseInitializer = require('./common/services/databaseInitializer');
 const dataService = require('./common/services/dataService');
 const path = require('node:path');
+<<<<<<< HEAD
 const { Deeplink } = require('./utils/deeplink');
+=======
+const { Deeplink } = require('electron-deeplink');
+>>>>>>> upstream/main
 const express = require('express');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');

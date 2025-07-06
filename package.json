@@ -32,9 +32,16 @@
         "@google/genai": "^1.8.0",
         "@google/generative-ai": "^0.24.1",
         "axios": "^1.10.0",
+<<<<<<< HEAD
         "sqlite3": "^5.1.7",
         "cors": "^2.8.5",
         "dotenv": "^17.0.0",
+=======
+        "better-sqlite3": "^9.4.3",
+        "cors": "^2.8.5",
+        "dotenv": "^17.0.0",
+        "electron-deeplink": "^1.0.10",
+>>>>>>> upstream/main
         "electron-squirrel-startup": "^1.0.1",
         "electron-store": "^8.2.0",
         "electron-updater": "^6.6.2",
@@ -46,6 +53,10 @@
         "openai": "^4.70.0",
         "react-hot-toast": "^2.5.2",
         "sharp": "^0.34.2",
+<<<<<<< HEAD
+=======
+        "sqlite3": "^5.1.7",
+>>>>>>> upstream/main
         "validator": "^13.11.0",
         "wait-on": "^8.0.3",
         "ws": "^8.18.0"

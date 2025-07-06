@@ -1,11 +1,20 @@
 const path = require('path');
 const databaseInitializer = require('../../src/common/services/databaseInitializer');
+<<<<<<< HEAD
 const sqlite3 = require('sqlite3').verbose();
 
 const dbPath = databaseInitializer.getDatabasePath();
 const db = new sqlite3.Database(dbPath);
 
 db.run('PRAGMA journal_mode = WAL');
+=======
+const Database = require('better-sqlite3');
+
+const dbPath = databaseInitializer.getDatabasePath();
+const db = new Database(dbPath);
+
+db.pragma('journal_mode = WAL');
+>>>>>>> upstream/main
 
 // The schema is now managed by the main Electron process on startup.
 // This file can assume the schema is correct and up-to-date.
@@ -20,12 +29,18 @@ const defaultPresets = [
 
 const stmt = db.prepare(`
 INSERT OR IGNORE INTO prompt_presets (id, uid, title, prompt, is_default, created_at)
+<<<<<<< HEAD
 VALUES (?, 'default_user', ?, ?, ?, strftime('%s','now'));
 `);
 
 defaultPresets.forEach(([id, title, prompt, is_default]) => {
     stmt.run(id, title, prompt, is_default);
 });
+=======
+VALUES (@id, 'default_user', @title, @prompt, @is_default, strftime('%s','now'));
+`);
+db.transaction(() => defaultPresets.forEach(([id, title, prompt, is_default]) => stmt.run({ id, title, prompt, is_default })))();
+>>>>>>> upstream/main
 
 const defaultUserStmt = db.prepare(`
 INSERT OR IGNORE INTO users (uid, display_name, email, created_at)
