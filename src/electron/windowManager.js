@@ -146,11 +146,6 @@ function createFeatureWindows(header) {
     }
 
     ask.on('blur',()=>ask.webContents.send('window-blur'));
-    
-    // Open DevTools in development
-    if (!app.isPackaged) {
-        ask.webContents.openDevTools({ mode: 'detach' });
-    }
     windowPool.set('ask', ask);
 
     // settings
@@ -186,10 +181,6 @@ function createFeatureWindows(header) {
 }
 
 function destroyFeatureWindows() {
-    if (settingsHideTimer) {
-        clearTimeout(settingsHideTimer);
-        settingsHideTimer = null;
-    }
     featureWindows.forEach(name=>{
         const win = windowPool.get(name);
         if (win && !win.isDestroyed()) win.destroy();
@@ -216,88 +207,247 @@ function getDisplayById(displayId) {
 }
 
 
+layoutManager = new WindowLayoutManager();
+movementManager = null;
 
-function toggleAllWindowsVisibility(movementManager) {
-    const header = windowPool.get('header');
-    if (!header) return;
+function isWindowSafe(window) {
+    return window && !window.isDestroyed() && typeof window.getBounds === 'function';
+}
 
-    if (header.isVisible()) {
-        console.log('[Visibility] Smart hiding - calculating nearest edge');
+function safeWindowOperation(window, operation, fallback = null) {
+    if (!isWindowSafe(window)) {
+        console.warn('[WindowManager] Window not safe for operation');
+        return fallback;
+    }
+    
+    try {
+        return operation(window);
+    } catch (error) {
+        console.error('[WindowManager] Window operation failed:', error);
+        return fallback;
+    }
+}
 
-        const headerBounds = header.getBounds();
-        const display = screen.getPrimaryDisplay();
-        const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+function safeSetPosition(window, x, y) {
+    return safeWindowOperation(window, (win) => {
+        win.setPosition(Math.round(x), Math.round(y));
+        return true;
+    }, false);
+}
 
-        const centerX = headerBounds.x + headerBounds.width / 2;
-        const centerY = headerBounds.y + headerBounds.height / 2;
+function safeGetBounds(window) {
+    return safeWindowOperation(window, (win) => win.getBounds(), null);
+}
 
-        const distances = {
-            top: centerY,
-            bottom: screenHeight - centerY,
-            left: centerX,
-            right: screenWidth - centerX,
-        };
+function safeShow(window) {
+    return safeWindowOperation(window, (win) => {
+        win.show();
+        return true;
+    }, false);
+}
 
-        const nearestEdge = Object.keys(distances).reduce((nearest, edge) => (distances[edge] < distances[nearest] ? edge : nearest));
+function safeHide(window) {
+    return safeWindowOperation(window, (win) => {
+        win.hide();
+        return true;
+    }, false);
+}
 
-        console.log(`[Visibility] Nearest edge: ${nearestEdge} (distance: ${distances[nearestEdge].toFixed(1)}px)`);
+let toggleState = {
+    isToggling: false,
+    lastToggleTime: 0,
+    pendingToggle: null,
+    toggleDebounceTimer: null,
+    failsafeTimer: null
+};
 
-        lastVisibleWindows.clear();
-        lastVisibleWindows.add('header');
-
-        windowPool.forEach((win, name) => {
-            if (win.isVisible()) {
-                lastVisibleWindows.add(name);
-                if (name !== 'header') {
-                    // win.webContents.send('window-hide-animation');
-                    // setTimeout(() => {
-                    //     if (!win.isDestroyed()) {
-                    //         win.hide();
-                    //     }
-                    // }, 200);
-                    win.hide();
-                }
-            }
-        });
-
-        console.log('[Visibility] Visible windows before hide:', Array.from(lastVisibleWindows));
-
-        movementManager.hideToEdge(nearestEdge, () => {
-            header.hide();
-            console.log('[Visibility] Smart hide completed');
-        }, { instant: true });
-        }, { instant: true });
-    } else {
-        header.webContents.send('cancel-animations');
-        windowPool.forEach((win, name) => {
-            if (name !== 'header') win.webContents.send('cancel-animations');
-        });
+function toggleAllWindowsVisibility() {
+    const now = Date.now();
+    const timeSinceLastToggle = now - toggleState.lastToggleTime;
+    
+    if (timeSinceLastToggle < 30) {
+        console.log('[Visibility] Toggle ignored - too fast (debounced)');
+        return;
+    }
+    if (toggleState.isToggling) {
+        console.log('[Visibility] Toggle in progress, queueing request');
         
-        console.log('[Visibility] Smart showing from hidden position');
-        console.log('[Visibility] Restoring windows:', Array.from(lastVisibleWindows));
+        if (toggleState.toggleDebounceTimer) {
+            clearTimeout(toggleState.toggleDebounceTimer);
+        }
+        
+        toggleState.toggleDebounceTimer = setTimeout(() => {
+            toggleState.toggleDebounceTimer = null;
+            if (!toggleState.isToggling) {
+                toggleAllWindowsVisibility();
+            }
+        }, 30);
+        
+        return;
+    }
+    
+    const header = windowPool.get('header');
+    if (!header || header.isDestroyed()) {
+        console.error('[Visibility] Header window not found or destroyed');
+        return;
+    }
 
-        header.show();
+    toggleState.isToggling = true;
+    toggleState.lastToggleTime = now;
+    const resetToggleState = () => {
+        toggleState.isToggling = false;
+        if (toggleState.toggleDebounceTimer) {
+            clearTimeout(toggleState.toggleDebounceTimer);
+            toggleState.toggleDebounceTimer = null;
+        }
+        if (toggleState.failsafeTimer) {
+            clearTimeout(toggleState.failsafeTimer);
+            toggleState.failsafeTimer = null;
+        }
+    };
+    toggleState.failsafeTimer = setTimeout(() => {
+        console.warn('[Visibility] Toggle operation timed out, resetting state');
+        resetToggleState();
+    }, 2000);
 
-        movementManager.showFromEdge(() => {
-            lastVisibleWindows.forEach(name => {
-                if (name === 'header') return;
-                const win = windowPool.get(name);
-                if (win && !win.isDestroyed()) {
-                    win.show();
-                    win.webContents.send('window-show-animation');
+    try {
+        if (header.isVisible()) {
+            console.log('[Visibility] Smart hiding - calculating nearest edge');
+
+            const headerBounds = header.getBounds();
+            const display = getCurrentDisplay(header);
+            const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+            const { x: workAreaX, y: workAreaY } = display.workArea;
+
+            const centerX = headerBounds.x + headerBounds.width / 2 - workAreaX;
+            const centerY = headerBounds.y + headerBounds.height / 2 - workAreaY;
+
+            const distances = {
+                top: centerY,
+                bottom: screenHeight - centerY,
+                left: centerX,
+                right: screenWidth - centerX,
+            };
+
+            const nearestEdge = Object.keys(distances).reduce((nearest, edge) => 
+                (distances[edge] < distances[nearest] ? edge : nearest)
+            );
+
+            console.log(`[Visibility] Nearest edge: ${nearestEdge} (distance: ${distances[nearestEdge].toFixed(1)}px)`);
+
+            lastVisibleWindows.clear();
+            lastVisibleWindows.add('header');
+
+            const hidePromises = [];
+            windowPool.forEach((win, name) => {
+                if (win && !win.isDestroyed() && win.isVisible() && name !== 'header') {
+                    lastVisibleWindows.add(name);
+                    
+                    // win.webContents.send('window-hide-animation');
+                    
+                    // hidePromises.push(new Promise(resolve => {
+                    //     setTimeout(() => {
+                    //         if (!win.isDestroyed()) {
+                    //             win.hide();
+                    //         }
+                    //         resolve();
+                    //     }, 180); // 200ms ->180ms
+                    // }));
+
+                    hidePromises.push(new Promise(resolve => {
+                        if (!win.isDestroyed()) win.hide();   // 바로 hide
+                        resolve();                            // 즉시 완료
+                    }));
                 }
             });
 
-            setImmediate(updateLayout);
-            setTimeout(updateLayout, 120);
+            console.log('[Visibility] Visible windows before hide:', Array.from(lastVisibleWindows));
 
-            console.log('[Visibility] Smart show completed');
-        });
+            Promise.all(hidePromises).then(() => {
+                if (!movementManager || header.isDestroyed()) {
+                    resetToggleState();
+                    return;
+                }
+                
+                movementManager.hideToEdge(nearestEdge, () => {
+                    if (!header.isDestroyed()) {
+                        header.hide();
+                    }
+                    resetToggleState();
+                    console.log('[Visibility] Smart hide completed');
+                }, (error) => {
+                    console.error('[Visibility] Error in hideToEdge:', error);
+                    resetToggleState();
+                });
+            }).catch(err => {
+                console.error('[Visibility] Error during hide:', err);
+                resetToggleState();
+            });
+            
+        } else {
+            console.log('[Visibility] Smart showing from hidden position');
+            console.log('[Visibility] Restoring windows:', Array.from(lastVisibleWindows));
+            header.show();
+
+            if (!movementManager) {
+                console.error('[Visibility] Movement manager not initialized');
+                resetToggleState();
+                return;
+            }
+
+            movementManager.showFromEdge(() => {
+                const showPromises = [];
+                lastVisibleWindows.forEach(name => {
+                    if (name === 'header') return;
+                    
+                    const win = windowPool.get(name);
+                    if (win && !win.isDestroyed()) {
+                        showPromises.push(new Promise(resolve => {
+                            win.show();
+                            win.webContents.send('window-show-animation');
+                            setTimeout(resolve, 100);
+                        }));
+                    }
+                });
+
+                Promise.all(showPromises).then(() => {
+                    setImmediate(updateLayout);
+                    setTimeout(updateLayout, 100);
+                    
+                    resetToggleState();
+                    console.log('[Visibility] Smart show completed');
+                }).catch(err => {
+                    console.error('[Visibility] Error during show:', err);
+                    resetToggleState();
+                });
+            }, (error) => {
+                console.error('[Visibility] Error in showFromEdge:', error);
+                resetToggleState();
+            });
+        }
+    } catch (error) {
+        console.error('[Visibility] Unexpected error in toggle:', error);
+        resetToggleState();
     }
 }
 
 
 function createWindows() {
+    if (movementManager) {
+        movementManager.destroy();
+        movementManager = null;
+    }
+    
+    toggleState.isToggling = false;
+    if (toggleState.toggleDebounceTimer) {
+        clearTimeout(toggleState.toggleDebounceTimer);
+        toggleState.toggleDebounceTimer = null;
+    }
+    if (toggleState.failsafeTimer) {
+        clearTimeout(toggleState.failsafeTimer);
+        toggleState.failsafeTimer = null;
+    }
+    
     const primaryDisplay = screen.getPrimaryDisplay();
     const { y: workAreaY, width: screenWidth } = primaryDisplay.workArea;
 
@@ -364,7 +514,6 @@ function createWindows() {
 
     header.setContentProtection(isContentProtectionOn);
     header.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    // header.loadFile(path.join(__dirname, '../app/header.html'));
     
     // Open DevTools in development
     if (!app.isPackaged) {
@@ -394,149 +543,167 @@ function createWindows() {
     //     loadAndRegisterShortcuts();
     // });
 
-    ipcMain.handle('toggle-all-windows-visibility', () => toggleAllWindowsVisibility(movementManager));
+    ipcMain.handle('toggle-all-windows-visibility', () => {
+        try {
+            toggleAllWindowsVisibility(movementManager);
+        } catch (error) {
+            console.error('[WindowManager] Error in toggle-all-windows-visibility:', error);
+            toggleState.isToggling = false;
+        }
+    });
 
     ipcMain.handle('toggle-feature', async (event, featureName) => {
-        if (!windowPool.get(featureName) && currentHeaderState === 'main') {
-            createFeatureWindows(windowPool.get('header'));
-        }
-
-        const windowToToggle = windowPool.get(featureName);
-
-        if (windowToToggle) {
-            if (featureName === 'listen') {
-                const listenService = global.listenService;
-                if (listenService && listenService.isSessionActive()) {
-                    console.log('[WindowManager] Listen session is active, closing it via toggle.');
-                    await listenService.closeSession();
-                    return;
-                }
-            }
-            console.log(`[WindowManager] Toggling feature: ${featureName}`);
-        }
-
-        if (featureName === 'ask') {
-            let askWindow = windowPool.get('ask');
-
-            if (!askWindow || askWindow.isDestroyed()) {
-                console.log('[WindowManager] Ask window not found, creating new one');
+        try {
+            const header = windowPool.get('header');
+            if (!header || header.isDestroyed()) {
+                console.error('[WindowManager] Header window not available');
                 return;
             }
-
-            if (askWindow.isVisible()) {
-                try {
-                    const hasResponse = await askWindow.webContents.executeJavaScript(`
-                        (() => {
-                            try {
-                                // PickleGlassApp의 Shadow DOM 내부로 접근
-                                const pickleApp = document.querySelector('pickle-glass-app');
-                                if (!pickleApp || !pickleApp.shadowRoot) {
-                                    console.log('PickleGlassApp not found');
-                                    return false;
-                                }
-                                
-                                // PickleGlassApp의 shadowRoot 내부에서 ask-view 찾기
-                                const askView = pickleApp.shadowRoot.querySelector('ask-view');
-                                if (!askView) {
-                                    console.log('AskView not found in PickleGlassApp shadow DOM');
-                                    return false;
-                                }
-                                
-                                console.log('AskView found, checking state...');
-                                console.log('currentResponse:', askView.currentResponse);
-                                console.log('isLoading:', askView.isLoading);
-                                console.log('isStreaming:', askView.isStreaming);
-                                
-                                const hasContent = !!(askView.currentResponse || askView.isLoading || askView.isStreaming);
-                                
-                                if (!hasContent && askView.shadowRoot) {
-                                    const responseContainer = askView.shadowRoot.querySelector('.response-container');
-                                    if (responseContainer && !responseContainer.classList.contains('hidden')) {
-                                        const textContent = responseContainer.textContent.trim();
-                                        const hasActualContent = textContent && 
-                                            !textContent.includes('Ask a question to see the response here') &&
-                                            textContent.length > 0;
-                                        console.log('Response container content check:', hasActualContent);
-                                        return hasActualContent;
-                                    }
-                                }
-                                
-                                return hasContent;
-                            } catch (error) {
-                                console.error('Error checking AskView state:', error);
-                                return false;
-                            }
-                        })()
-                    `);
-
-                    console.log(`[WindowManager] Ask window visible, hasResponse: ${hasResponse}`);
-
-                    if (hasResponse) {
-                        askWindow.webContents.send('toggle-text-input');
-                        console.log('[WindowManager] Sent toggle-text-input command');
-                    } else {
-                        console.log('[WindowManager] No response found, closing window');
-                        askWindow.webContents.send('window-hide-animation');
-
-                        setTimeout(() => {
-                            if (!askWindow.isDestroyed()) {
-                                askWindow.hide();
-                                updateLayout();
-                            }
-                        }, 250);
-                    }
-                } catch (error) {
-                    console.error('[WindowManager] Error checking Ask window state:', error);
-                    console.log('[WindowManager] Falling back to toggle text input');
-                    askWindow.webContents.send('toggle-text-input');
-                }
-            } else {
-                console.log('[WindowManager] Showing hidden Ask window');
-                askWindow.show();
-                updateLayout();
-                askWindow.webContents.send('window-show-animation');
-                askWindow.webContents.send('window-did-show');
+            
+            if (!windowPool.get(featureName) && currentHeaderState === 'main') {
+                createFeatureWindows(header);
             }
-        } else {
+
             const windowToToggle = windowPool.get(featureName);
 
             if (windowToToggle) {
-                if (windowToToggle.isDestroyed()) {
-                    console.error(`Window ${featureName} is destroyed, cannot toggle`);
+                if (featureName === 'listen') {
+                    const listenService = global.listenService;
+                    if (listenService && listenService.isSessionActive()) {
+                        console.log('[WindowManager] Listen session is active, closing it via toggle.');
+                        await listenService.closeSession();
+                        return;
+                    }
+                }
+                console.log(`[WindowManager] Toggling feature: ${featureName}`);
+            }
+
+            if (featureName === 'ask') {
+                let askWindow = windowPool.get('ask');
+
+                if (!askWindow || askWindow.isDestroyed()) {
+                    console.log('[WindowManager] Ask window not found, creating new one');
                     return;
                 }
 
-                if (windowToToggle.isVisible()) {
-                    if (featureName === 'settings') {
-                        windowToToggle.webContents.send('settings-window-hide-animation');
-                    } else {
-                        windowToToggle.webContents.send('window-hide-animation');
-                    }
-
-                    setTimeout(() => {
-                        if (!windowToToggle.isDestroyed()) {
-                            windowToToggle.hide();
-                            updateLayout();
-                        }
-                    }, 250);
-                } else {
+                if (askWindow.isVisible()) {
                     try {
-                        windowToToggle.show();
-                        updateLayout();
+                        const hasResponse = await askWindow.webContents.executeJavaScript(`
+                            (() => {
+                                try {
+                                    // PickleGlassApp의 Shadow DOM 내부로 접근
+                                    const pickleApp = document.querySelector('pickle-glass-app');
+                                    if (!pickleApp || !pickleApp.shadowRoot) {
+                                        console.log('PickleGlassApp not found');
+                                        return false;
+                                    }
+                                    
+                                    // PickleGlassApp의 shadowRoot 내부에서 ask-view 찾기
+                                    const askView = pickleApp.shadowRoot.querySelector('ask-view');
+                                    if (!askView) {
+                                        console.log('AskView not found in PickleGlassApp shadow DOM');
+                                        return false;
+                                    }
+                                    
+                                    console.log('AskView found, checking state...');
+                                    console.log('currentResponse:', askView.currentResponse);
+                                    console.log('isLoading:', askView.isLoading);
+                                    console.log('isStreaming:', askView.isStreaming);
+                                    
+                                    const hasContent = !!(askView.currentResponse || askView.isLoading || askView.isStreaming);
+                                    
+                                    if (!hasContent && askView.shadowRoot) {
+                                        const responseContainer = askView.shadowRoot.querySelector('.response-container');
+                                        if (responseContainer && !responseContainer.classList.contains('hidden')) {
+                                            const textContent = responseContainer.textContent.trim();
+                                            const hasActualContent = textContent && 
+                                                !textContent.includes('Ask a question to see the response here') &&
+                                                textContent.length > 0;
+                                            console.log('Response container content check:', hasActualContent);
+                                            return hasActualContent;
+                                        }
+                                    }
+                                    
+                                    return hasContent;
+                                } catch (error) {
+                                    console.error('Error checking AskView state:', error);
+                                    return false;
+                                }
+                            })()
+                        `);
 
-                        if (featureName === 'listen') {
-                            windowToToggle.webContents.send('start-listening-session');
+                        console.log(`[WindowManager] Ask window visible, hasResponse: ${hasResponse}`);
+
+                        if (hasResponse) {
+                            askWindow.webContents.send('toggle-text-input');
+                            console.log('[WindowManager] Sent toggle-text-input command');
+                        } else {
+                            console.log('[WindowManager] No response found, closing window');
+                            askWindow.webContents.send('window-hide-animation');
+
+                            setTimeout(() => {
+                                if (!askWindow.isDestroyed()) {
+                                    askWindow.hide();
+                                    updateLayout();
+                                }
+                            }, 250);
                         }
-
-                        windowToToggle.webContents.send('window-show-animation');
-                    } catch (e) {
-                        console.error('Error showing window:', e);
+                    } catch (error) {
+                        console.error('[WindowManager] Error checking Ask window state:', error);
+                        console.log('[WindowManager] Falling back to toggle text input');
+                        askWindow.webContents.send('toggle-text-input');
                     }
+                } else {
+                    console.log('[WindowManager] Showing hidden Ask window');
+                    askWindow.show();
+                    updateLayout();
+                    askWindow.webContents.send('window-show-animation');
+                    askWindow.webContents.send('window-did-show');
                 }
             } else {
-                console.error(`Window not found for feature: ${featureName}`);
-                console.error('Available windows:', Array.from(windowPool.keys()));
+                const windowToToggle = windowPool.get(featureName);
+
+                if (windowToToggle) {
+                    if (windowToToggle.isDestroyed()) {
+                        console.error(`Window ${featureName} is destroyed, cannot toggle`);
+                        return;
+                    }
+
+                    if (windowToToggle.isVisible()) {
+                        if (featureName === 'settings') {
+                            windowToToggle.webContents.send('settings-window-hide-animation');
+                        } else {
+                            windowToToggle.webContents.send('window-hide-animation');
+                        }
+
+                        setTimeout(() => {
+                            if (!windowToToggle.isDestroyed()) {
+                                windowToToggle.hide();
+                                updateLayout();
+                            }
+                        }, 250);
+                    } else {
+                        try {
+                            windowToToggle.show();
+                            updateLayout();
+
+                            if (featureName === 'listen') {
+                                windowToToggle.webContents.send('start-listening-session');
+                            }
+
+                            windowToToggle.webContents.send('window-show-animation');
+                        } catch (e) {
+                            console.error('Error showing window:', e);
+                        }
+                    }
+                } else {
+                    console.error(`Window not found for feature: ${featureName}`);
+                    console.error('Available windows:', Array.from(windowPool.keys()));
+                }
             }
+        } catch (error) {
+            console.error('[WindowManager] Error in toggle-feature:', error);
+            toggleState.isToggling = false;
         }
     });
 
@@ -622,6 +789,16 @@ function loadAndRegisterShortcuts(movementManager) {
         .catch(() => updateGlobalShortcuts(defaultKeybinds, header, sendToRenderer, movementManager));
 }
 
+function updateLayout() {
+    if (layoutManager._updateTimer) {
+        clearTimeout(layoutManager._updateTimer);
+    }
+    
+    layoutManager._updateTimer = setTimeout(() => {
+        layoutManager._updateTimer = null;
+        layoutManager.updateLayout();
+    }, 16);
+}
 
 function setupIpcHandlers(movementManager) {
     screen.on('display-added', (event, newDisplay) => {
@@ -707,12 +884,8 @@ function setupIpcHandlers(movementManager) {
                     clearTimeout(settingsHideTimer);
                 }
                 settingsHideTimer = setTimeout(() => {
-                    // window.setAlwaysOnTop(false);
-                    // window.hide();
-                    if (window && !window.isDestroyed()) {
-                        window.setAlwaysOnTop(false);
-                        window.hide();
-                    }
+                    window.setAlwaysOnTop(false);
+                    window.hide();
                     settingsHideTimer = null;
                 }, 200);
             } else {
@@ -984,31 +1157,35 @@ function setupIpcHandlers(movementManager) {
             }
         });
     });
-
     ipcMain.handle('check-system-permissions', async () => {
         const { systemPreferences } = require('electron');
         const permissions = {
-            microphone: 'unknown',
-            screen: 'unknown',
-            needsSetup: true
+            microphone: false,
+            screen: false,
+            needsSetup: false
         };
 
         try {
             if (process.platform === 'darwin') {
                 // Check microphone permission on macOS
                 const micStatus = systemPreferences.getMediaAccessStatus('microphone');
-                console.log('[Permissions] Microphone status:', micStatus);
-                permissions.microphone = micStatus;
+                permissions.microphone = micStatus === 'granted';
 
-                // Check screen recording permission using the system API
-                const screenStatus = systemPreferences.getMediaAccessStatus('screen');
-                console.log('[Permissions] Screen status:', screenStatus);
-                permissions.screen = screenStatus;
+                try {
+                    const sources = await desktopCapturer.getSources({ 
+                        types: ['screen'], 
+                        thumbnailSize: { width: 1, height: 1 } 
+                    });
+                    permissions.screen = sources && sources.length > 0;
+                } catch (err) {
+                    console.log('[Permissions] Screen capture test failed:', err);
+                    permissions.screen = false;
+                }
 
-                permissions.needsSetup = micStatus !== 'granted' || screenStatus !== 'granted';
+                permissions.needsSetup = !permissions.microphone || !permissions.screen;
             } else {
-                permissions.microphone = 'granted';
-                permissions.screen = 'granted';
+                permissions.microphone = true;
+                permissions.screen = true;
                 permissions.needsSetup = false;
             }
 
@@ -1017,8 +1194,8 @@ function setupIpcHandlers(movementManager) {
         } catch (error) {
             console.error('[Permissions] Error checking permissions:', error);
             return {
-                microphone: 'unknown',
-                screen: 'unknown',
+                microphone: false,
+                screen: false,
                 needsSetup: true,
                 error: error.message
             };
@@ -1033,9 +1210,8 @@ function setupIpcHandlers(movementManager) {
         const { systemPreferences } = require('electron');
         try {
             const status = systemPreferences.getMediaAccessStatus('microphone');
-            console.log('[Permissions] Microphone status:', status);
             if (status === 'granted') {
-                return { success: true, status: 'granted' };
+                return { success: true, status: 'already-granted' };
             }
 
             // Req mic permission
@@ -1059,25 +1235,14 @@ function setupIpcHandlers(movementManager) {
         }
 
         try {
+            // Open System Preferences to Privacy & Security > Screen Recording
             if (section === 'screen-recording') {
-                // First trigger screen capture request to register the app in system preferences
-                try {
-                    console.log('[Permissions] Triggering screen capture request to register app...');
-                    await desktopCapturer.getSources({ 
-                        types: ['screen'], 
-                        thumbnailSize: { width: 1, height: 1 } 
-                    });
-                    console.log('[Permissions] App registered for screen recording');
-                } catch (captureError) {
-                    console.log('[Permissions] Screen capture request triggered (expected to fail):', captureError.message);
-                }
-                
-                // Then open system preferences
-                // await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+                await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+            } else if (section === 'microphone') {
+                await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+            } else {
+                await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy');
             }
-            // if (section === 'microphone') {
-            //     await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
-            // }
             return { success: true };
         } catch (error) {
             console.error('[Permissions] Error opening system preferences:', error);
@@ -1116,7 +1281,6 @@ function setupIpcHandlers(movementManager) {
     });
 }
 
-
 async function setApiKey(apiKey, provider = 'openai') {
     console.log('[WindowManager] Persisting API key and provider to DB');
 
@@ -1126,20 +1290,13 @@ async function setApiKey(apiKey, provider = 'openai') {
         
         // Notify authService that the key status may have changed
         await authService.updateApiKeyStatus();
-
     } catch (err) {
         console.error('[WindowManager] Failed to save API key to SQLite:', err);
     }
 
     windowPool.forEach(win => {
         if (win && !win.isDestroyed()) {
-            const js = apiKey ? `
-                localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});
-                localStorage.setItem('ai_provider', ${JSON.stringify(provider)});
-            ` : `
-                localStorage.removeItem('openai_api_key');
-                localStorage.removeItem('ai_provider');
-            `;
+            const js = apiKey ? `localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});` : `localStorage.removeItem('openai_api_key');`;
             win.webContents.executeJavaScript(js).catch(() => {});
         }
     });
@@ -1165,18 +1322,13 @@ function setupApiKeyIPC() {
     // Both handlers now do the same thing: fetch the key from the source of truth.
     ipcMain.handle('get-stored-api-key', getStoredApiKey);
 
-    ipcMain.handle('api-key-validated', async (event, data) => {
+    ipcMain.handle('api-key-validated', async (event, apiKey) => {
         console.log('[WindowManager] API key validation completed, saving...');
-        
-        // Support both old format (string) and new format (object)
-        const apiKey = typeof data === 'string' ? data : data.apiKey;
-        const provider = typeof data === 'string' ? 'openai' : (data.provider || 'openai');
-        
-        await setApiKey(apiKey, provider);
+        await setApiKey(apiKey);
 
         windowPool.forEach((win, name) => {
             if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-validated', { apiKey, provider });
+                win.webContents.send('api-key-validated', apiKey);
             }
         });
 

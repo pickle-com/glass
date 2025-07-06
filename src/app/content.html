@@ -253,6 +253,17 @@
                         }, 120);
                     });
                     
+                    ipcRenderer.on('settings-window-show-animation', () => {
+                        console.log('Starting settings window show animation');
+                        app.classList.remove('window-hidden', 'window-sliding-up', 'settings-window-hide');
+                        app.classList.add('settings-window-show');
+                        
+                        if (animationTimeout) clearTimeout(animationTimeout);
+                        animationTimeout = setTimeout(() => {
+                            app.classList.remove('settings-window-show');
+                        }, 120);
+                    });
+                    
                     ipcRenderer.on('window-hide-animation', () => {
                         console.log('Starting window hide animation');
                         app.classList.remove('window-sliding-down', 'settings-window-show');
