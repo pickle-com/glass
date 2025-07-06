@@ -1,6 +1,5 @@
 // renderer.js
 const { ipcRenderer } = require('electron');
-const { makeStreamingChatCompletionWithPortkey } = require('../../../common/services/aiProviderService.js');
 const listenCapture = require('./listenCapture.js');
 
 let realtimeConversationHistory = [];

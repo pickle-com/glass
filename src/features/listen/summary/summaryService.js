@@ -1,6 +1,6 @@
 const { BrowserWindow } = require('electron');
 const { getSystemPrompt } = require('../../../common/prompts/promptBuilder.js');
-const { makeChatCompletionWithPortkey } = require('../../../common/services/aiProviderService.js');
+const { createLLM } = require('../../../common/ai/factory');
 const authService = require('../../../common/services/authService');
 const sessionRepository = require('../../../common/repositories/session');
 const summaryRepository = require('./repositories');
@@ -155,20 +155,19 @@ Keep all points concise and build upon previous analysis if provided.`,
             
             const provider = getStoredProvider ? await getStoredProvider() : 'openai';
             const loggedIn = authService.getCurrentUser().isLoggedIn;
-            const usePortkey = loggedIn && provider === 'openai';
             
-            console.log(`[SummaryService] provider: ${provider}, usePortkey: ${usePortkey}`);
+            console.log(`[SummaryService] provider: ${provider}, loggedIn: ${loggedIn}`);
 
-            const completion = await makeChatCompletionWithPortkey({
+            const llm = createLLM(provider, {
                 apiKey: API_KEY,
-                provider: provider,
-                messages: messages,
+                model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
                 temperature: 0.7,
                 maxTokens: 1024,
-                model: provider === 'openai' ? 'gpt-4.1' : 'gemini-2.5-flash',
-                usePortkey: usePortkey,
-                portkeyVirtualKey: usePortkey ? API_KEY : null
+                usePortkey: provider === 'openai' && loggedIn,
+                portkeyVirtualKey: loggedIn ? API_KEY : undefined
             });
+
+            const completion = await llm.chat(messages);
 
             const responseText = completion.content;
             console.log(`✅ Analysis response received: ${responseText}`);

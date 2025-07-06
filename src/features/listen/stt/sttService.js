@@ -1,7 +1,6 @@
 const { BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
-const { connectToGeminiSession } = require('../../../common/services/googleGeminiClient.js');
-const { connectToOpenAiSession } = require('../../../common/services/openAiClient.js');
+const { createSTT } = require('../../../common/ai/factory');
 const { getStoredApiKey, getStoredProvider } = require('../../../electron/windowManager');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
@@ -265,23 +264,22 @@ class SttService {
             },
         };
 
-        // Determine key type based on auth status
+        // Determine auth options for providers that support it
         const authService = require('../../../common/services/authService');
         const userState = authService.getCurrentUser();
         const loggedIn = userState.isLoggedIn;
-        const keyType = loggedIn ? 'vKey' : 'apiKey';
+        
+        const sttOptions = {
+            apiKey: API_KEY,
+            language: effectiveLanguage,
+            usePortkey: !isGemini && loggedIn, // Only OpenAI supports Portkey
+            portkeyVirtualKey: loggedIn ? API_KEY : undefined
+        };
 
-        if (isGemini) {
-            [this.mySttSession, this.theirSttSession] = await Promise.all([
-                connectToGeminiSession(API_KEY, mySttConfig),
-                connectToGeminiSession(API_KEY, theirSttConfig),
-            ]);
-        } else {
-            [this.mySttSession, this.theirSttSession] = await Promise.all([
-                connectToOpenAiSession(API_KEY, mySttConfig, keyType),
-                connectToOpenAiSession(API_KEY, theirSttConfig, keyType),
-            ]);
-        }
+        [this.mySttSession, this.theirSttSession] = await Promise.all([
+            createSTT(provider, { ...sttOptions, callbacks: mySttConfig.callbacks }),
+            createSTT(provider, { ...sttOptions, callbacks: theirSttConfig.callbacks }),
+        ]);
 
         console.log('✅ Both STT sessions initialized successfully.');
         return true;
