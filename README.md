@@ -93,10 +93,21 @@ npm run setup
 
 `Ctrl/Cmd + Arrows` : move main window position
 
+## Repo Activity
+
+![Alt](https://repobeats.axiom.co/api/embed/a23e342faafa84fa8797fa57762885d82fac1180.svg "Repobeats analytics image")
+
 ## Contributing
 
 We love contributions! Feel free to open issues for bugs or feature requests.
 > Currently, we're working on a full code refactor and modularization. Once that's completed, we'll jump into addressing the major issues.
+
+## Contributors
+
+<a href="https://github.com/pickle-com/glass/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=pickle-com/glass" />
+</a>
+
 
 ## 🛠 Current Issues & Improvements
 
