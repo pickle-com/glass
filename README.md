@@ -69,11 +69,9 @@ npm run setup
 <img width="100%" alt="booking-screen" src="./public/assets/02.gif">
 
 **Currently Supporting:**
-- OpenAI API
-- Gemini API
-- Local LLM (Working on
-
-You can visit [here](https://platform.openai.com/api-keys) to get your OpenAI API Key.
+- OpenAI API: Get OpenAI API Key [here](https://platform.openai.com/api-keys)
+- Gemini API: Get Gemini API Key [here](https://aistudio.google.com/apikey)
+- Local LLM (WIP)
 
 ### Liquid Glass Design (coming soon)
 
