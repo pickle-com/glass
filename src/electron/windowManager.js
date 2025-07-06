@@ -39,7 +39,7 @@ let currentDisplayId = null;
 let mouseEventsIgnored = false;
 let lastVisibleWindows = new Set(['header']);
 const HEADER_HEIGHT = 60;
-const DEFAULT_WINDOW_WIDTH = 336;
+const DEFAULT_WINDOW_WIDTH = 345;
 
 let currentHeaderState = 'apikey';
 const windowPool = new Map();
@@ -60,6 +60,8 @@ function updateLayout() {
 let movementManager = null;
 
 let storedProvider = 'openai';
+
+const toggleState = { isToggling: false };
 
 const featureWindows = ['listen','ask','settings'];
 function isAllowed(name) {
@@ -118,7 +120,7 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:554, height:350 });
+    const ask = new BrowserWindow({ ...commonChildOptions, width:600, height:350 });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     if (process.platform === 'darwin') {
@@ -146,6 +148,11 @@ function createFeatureWindows(header) {
     }
 
     ask.on('blur',()=>ask.webContents.send('window-blur'));
+    
+    // Open DevTools in development
+    if (!app.isPackaged) {
+        ask.webContents.openDevTools({ mode: 'detach' });
+    }
     windowPool.set('ask', ask);
 
     // settings
@@ -181,6 +188,10 @@ function createFeatureWindows(header) {
 }
 
 function destroyFeatureWindows() {
+    if (settingsHideTimer) {
+        clearTimeout(settingsHideTimer);
+        settingsHideTimer = null;
+    }
     featureWindows.forEach(name=>{
         const win = windowPool.get(name);
         if (win && !win.isDestroyed()) win.destroy();
@@ -298,9 +309,7 @@ class WindowLayoutManager {
 
         if (!askVisible && !listenVisible) return;
 
-        // const PAD = 3;
-        const PAD_H = 8;
-        const PAD_V = -4;
+        const PAD = 8;
 
         /* ① 헤더 중심 X를 "디스플레이 기준 상대좌표"로 변환  */
         const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
@@ -312,34 +321,34 @@ class WindowLayoutManager {
         /* 두 창 모두 보이는 경우 */
         /* ------------------------------------------------- */
         if (askVisible && listenVisible) {
-            const combinedWidth = listenBounds.width + PAD_H + askBounds.width;
+            const combinedWidth = listenBounds.width + PAD + askBounds.width;
 
             /* ② 모든 X 좌표를 상대좌표로 계산 */
             let groupStartXRel = headerCenterXRel - combinedWidth / 2;
             let listenXRel = groupStartXRel;
-            let askXRel = groupStartXRel + listenBounds.width + PAD_H;
+            let askXRel = groupStartXRel + listenBounds.width + PAD;
 
             /* 좌우 화면 여백 클램프 – 역시 상대좌표로 */
-            if (listenXRel < PAD_H) {
-                listenXRel = PAD_H;
-                askXRel = listenXRel + listenBounds.width + PAD_H;
+            if (listenXRel < PAD) {
+                listenXRel = PAD;
+                askXRel = listenXRel + listenBounds.width + PAD;
             }
-            if (askXRel + askBounds.width > screenWidth - PAD_H) {
-                askXRel = screenWidth - PAD_H - askBounds.width;
-                listenXRel = askXRel - listenBounds.width - PAD_H;
+            if (askXRel + askBounds.width > screenWidth - PAD) {
+                askXRel = screenWidth - PAD - askBounds.width;
+                listenXRel = askXRel - listenBounds.width - PAD;
             }
 
             /* Y 좌표는 이미 상대값으로 계산돼 있음 */
             let yRel;
             switch (strategy.primary) {
                 case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
                     break;
                 case 'above':
-                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD_V;
+                    yRel = headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD;
                     break;
                 default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
                     break;
             }
 
@@ -369,19 +378,19 @@ class WindowLayoutManager {
             let yRel;
             switch (strategy.primary) {
                 case 'below':
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
                     break;
                 case 'above':
-                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD_V;
+                    yRel = headerBounds.y - workAreaY - winBounds.height - PAD;
                     break;
                 default:
-                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD_V;
+                    yRel = headerBounds.y - workAreaY + headerBounds.height + PAD;
                     break;
             }
 
             /* 화면 경계 클램프 */
-            xRel = Math.max(PAD_H, Math.min(screenWidth - winBounds.width - PAD_H, xRel));
-            yRel = Math.max(PAD_H, Math.min(screenHeight - winBounds.height - PAD_H, yRel));
+            xRel = Math.max(PAD, Math.min(screenWidth - winBounds.width - PAD, xRel));
+            yRel = Math.max(PAD, Math.min(screenHeight - winBounds.height - PAD, yRel));
 
             /* 절대좌표로 변환 후 배치 */
             win.setBounds({
@@ -409,7 +418,7 @@ class WindowLayoutManager {
         }
 
         const settingsBounds = settings.getBounds();
-        const PAD = -5;
+        const PAD = 5;
 
         const buttonPadding = 17;
         let x = headerBounds.x + headerBounds.width - settingsBounds.width - buttonPadding;
@@ -496,49 +505,6 @@ class SmoothMovementManager {
         this.hiddenPosition = null;
         this.lastVisiblePosition = null;
         this.currentDisplayId = null;
-        this.currentAnimationTimer = null;
-        this.animationAbortController = null; 
-        this.animationFrameRate = 16; // ~60fps
-    }
-
-    safeSetPosition(window, x, y) {
-        if (!window || window.isDestroyed()) {
-            return false;
-        }
-        
-        let safeX = Number.isFinite(x) ? Math.round(x) : 0;
-        let safeY = Number.isFinite(y) ? Math.round(y) : 0;
-        
-        if (Object.is(safeX, -0)) safeX = 0;
-        if (Object.is(safeY, -0)) safeY = 0;
-        
-        safeX = parseInt(safeX, 10);
-        safeY = parseInt(safeY, 10);
-        
-        if (!Number.isInteger(safeX) || !Number.isInteger(safeY)) {
-            console.error('[Movement] Invalid position after conversion:', { x: safeX, y: safeY, originalX: x, originalY: y });
-            return false;
-        }
-        
-        try {
-            window.setPosition(safeX, safeY);
-            return true;
-        } catch (err) {
-            console.error('[Movement] setPosition failed with values:', { x: safeX, y: safeY }, err);
-            return false;
-        }
-    }
-
-    cancelCurrentAnimation() {
-        if (this.currentAnimationTimer) {
-            clearTimeout(this.currentAnimationTimer);
-            this.currentAnimationTimer = null;
-        }
-        if (this.animationAbortController) {
-            this.animationAbortController.abort();
-            this.animationAbortController = null;
-        }
-        this.isAnimating = false;
     }
 
     moveToDisplay(displayId) {
@@ -593,9 +559,9 @@ class SmoothMovementManager {
         setTimeout(() => {
           if (!header.isDestroyed()) header.hide();
           if (typeof callback === 'function') callback();
-        }, 5);
+        }, 105);
     }
-
+      
       showFromEdge(callback) {
         const header = windowPool.get('header');
         if (!header || header.isDestroyed()) {
@@ -603,6 +569,7 @@ class SmoothMovementManager {
           return;
         }
       
+        // 숨기기 전에 기억해둔 위치 복구
         if (this.lastVisiblePosition) {
           header.setPosition(
             this.lastVisiblePosition.x,
@@ -614,6 +581,7 @@ class SmoothMovementManager {
         header.show();
         header.webContents.send('window-show-animation');
       
+        // 내부 상태 초기화
         this.hiddenPosition      = null;
         this.lastVisiblePosition = null;
       
@@ -680,9 +648,6 @@ class SmoothMovementManager {
     }
 
     animateToPosition(header, targetX, targetY) {
-        // cancel animation
-        this.cancelCurrentAnimation();
-        
         this.isAnimating = true;
 
         const startX = this.headerPosition.x;
@@ -695,14 +660,9 @@ class SmoothMovementManager {
             return;
         }
 
-
-        this.animationAbortController = new AbortController();
-        const signal = this.animationAbortController.signal;
-
         const animate = () => {
-            if (signal.aborted || !header || header.isDestroyed()) {
+            if (!header || header.isDestroyed()) {
                 this.isAnimating = false;
-                this.currentAnimationTimer = null;
                 return;
             }
 
@@ -714,24 +674,24 @@ class SmoothMovementManager {
             const currentX = startX + (targetX - startX) * eased;
             const currentY = startY + (targetY - startY) * eased;
 
-            const success = this.safeSetPosition(header, currentX, currentY);
-            if (!success) {
+            if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
+                console.error('[Movement] Invalid animation values:', { currentX, currentY, progress, eased });
                 this.isAnimating = false;
-                this.currentAnimationTimer = null;
                 return;
             }
 
+            header.setPosition(Math.round(currentX), Math.round(currentY));
+
             if (progress < 1) {
-                this.currentAnimationTimer = setTimeout(animate, this.animationFrameRate);
+                setTimeout(animate, 8);
             } else {
                 this.headerPosition = { x: targetX, y: targetY };
-                
-
-                this.safeSetPosition(header, targetX, targetY);
-                
+                if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
+                    header.setPosition(Math.round(targetX), Math.round(targetY));
+                } else {
+                    console.warn('[Movement] Final position invalid, skip setPosition:', { targetX, targetY });
+                }
                 this.isAnimating = false;
-                this.currentAnimationTimer = null;
-                this.animationAbortController = null;
 
                 updateLayout();
 
@@ -744,23 +704,16 @@ class SmoothMovementManager {
 
     moveToEdge(direction) {
         const header = windowPool.get('header');
-        if (!header || !header.isVisible()) return;
-        this.cancelCurrentAnimation();
+        if (!header || !header.isVisible() || this.isAnimating) return;
 
         console.log(`[Movement] Move to edge: ${direction}`);
 
         const display = getCurrentDisplay(header);
         const { width, height } = display.workAreaSize;
         const { x: workAreaX, y: workAreaY } = display.workArea;
-        
-        let currentBounds;
-        try {
-            currentBounds = header.getBounds();
-        } catch (err) {
-            console.error('[Movement] Failed to get header bounds:', err);
-            return;
-        }
+        const headerBounds = header.getBounds();
 
+        const currentBounds = header.getBounds();
         let targetX = currentBounds.x;
         let targetY = currentBounds.y;
 
@@ -769,26 +722,23 @@ class SmoothMovementManager {
                 targetX = workAreaX;
                 break;
             case 'right':
-                targetX = workAreaX + width - currentBounds.width;
+                targetX = workAreaX + width - headerBounds.width;
                 break;
             case 'up':
                 targetY = workAreaY;
                 break;
             case 'down':
-                targetY = workAreaY + height - currentBounds.height;
+                targetY = workAreaY + height - headerBounds.height;
                 break;
         }
 
         this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
 
-        this.animationAbortController = new AbortController();
-        const signal = this.animationAbortController.signal;
-
         this.isAnimating = true;
         const startX = this.headerPosition.x;
         const startY = this.headerPosition.y;
-        const duration = 350;
-        const startTime = Date.now();
+        const duration = 400;
+        const startTime = Date.now(); // 이 줄을 animate 함수 정의 전으로 이동
 
         if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(startX) || !Number.isFinite(startY)) {
             console.error('[Movement] Invalid edge position values:', { startX, startY, targetX, targetY });
@@ -797,9 +747,8 @@ class SmoothMovementManager {
         }
 
         const animate = () => {
-            if (signal.aborted || !header || header.isDestroyed()) {
+            if (!header || header.isDestroyed()) {
                 this.isAnimating = false;
-                this.currentAnimationTimer = null;
                 return;
             }
 
@@ -811,24 +760,22 @@ class SmoothMovementManager {
             const currentX = startX + (targetX - startX) * eased;
             const currentY = startY + (targetY - startY) * eased;
 
-
-            const success = this.safeSetPosition(header, currentX, currentY);
-            if (!success) {
+            if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
+                console.error('[Movement] Invalid edge animation values:', { currentX, currentY, progress, eased });
                 this.isAnimating = false;
-                this.currentAnimationTimer = null;
                 return;
             }
 
-            if (progress < 1) {
-                this.currentAnimationTimer = setTimeout(animate, this.animationFrameRate);
-            } else {
+            header.setPosition(Math.round(currentX), Math.round(currentY));
 
-                this.safeSetPosition(header, targetX, targetY);
-                
+            if (progress < 1) {
+                setTimeout(animate, 8);
+            } else {
+                if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
+                    header.setPosition(Math.round(targetX), Math.round(targetY));
+                }
                 this.headerPosition = { x: targetX, y: targetY };
                 this.isAnimating = false;
-                this.currentAnimationTimer = null;
-                this.animationAbortController = null;
 
                 updateLayout();
 
@@ -848,253 +795,87 @@ class SmoothMovementManager {
     }
 
     destroy() {
-        this.cancelCurrentAnimation();
         this.isAnimating = false;
         console.log('[Movement] Destroyed');
     }
 }
 
-const layoutManager = new WindowLayoutManager();
-let movementManager = null;
-
-function isWindowSafe(window) {
-    return window && !window.isDestroyed() && typeof window.getBounds === 'function';
-}
-
-function safeWindowOperation(window, operation, fallback = null) {
-    if (!isWindowSafe(window)) {
-        console.warn('[WindowManager] Window not safe for operation');
-        return fallback;
-    }
-    
-    try {
-        return operation(window);
-    } catch (error) {
-        console.error('[WindowManager] Window operation failed:', error);
-        return fallback;
-    }
-}
-
-function safeSetPosition(window, x, y) {
-    return safeWindowOperation(window, (win) => {
-        win.setPosition(Math.round(x), Math.round(y));
-        return true;
-    }, false);
-}
-
-function safeGetBounds(window) {
-    return safeWindowOperation(window, (win) => win.getBounds(), null);
-}
-
-function safeShow(window) {
-    return safeWindowOperation(window, (win) => {
-        win.show();
-        return true;
-    }, false);
-}
-
-function safeHide(window) {
-    return safeWindowOperation(window, (win) => {
-        win.hide();
-        return true;
-    }, false);
-}
-
-let toggleState = {
-    isToggling: false,
-    lastToggleTime: 0,
-    pendingToggle: null,
-    toggleDebounceTimer: null,
-    failsafeTimer: null
-};
+// layoutManager and movementManager are declared above
 
 function toggleAllWindowsVisibility() {
-    const now = Date.now();
-    const timeSinceLastToggle = now - toggleState.lastToggleTime;
-    
-    if (timeSinceLastToggle < 30) {
-        console.log('[Visibility] Toggle ignored - too fast (debounced)');
-        return;
-    }
-    if (toggleState.isToggling) {
-        console.log('[Visibility] Toggle in progress, queueing request');
-        
-        if (toggleState.toggleDebounceTimer) {
-            clearTimeout(toggleState.toggleDebounceTimer);
-        }
-        
-        toggleState.toggleDebounceTimer = setTimeout(() => {
-            toggleState.toggleDebounceTimer = null;
-            if (!toggleState.isToggling) {
-                toggleAllWindowsVisibility();
-            }
-        }, 30);
-        
-        return;
-    }
-    
     const header = windowPool.get('header');
-    if (!header || header.isDestroyed()) {
-        console.error('[Visibility] Header window not found or destroyed');
-        return;
-    }
+    if (!header) return;
 
-    toggleState.isToggling = true;
-    toggleState.lastToggleTime = now;
-    const resetToggleState = () => {
-        toggleState.isToggling = false;
-        if (toggleState.toggleDebounceTimer) {
-            clearTimeout(toggleState.toggleDebounceTimer);
-            toggleState.toggleDebounceTimer = null;
-        }
-        if (toggleState.failsafeTimer) {
-            clearTimeout(toggleState.failsafeTimer);
-            toggleState.failsafeTimer = null;
-        }
-    };
-    toggleState.failsafeTimer = setTimeout(() => {
-        console.warn('[Visibility] Toggle operation timed out, resetting state');
-        resetToggleState();
-    }, 2000);
+    if (header.isVisible()) {
+        console.log('[Visibility] Smart hiding - calculating nearest edge');
 
-    try {
-        if (header.isVisible()) {
-            console.log('[Visibility] Smart hiding - calculating nearest edge');
+        const headerBounds = header.getBounds();
+        const display = screen.getPrimaryDisplay();
+        const { width: screenWidth, height: screenHeight } = display.workAreaSize;
 
-            const headerBounds = header.getBounds();
-            const display = getCurrentDisplay(header);
-            const { width: screenWidth, height: screenHeight } = display.workAreaSize;
-            const { x: workAreaX, y: workAreaY } = display.workArea;
+        const centerX = headerBounds.x + headerBounds.width / 2;
+        const centerY = headerBounds.y + headerBounds.height / 2;
 
-            const centerX = headerBounds.x + headerBounds.width / 2 - workAreaX;
-            const centerY = headerBounds.y + headerBounds.height / 2 - workAreaY;
+        const distances = {
+            top: centerY,
+            bottom: screenHeight - centerY,
+            left: centerX,
+            right: screenWidth - centerX,
+        };
 
-            const distances = {
-                top: centerY,
-                bottom: screenHeight - centerY,
-                left: centerX,
-                right: screenWidth - centerX,
-            };
+        const nearestEdge = Object.keys(distances).reduce((nearest, edge) => (distances[edge] < distances[nearest] ? edge : nearest));
 
-            const nearestEdge = Object.keys(distances).reduce((nearest, edge) => 
-                (distances[edge] < distances[nearest] ? edge : nearest)
-            );
+        console.log(`[Visibility] Nearest edge: ${nearestEdge} (distance: ${distances[nearestEdge].toFixed(1)}px)`);
 
-            console.log(`[Visibility] Nearest edge: ${nearestEdge} (distance: ${distances[nearestEdge].toFixed(1)}px)`);
+        lastVisibleWindows.clear();
+        lastVisibleWindows.add('header');
 
-            lastVisibleWindows.clear();
-            lastVisibleWindows.add('header');
-
-            const hidePromises = [];
-            windowPool.forEach((win, name) => {
-                if (win && !win.isDestroyed() && win.isVisible() && name !== 'header') {
-                    lastVisibleWindows.add(name);
-                    
-                    // win.webContents.send('window-hide-animation');
-                    
-                    // hidePromises.push(new Promise(resolve => {
-                    //     setTimeout(() => {
-                    //         if (!win.isDestroyed()) {
-                    //             win.hide();
-                    //         }
-                    //         resolve();
-                    //     }, 180); // 200ms ->180ms
-                    // }));
-
-                    hidePromises.push(new Promise(resolve => {
-                        if (!win.isDestroyed()) win.hide();   // 바로 hide
-                        resolve();                            // 즉시 완료
-                    }));
+        windowPool.forEach((win, name) => {
+            if (win.isVisible()) {
+                lastVisibleWindows.add(name);
+                if (name !== 'header') {
+                    win.webContents.send('window-hide-animation');
+                    setTimeout(() => {
+                        if (!win.isDestroyed()) {
+                            win.hide();
+                        }
+                    }, 200);
                 }
-            });
-
-            console.log('[Visibility] Visible windows before hide:', Array.from(lastVisibleWindows));
-
-            Promise.all(hidePromises).then(() => {
-                if (!movementManager || header.isDestroyed()) {
-                    resetToggleState();
-                    return;
-                }
-                
-                movementManager.hideToEdge(nearestEdge, () => {
-                    if (!header.isDestroyed()) {
-                        header.hide();
-                    }
-                    resetToggleState();
-                    console.log('[Visibility] Smart hide completed');
-                }, (error) => {
-                    console.error('[Visibility] Error in hideToEdge:', error);
-                    resetToggleState();
-                });
-            }).catch(err => {
-                console.error('[Visibility] Error during hide:', err);
-                resetToggleState();
-            });
-            
-        } else {
-            console.log('[Visibility] Smart showing from hidden position');
-            console.log('[Visibility] Restoring windows:', Array.from(lastVisibleWindows));
-            header.show();
-
-            if (!movementManager) {
-                console.error('[Visibility] Movement manager not initialized');
-                resetToggleState();
-                return;
             }
+        });
 
-            movementManager.showFromEdge(() => {
-                const showPromises = [];
-                lastVisibleWindows.forEach(name => {
-                    if (name === 'header') return;
-                    
-                    const win = windowPool.get(name);
-                    if (win && !win.isDestroyed()) {
-                        showPromises.push(new Promise(resolve => {
-                            win.show();
-                            win.webContents.send('window-show-animation');
-                            setTimeout(resolve, 100);
-                        }));
-                    }
-                });
+        console.log('[Visibility] Visible windows before hide:', Array.from(lastVisibleWindows));
 
-                Promise.all(showPromises).then(() => {
-                    setImmediate(updateLayout);
-                    setTimeout(updateLayout, 100);
-                    
-                    resetToggleState();
-                    console.log('[Visibility] Smart show completed');
-                }).catch(err => {
-                    console.error('[Visibility] Error during show:', err);
-                    resetToggleState();
-                });
-            }, (error) => {
-                console.error('[Visibility] Error in showFromEdge:', error);
-                resetToggleState();
+        movementManager.hideToEdge(nearestEdge, () => {
+            header.hide();
+            console.log('[Visibility] Smart hide completed');
+        });
+    } else {
+        console.log('[Visibility] Smart showing from hidden position');
+        console.log('[Visibility] Restoring windows:', Array.from(lastVisibleWindows));
+
+        header.show();
+
+        movementManager.showFromEdge(() => {
+            lastVisibleWindows.forEach(name => {
+                if (name === 'header') return;
+                const win = windowPool.get(name);
+                if (win && !win.isDestroyed()) {
+                    win.show();
+                    win.webContents.send('window-show-animation');
+                }
             });
-        }
-    } catch (error) {
-        console.error('[Visibility] Unexpected error in toggle:', error);
-        resetToggleState();
+
+            setImmediate(updateLayout);
+            setTimeout(updateLayout, 120);
+
+            console.log('[Visibility] Smart show completed');
+        });
     }
 }
 
 
 function createWindows() {
-    if (movementManager) {
-        movementManager.destroy();
-        movementManager = null;
-    }
-    
-    toggleState.isToggling = false;
-    if (toggleState.toggleDebounceTimer) {
-        clearTimeout(toggleState.toggleDebounceTimer);
-        toggleState.toggleDebounceTimer = null;
-    }
-    if (toggleState.failsafeTimer) {
-        clearTimeout(toggleState.failsafeTimer);
-        toggleState.failsafeTimer = null;
-    }
-    
     const primaryDisplay = screen.getPrimaryDisplay();
     const { y: workAreaY, width: screenWidth } = primaryDisplay.workArea;
 
@@ -1147,7 +928,7 @@ function createWindows() {
         });
     }
     windowPool.set('header', header);
-    layoutManager = new WindowLayoutManager(windowPool);
+    layoutManager = new WindowLayoutManager();
 
     header.webContents.once('dom-ready', () => {
         loadAndRegisterShortcuts(movementManager);
@@ -1350,7 +1131,6 @@ function createWindows() {
             }
         } catch (error) {
             console.error('[WindowManager] Error in toggle-feature:', error);
-            toggleState.isToggling = false;
         }
     });
 
@@ -1437,14 +1217,7 @@ function loadAndRegisterShortcuts(movementManager) {
 }
 
 function updateLayout() {
-    if (layoutManager._updateTimer) {
-        clearTimeout(layoutManager._updateTimer);
-    }
-    
-    layoutManager._updateTimer = setTimeout(() => {
-        layoutManager._updateTimer = null;
-        layoutManager.updateLayout();
-    }, 16);
+    layoutManager.updateLayout();
 }
 
 function setupIpcHandlers(movementManager) {
@@ -1503,7 +1276,7 @@ function setupIpcHandlers(movementManager) {
                 const { x: waX, y: waY, width: waW, height: waH } = disp.workArea;
 
                 let x = Math.round(headerBounds.x + (bounds?.x ?? 0) + (bounds?.width ?? 0) / 2 - settingsBounds.width / 2);
-                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 23);
+                let y = Math.round(headerBounds.y + (bounds?.y ?? 0) + (bounds?.height ?? 0) + 31);
 
                 x = Math.max(waX + 10, Math.min(waX + waW - settingsBounds.width - 10, x));
                 y = Math.max(waY + 10, Math.min(waY + waH - settingsBounds.height - 10, y));
@@ -1531,8 +1304,12 @@ function setupIpcHandlers(movementManager) {
                     clearTimeout(settingsHideTimer);
                 }
                 settingsHideTimer = setTimeout(() => {
-                    window.setAlwaysOnTop(false);
-                    window.hide();
+                    // window.setAlwaysOnTop(false);
+                    // window.hide();
+                    if (window && !window.isDestroyed()) {
+                        window.setAlwaysOnTop(false);
+                        window.hide();
+                    }
                     settingsHideTimer = null;
                 }, 200);
             } else {
@@ -1807,32 +1584,27 @@ function setupIpcHandlers(movementManager) {
     ipcMain.handle('check-system-permissions', async () => {
         const { systemPreferences } = require('electron');
         const permissions = {
-            microphone: false,
-            screen: false,
-            needsSetup: false
+            microphone: 'unknown',
+            screen: 'unknown',
+            needsSetup: true
         };
 
         try {
             if (process.platform === 'darwin') {
                 // Check microphone permission on macOS
                 const micStatus = systemPreferences.getMediaAccessStatus('microphone');
-                permissions.microphone = micStatus === 'granted';
+                console.log('[Permissions] Microphone status:', micStatus);
+                permissions.microphone = micStatus;
 
-                try {
-                    const sources = await desktopCapturer.getSources({ 
-                        types: ['screen'], 
-                        thumbnailSize: { width: 1, height: 1 } 
-                    });
-                    permissions.screen = sources && sources.length > 0;
-                } catch (err) {
-                    console.log('[Permissions] Screen capture test failed:', err);
-                    permissions.screen = false;
-                }
+                // Check screen recording permission using the system API
+                const screenStatus = systemPreferences.getMediaAccessStatus('screen');
+                console.log('[Permissions] Screen status:', screenStatus);
+                permissions.screen = screenStatus;
 
-                permissions.needsSetup = !permissions.microphone || !permissions.screen;
+                permissions.needsSetup = micStatus !== 'granted' || screenStatus !== 'granted';
             } else {
-                permissions.microphone = true;
-                permissions.screen = true;
+                permissions.microphone = 'granted';
+                permissions.screen = 'granted';
                 permissions.needsSetup = false;
             }
 
@@ -1841,8 +1613,8 @@ function setupIpcHandlers(movementManager) {
         } catch (error) {
             console.error('[Permissions] Error checking permissions:', error);
             return {
-                microphone: false,
-                screen: false,
+                microphone: 'unknown',
+                screen: 'unknown',
                 needsSetup: true,
                 error: error.message
             };
@@ -1857,8 +1629,9 @@ function setupIpcHandlers(movementManager) {
         const { systemPreferences } = require('electron');
         try {
             const status = systemPreferences.getMediaAccessStatus('microphone');
+            console.log('[Permissions] Microphone status:', status);
             if (status === 'granted') {
-                return { success: true, status: 'already-granted' };
+                return { success: true, status: 'granted' };
             }
 
             // Req mic permission
@@ -1882,14 +1655,25 @@ function setupIpcHandlers(movementManager) {
         }
 
         try {
-            // Open System Preferences to Privacy & Security > Screen Recording
             if (section === 'screen-recording') {
-                await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
-            } else if (section === 'microphone') {
-                await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
-            } else {
-                await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy');
+                // First trigger screen capture request to register the app in system preferences
+                try {
+                    console.log('[Permissions] Triggering screen capture request to register app...');
+                    await desktopCapturer.getSources({ 
+                        types: ['screen'], 
+                        thumbnailSize: { width: 1, height: 1 } 
+                    });
+                    console.log('[Permissions] App registered for screen recording');
+                } catch (captureError) {
+                    console.log('[Permissions] Screen capture request triggered (expected to fail):', captureError.message);
+                }
+                
+                // Then open system preferences
+                // await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
             }
+            // if (section === 'microphone') {
+            //     await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+            // }
             return { success: true };
         } catch (error) {
             console.error('[Permissions] Error opening system preferences:', error);
@@ -1943,7 +1727,13 @@ async function setApiKey(apiKey, provider = 'openai') {
 
     windowPool.forEach(win => {
         if (win && !win.isDestroyed()) {
-            const js = apiKey ? `localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});` : `localStorage.removeItem('openai_api_key');`;
+            const js = apiKey ? `
+                localStorage.setItem('openai_api_key', ${JSON.stringify(apiKey)});
+                localStorage.setItem('ai_provider', ${JSON.stringify(provider)});
+            ` : `
+                localStorage.removeItem('openai_api_key');
+                localStorage.removeItem('ai_provider');
+            `;
             win.webContents.executeJavaScript(js).catch(() => {});
         }
     });
@@ -1969,13 +1759,18 @@ function setupApiKeyIPC() {
     // Both handlers now do the same thing: fetch the key from the source of truth.
     ipcMain.handle('get-stored-api-key', getStoredApiKey);
 
-    ipcMain.handle('api-key-validated', async (event, apiKey) => {
+    ipcMain.handle('api-key-validated', async (event, data) => {
         console.log('[WindowManager] API key validation completed, saving...');
-        await setApiKey(apiKey);
+        
+        // Support both old format (string) and new format (object)
+        const apiKey = typeof data === 'string' ? data : data.apiKey;
+        const provider = typeof data === 'string' ? 'openai' : (data.provider || 'openai');
+        
+        await setApiKey(apiKey, provider);
 
         windowPool.forEach((win, name) => {
             if (win && !win.isDestroyed()) {
-                win.webContents.send('api-key-validated', apiKey);
+                win.webContents.send('api-key-validated', { apiKey, provider });
             }
         });
 
