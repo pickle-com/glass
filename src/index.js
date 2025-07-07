@@ -57,24 +57,36 @@ function setupProtocolHandling() {
     app.on('second-instance', (event, commandLine, workingDirectory) => {
         console.log('[Protocol] Second instance command line:', commandLine);
         
-        // Focus existing window first
         focusMainWindow();
         
-        // Look for protocol URL in command line arguments - filter out invalid paths
-        const protocolUrl = commandLine.find(arg => {
-            return arg && 
-                   typeof arg === 'string' && 
-                   arg.startsWith('pickleglass://') && 
-                   arg.includes('://') && 
-                   !arg.includes('\\') && // Exclude Windows paths
-                   !arg.includes('₩'); // Exclude corrupted characters
-        });
+        let protocolUrl = null;
+        
+        if (process.platform === 'win32') {
+            // Windows
+            const lastArg = commandLine.length > 0 ? commandLine[commandLine.length - 1] : null;
+            if (lastArg && 
+                typeof lastArg === 'string' && 
+                lastArg.startsWith('pickleglass://') && 
+                !lastArg.includes('\\') && 
+                !lastArg.includes('₩')) {
+                protocolUrl = lastArg;
+            }
+        } else {
+            // Linux or etc
+            const lastArg = commandLine.length > 0 ? commandLine[commandLine.length - 1] : null;
+            if (lastArg && 
+                typeof lastArg === 'string' && 
+                lastArg.startsWith('pickleglass://')) {
+                protocolUrl = lastArg;
+            }
+        }
         
         if (protocolUrl) {
-            console.log('[Protocol] Valid URL found from second instance:', protocolUrl);
+            console.log('[Protocol] Valid URL found from second instance (last arg):', protocolUrl);
             handleCustomUrl(protocolUrl);
         } else {
             console.log('[Protocol] No valid protocol URL found in command line arguments');
+            console.log('[Protocol] Command line args:', commandLine);
         }
     });
 
@@ -123,18 +135,19 @@ function focusMainWindow() {
 }
 
 if (process.platform === 'win32') {
-    const protocolArg = process.argv.find(arg => 
-        arg && 
-        typeof arg === 'string' && 
-        arg.startsWith('pickleglass://') && 
-        !arg.includes('\\') && 
-        !arg.includes('₩')
-    );
+    const lastArg = process.argv.length > 0 ? process.argv[process.argv.length - 1] : null;
     
-    if (protocolArg) {
-        console.log('[Protocol] Found protocol URL in initial arguments:', protocolArg);
-        pendingDeepLinkUrl = protocolArg;
+    if (lastArg && 
+        typeof lastArg === 'string' && 
+        lastArg.startsWith('pickleglass://') && 
+        !lastArg.includes('\\') && 
+        !lastArg.includes('₩')) {
+        
+        console.log('[Protocol] Found protocol URL in initial arguments (last arg):', lastArg);
+        pendingDeepLinkUrl = lastArg;
     }
+    
+    console.log('[Protocol] Initial process.argv:', process.argv);
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
