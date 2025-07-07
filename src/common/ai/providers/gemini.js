@@ -262,7 +262,27 @@ function createStreamingLLM({ apiKey, model = 'gemini-2.5-flash', temperature = 
             let chunkCount = 0;
             let totalContent = '';
             
-            for await (const chunk of chat.sendMessageStream(geminiContent)) {
+            const contentParts = geminiContent.map(part => {
+              if (typeof part === 'string') {
+                return { text: part };
+              } else if (part.inlineData) {
+                return { inlineData: part.inlineData };
+              }
+              return part;
+            });
+
+            const result = await geminiModel.generateContentStream({
+              contents: [{
+                role: 'user',
+                parts: contentParts
+              }],
+              generationConfig: {
+                temperature,
+                maxOutputTokens: maxTokens || 8192,
+              }
+            });
+            
+            for await (const chunk of result.stream) {
               chunkCount++;
               const chunkText = chunk.text() || '';
               totalContent += chunkText;
