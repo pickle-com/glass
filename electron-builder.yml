@@ -43,7 +43,6 @@ win:
           arch: x64
         - target: portable
           arch: x64
-    publisherName: Pickle Team
     requestedExecutionLevel: asInvoker
 
 # NSIS installer configuration for Windows
