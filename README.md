@@ -136,3 +136,140 @@ We have a list of [help wanted](https://github.com/pickle-com/glass/issues?q=is%
 
 ## Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=pickle-com/glass&type=Date)](https://www.star-history.com/#pickle-com/glass&Date)
+root@DESKTOP-9A33TIA:~/glass# npm run setup
+
+> pickle-glass@0.1.2 setup
+> npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start
+
+npm WARN EBADENGINE Unsupported engine {
+npm WARN EBADENGINE   package: '@google/genai@1.8.0',
+npm WARN EBADENGINE   required: { node: '>=20.0.0' },
+npm WARN EBADENGINE   current: { node: 'v18.19.1', npm: '9.2.0' }
+npm WARN EBADENGINE }
+npm WARN EBADENGINE Unsupported engine {
+npm WARN EBADENGINE   package: 'minimatch@10.0.3',
+npm WARN EBADENGINE   required: { node: '20 || >=22' },
+npm WARN EBADENGINE   current: { node: 'v18.19.1', npm: '9.2.0' }
+npm WARN EBADENGINE }
+npm WARN EBADENGINE Unsupported engine {
+npm WARN EBADENGINE   package: '@isaacs/brace-expansion@5.0.0',
+npm WARN EBADENGINE   required: { node: '20 || >=22' },
+npm WARN EBADENGINE   current: { node: 'v18.19.1', npm: '9.2.0' }
+npm WARN EBADENGINE }
+npm WARN EBADENGINE Unsupported engine {
+npm WARN EBADENGINE   package: '@isaacs/balanced-match@4.0.1',
+npm WARN EBADENGINE   required: { node: '20 || >=22' },
+npm WARN EBADENGINE   current: { node: 'v18.19.1', npm: '9.2.0' }
+npm WARN EBADENGINE }
+npm WARN skipping integrity check for git dependency ssh://git@github.com/electron/node-gyp.git
+npm WARN deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm WARN deprecated npmlog@6.0.2: This package is no longer supported.
+npm WARN deprecated @npmcli/move-file@2.0.1: This functionality has been moved to @npmcli/fs
+npm WARN deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm WARN deprecated gar@1.0.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm WARN deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+npm WARN deprecated lodash.get@4.4.2: This package is deprecated. Use the optional chaining (?.) operator instead.
+npm WARN deprecated are-we-there-yet@3.0.1: This package is no longer supported.
+npm WARN deprecated sudo-prompt@9.2.1: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm WARN deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+npm WARN deprecated @types/electron@1.6.12: This is a stub types definition. electron provides its own type definitions, so you do not need this installed.
+npm WARN deprecated @npmcli/move-file@1.1.2: This functionality has been moved to @npmcli/fs
+npm WARN deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
+npm WARN deprecated glob@8.1.0: Glob versions prior to v9 are no longer supported
+npm WARN deprecated glob@8.1.0: Glob versions prior to v9 are no longer supported
+npm WARN deprecated gauge@4.0.4: This package is no longer supported.
+npm WARN deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm WARN deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+> pickle-glass@0.1.2 postinstall
+> electron-builder install-app-deps
+
+  • electron-builder  version=26.0.12
+  • loaded configuration  file=/root/glass/electron-builder.yml
+  • executing @electron/rebuild  electronVersion=30.5.1 arch=x64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=x64
+  • preparing       moduleName=better-sqlite3 arch=x64
+  • finished        moduleName=better-sqlite3 arch=x64
+  • preparing       moduleName=electron-deeplink arch=x64
+  • finished        moduleName=electron-deeplink arch=x64
+  • preparing       moduleName=sqlite3 arch=x64
+  • finished        moduleName=sqlite3 arch=x64
+  • completed installing native dependencies
+
+added 876 packages, and audited 877 packages in 12m
+
+129 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm WARN deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm WARN deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+npm WARN deprecated glob@7.1.7: Glob versions prior to v9 are no longer supported
+npm WARN deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+npm WARN deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+npm WARN deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+added 471 packages, and audited 472 packages in 4m
+
+152 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+> pickleglass-frontend@0.1.0 build
+> next build
+
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+  ▲ Next.js 14.2.30
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+ ✓ Linting and checking validity of types
+ ✓ Collecting page data
+ ✓ Generating static pages (13/13)
+ ✓ Collecting build traces
+ ✓ Finalizing page optimization
+
+Route (app)                              Size     First Load JS
+┌ ○ /                                    523 B          87.8 kB
+├ ○ /_not-found                          875 B          88.2 kB
+├ ○ /activity                            1.88 kB         217 kB
+├ ○ /activity/details                    2.44 kB         218 kB
+├ ○ /download                            2.33 kB         209 kB
+├ ○ /help                                2.48 kB         209 kB
+├ ○ /login                               2.38 kB         206 kB
+├ ○ /personalize                         2.61 kB         209 kB
+├ ○ /settings                            4.48 kB         211 kB
+├ ○ /settings/billing                    1.33 kB         208 kB
+└ ○ /settings/privacy                    2.1 kB          209 kB
++ First Load JS shared by all            87.3 kB
+  ├ chunks/117-5615a0891d059420.js       31.7 kB
+  ├ chunks/fd9d1056-361e77b934ea46f6.js  53.7 kB
+  └ other shared chunks (total)          1.94 kB
+
+
+○  (Static)  prerendered as static content
+
+
+> pickle-glass@0.1.2 start
+> npm run build:renderer && electron-forge start
+
+
+> pickle-glass@0.1.2 build:renderer
+> node build.js
+
+Building renderer process code...
+✅ Renderer builds successful!
+✔ Checking your system
+✔ Locating application
+✔ Loading configuration
+✔ Preparing native dependencies: 3 / 3 [4s]
+✔ Running generateAssets hook
+✔ Running preStart hook
+
+/root/glass/node_modules/electron/dist/electron: error while loading shared libraries: libnss3.so: cannot open shared object file: No such file or directory
+root@DESKTOP-9A33TIA:~/glass#
