@@ -13,6 +13,12 @@ publish:
     repo: glass
     releaseType: draft
 
+# Protocols configuration for deep linking
+protocols:
+    name: PickleGlass Protocol
+    schemes: 
+        - pickleglass
+
 # List of files to be included in the app package
 files:
     - src/**/*
@@ -28,6 +34,27 @@ extraResources:
 
 asarUnpack:
     - "src/assets/SystemAudioDump"
+
+# Windows configuration
+win:
+    icon: src/assets/logo.ico
+    target:
+        - target: nsis
+          arch: x64
+        - target: portable
+          arch: x64
+    publisherName: Pickle Team
+    requestedExecutionLevel: asInvoker
+
+# NSIS installer configuration for Windows
+nsis:
+    oneClick: false
+    perMachine: false
+    allowToChangeInstallationDirectory: true
+    deleteAppDataOnUninstall: true
+    createDesktopShortcut: always
+    createStartMenuShortcut: true
+    shortcutName: Glass
 
 # macOS specific configuration
 mac:

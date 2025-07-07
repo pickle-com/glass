@@ -2,8 +2,17 @@ const sqliteClient = require('../../services/sqliteClient');
 
 function findOrCreate(user) {
     const db = sqliteClient.getDb();
+    
+    if (!user || !user.uid) {
+        throw new Error('User object and uid are required');
+    }
+    
     const { uid, displayName, email } = user;
     const now = Math.floor(Date.now() / 1000);
+    
+    // Validate inputs
+    const safeDisplayName = displayName || 'User';
+    const safeEmail = email || 'no-email@example.com';
 
     const query = `
         INSERT INTO users (uid, display_name, email, created_at)
@@ -14,11 +23,15 @@ function findOrCreate(user) {
     `;
     
     try {
-        db.prepare(query).run(uid, displayName, email, now);
-        return getById(uid);
+        console.log('[SQLite] Creating/updating user:', { uid, displayName: safeDisplayName, email: safeEmail });
+        db.prepare(query).run(uid, safeDisplayName, safeEmail, now);
+        const result = getById(uid);
+        console.log('[SQLite] User operation successful:', result);
+        return result;
     } catch (err) {
         console.error('SQLite: Failed to find or create user:', err);
-        throw err;
+        console.error('SQLite: User data:', { uid, displayName: safeDisplayName, email: safeEmail });
+        throw new Error(`Failed to create user in database: ${err.message}`);
     }
 }
 

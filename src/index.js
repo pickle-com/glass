@@ -61,28 +61,28 @@ function setupProtocolHandling() {
         
         let protocolUrl = null;
         
-        if (process.platform === 'win32') {
-            // Windows
-            const lastArg = commandLine.length > 0 ? commandLine[commandLine.length - 1] : null;
-            if (lastArg && 
-                typeof lastArg === 'string' && 
-                lastArg.startsWith('pickleglass://') && 
-                !lastArg.includes('\\') && 
-                !lastArg.includes('₩')) {
-                protocolUrl = lastArg;
-            }
-        } else {
-            // Linux or etc
-            const lastArg = commandLine.length > 0 ? commandLine[commandLine.length - 1] : null;
-            if (lastArg && 
-                typeof lastArg === 'string' && 
-                lastArg.startsWith('pickleglass://')) {
-                protocolUrl = lastArg;
+        // Search through all command line arguments for a valid protocol URL
+        for (const arg of commandLine) {
+            if (arg && typeof arg === 'string' && arg.startsWith('pickleglass://')) {
+                // Clean up the URL by removing problematic characters
+                const cleanUrl = arg.replace(/[\\₩]/g, '');
+                
+                // Additional validation for Windows
+                if (process.platform === 'win32') {
+                    // On Windows, ensure the URL doesn't contain file path indicators
+                    if (!cleanUrl.includes(':') || cleanUrl.indexOf('://') === cleanUrl.lastIndexOf(':')) {
+                        protocolUrl = cleanUrl;
+                        break;
+                    }
+                } else {
+                    protocolUrl = cleanUrl;
+                    break;
+                }
             }
         }
         
         if (protocolUrl) {
-            console.log('[Protocol] Valid URL found from second instance (last arg):', protocolUrl);
+            console.log('[Protocol] Valid URL found from second instance:', protocolUrl);
             handleCustomUrl(protocolUrl);
         } else {
             console.log('[Protocol] No valid protocol URL found in command line arguments');
@@ -135,16 +135,17 @@ function focusMainWindow() {
 }
 
 if (process.platform === 'win32') {
-    const lastArg = process.argv.length > 0 ? process.argv[process.argv.length - 1] : null;
-    
-    if (lastArg && 
-        typeof lastArg === 'string' && 
-        lastArg.startsWith('pickleglass://') && 
-        !lastArg.includes('\\') && 
-        !lastArg.includes('₩')) {
-        
-        console.log('[Protocol] Found protocol URL in initial arguments (last arg):', lastArg);
-        pendingDeepLinkUrl = lastArg;
+    for (const arg of process.argv) {
+        if (arg && typeof arg === 'string' && arg.startsWith('pickleglass://')) {
+            // Clean up the URL by removing problematic characters (korean characters issue...)
+            const cleanUrl = arg.replace(/[\\₩]/g, '');
+            
+            if (!cleanUrl.includes(':') || cleanUrl.indexOf('://') === cleanUrl.lastIndexOf(':')) {
+                console.log('[Protocol] Found protocol URL in initial arguments:', cleanUrl);
+                pendingDeepLinkUrl = cleanUrl;
+                break;
+            }
+        }
     }
     
     console.log('[Protocol] Initial process.argv:', process.argv);
@@ -376,16 +377,19 @@ async function handleCustomUrl(url) {
     try {
         console.log('[Custom URL] Processing URL:', url);
         
-        // val url
+        // Validate and clean URL
         if (!url || typeof url !== 'string' || !url.startsWith('pickleglass://')) {
             console.error('[Custom URL] Invalid URL format:', url);
             return;
         }
         
-        // val url
-        if (url.includes('\\') || url.includes('₩')) {
-            console.error('[Custom URL] URL contains invalid path characters:', url);
-            return;
+        // Clean up URL by removing problematic characters
+        const cleanUrl = url.replace(/[\\₩]/g, '');
+        
+        // Additional validation
+        if (cleanUrl !== url) {
+            console.log('[Custom URL] Cleaned URL from:', url, 'to:', cleanUrl);
+            url = cleanUrl;
         }
         
         const urlObj = new URL(url);
