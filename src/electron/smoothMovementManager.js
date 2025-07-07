@@ -1,5 +1,5 @@
 const { screen } = require('electron');
-const { getCurrentDisplay, getDisplayById } = require('./WindowLayoutManager');
+const { getCurrentDisplay, getDisplayById } = require('./utils/displayUtils');
 
 class SmoothMovementManager {
     constructor(windowPool) {
@@ -445,4 +445,4 @@ class SmoothMovementManager {
     }
 }
 
-module.exports = { SmoothMovementManager }; 
+module.exports = SmoothMovementManager; 

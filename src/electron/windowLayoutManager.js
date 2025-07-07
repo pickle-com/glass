@@ -247,8 +247,4 @@ class WindowLayoutManager {
     destroy() {}
 }
 
-module.exports = {
-    WindowLayoutManager,
-    getCurrentDisplay,
-    getDisplayById,
-}; 
+module.exports = WindowLayoutManager; 
