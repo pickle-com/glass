@@ -123,7 +123,7 @@ class AuthService {
         const userState = this.getCurrentUser();
         console.log('[AuthService] Broadcasting user state change:', userState);
         BrowserWindow.getAllWindows().forEach(win => {
-            if (win && !win.isDestroyed()) {
+            if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
                 win.webContents.send('user-state-changed', userState);
             }
         });

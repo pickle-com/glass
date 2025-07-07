@@ -10,6 +10,7 @@
         "package": "npm run build:renderer && electron-forge package",
         "make": "npm run build:renderer && electron-forge make",
         "build": "npm run build:renderer && electron-builder --config electron-builder.yml --publish never",
+        "build:win": "npm run build:renderer && electron-builder --win --x64 --publish never", 
         "publish": "npm run build:renderer && electron-builder --config electron-builder.yml --publish always",
         "lint": "eslint --ext .ts,.tsx,.js .",
         "postinstall": "electron-builder install-app-deps",
@@ -35,7 +36,7 @@
         "better-sqlite3": "^9.4.3",
         "cors": "^2.8.5",
         "dotenv": "^17.0.0",
-        "electron-deeplink": "^1.0.10",
+
         "electron-squirrel-startup": "^1.0.1",
         "electron-store": "^8.2.0",
         "electron-updater": "^6.6.2",
@@ -47,7 +48,6 @@
         "openai": "^4.70.0",
         "react-hot-toast": "^2.5.2",
         "sharp": "^0.34.2",
-        "sqlite3": "^5.1.7",
         "validator": "^13.11.0",
         "wait-on": "^8.0.3",
         "ws": "^8.18.0"
@@ -69,8 +69,6 @@
         "esbuild": "^0.25.5"
     },
     "optionalDependencies": {
-        "@img/sharp-darwin-x64": "^0.34.2",
-        "@img/sharp-libvips-darwin-x64": "^1.1.0",
         "electron-liquid-glass": "^1.0.1"
     }
 }

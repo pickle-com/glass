@@ -13,89 +13,61 @@ function findOrCreate(user) {
             email=excluded.email
     `;
     
-    return new Promise((resolve, reject) => {
-        db.run(query, [uid, displayName, email, now], (err) => {
-            if (err) {
-                console.error('SQLite: Failed to find or create user:', err);
-                return reject(err);
-            }
-            getById(uid).then(resolve).catch(reject);
-        });
-    });
+    try {
+        db.prepare(query).run(uid, displayName, email, now);
+        return getById(uid);
+    } catch (err) {
+        console.error('SQLite: Failed to find or create user:', err);
+        throw err;
+    }
 }
 
 function getById(uid) {
     const db = sqliteClient.getDb();
-    return new Promise((resolve, reject) => {
-        db.get('SELECT * FROM users WHERE uid = ?', [uid], (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-        });
-    });
+    return db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
 }
 
 function saveApiKey(apiKey, uid, provider = 'openai') {
     const db = sqliteClient.getDb();
-    return new Promise((resolve, reject) => {
-        db.run(
-            'UPDATE users SET api_key = ?, provider = ? WHERE uid = ?',
-            [apiKey, provider, uid],
-            function(err) {
-                if (err) {
-                    console.error('SQLite: Failed to save API key:', err);
-                    reject(err);
-                } else {
-                    console.log(`SQLite: API key saved for user ${uid} with provider ${provider}.`);
-                    resolve({ changes: this.changes });
-                }
-            }
-        );
-    });
+    try {
+        const result = db.prepare('UPDATE users SET api_key = ?, provider = ? WHERE uid = ?').run(apiKey, provider, uid);
+        console.log(`SQLite: API key saved for user ${uid} with provider ${provider}.`);
+        return { changes: result.changes };
+    } catch (err) {
+        console.error('SQLite: Failed to save API key:', err);
+        throw err;
+    }
 }
 
 function update({ uid, displayName }) {
     const db = sqliteClient.getDb();
-    return new Promise((resolve, reject) => {
-        db.run('UPDATE users SET display_name = ? WHERE uid = ?', [displayName, uid], function(err) {
-            if (err) reject(err);
-            else resolve({ changes: this.changes });
-        });
-    });
+    const result = db.prepare('UPDATE users SET display_name = ? WHERE uid = ?').run(displayName, uid);
+    return { changes: result.changes };
 }
 
 function deleteById(uid) {
     const db = sqliteClient.getDb();
-    return new Promise((resolve, reject) => {
-        const userSessions = db.prepare('SELECT id FROM sessions WHERE uid = ?').all(uid);
-        const sessionIds = userSessions.map(s => s.id);
+    const userSessions = db.prepare('SELECT id FROM sessions WHERE uid = ?').all(uid);
+    const sessionIds = userSessions.map(s => s.id);
 
-        db.serialize(() => {
-            db.run("BEGIN TRANSACTION;");
-            
-            try {
-                if (sessionIds.length > 0) {
-                    const placeholders = sessionIds.map(() => '?').join(',');
-                    db.prepare(`DELETE FROM transcripts WHERE session_id IN (${placeholders})`).run(...sessionIds);
-                    db.prepare(`DELETE FROM ai_messages WHERE session_id IN (${placeholders})`).run(...sessionIds);
-                    db.prepare(`DELETE FROM summaries WHERE session_id IN (${placeholders})`).run(...sessionIds);
-                    db.prepare(`DELETE FROM sessions WHERE uid = ?`).run(uid);
-                }
-                db.prepare('DELETE FROM prompt_presets WHERE uid = ? AND is_default = 0').run(uid);
-                db.prepare('DELETE FROM users WHERE uid = ?').run(uid);
-
-                db.run("COMMIT;", (err) => {
-                    if (err) {
-                        db.run("ROLLBACK;");
-                        return reject(err);
-                    }
-                    resolve({ success: true });
-                });
-            } catch (err) {
-                db.run("ROLLBACK;");
-                reject(err);
-            }
-        });
+    const transaction = db.transaction(() => {
+        if (sessionIds.length > 0) {
+            const placeholders = sessionIds.map(() => '?').join(',');
+            db.prepare(`DELETE FROM transcripts WHERE session_id IN (${placeholders})`).run(...sessionIds);
+            db.prepare(`DELETE FROM ai_messages WHERE session_id IN (${placeholders})`).run(...sessionIds);
+            db.prepare(`DELETE FROM summaries WHERE session_id IN (${placeholders})`).run(...sessionIds);
+            db.prepare(`DELETE FROM sessions WHERE uid = ?`).run(uid);
+        }
+        db.prepare('DELETE FROM prompt_presets WHERE uid = ? AND is_default = 0').run(uid);
+        db.prepare('DELETE FROM users WHERE uid = ?').run(uid);
     });
+
+    try {
+        transaction();
+        return { success: true };
+    } catch (err) {
+        throw err;
+    }
 }
 
 module.exports = {

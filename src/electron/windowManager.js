@@ -1,7 +1,6 @@
 const { BrowserWindow, globalShortcut, ipcMain, screen, app, shell, desktopCapturer } = require('electron');
 const WindowLayoutManager = require('./windowLayoutManager');
 const SmoothMovementManager = require('./smoothMovementManager');
-const liquidGlass = require('electron-liquid-glass');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('os');
@@ -13,6 +12,9 @@ const systemSettingsRepository = require('../common/repositories/systemSettings'
 const userRepository = require('../common/repositories/user');
 const fetch = require('node-fetch');
 
+
+/* ────────────────[ GLASS BYPASS ]─────────────── */
+let liquidGlass;
 const isLiquidGlassSupported = () => {
     if (process.platform !== 'darwin') {
         return false;
@@ -20,7 +22,16 @@ const isLiquidGlassSupported = () => {
     const majorVersion = parseInt(os.release().split('.')[0], 10);
     return majorVersion >= 26; // macOS 26+ (Darwin 25+)
 };
-const shouldUseLiquidGlass = isLiquidGlassSupported();
+let shouldUseLiquidGlass = isLiquidGlassSupported();
+if (shouldUseLiquidGlass) {
+    try {
+        liquidGlass = require('electron-liquid-glass');
+    } catch (e) {
+        console.warn('Could not load optional dependency "electron-liquid-glass". The feature will be disabled.');
+        shouldUseLiquidGlass = false;
+    }
+}
+/* ────────────────[ GLASS BYPASS ]─────────────── */
 
 let isContentProtectionOn = true;
 let currentDisplayId = null;

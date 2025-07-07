@@ -18,7 +18,6 @@ const { initializeFirebase } = require('./common/services/firebaseClient');
 const databaseInitializer = require('./common/services/databaseInitializer');
 const authService = require('./common/services/authService');
 const path = require('node:path');
-const { Deeplink } = require('electron-deeplink');
 const express = require('express');
 const fetch = require('node-fetch');
 const { autoUpdater } = require('electron-updater');
@@ -33,72 +32,86 @@ let WEB_PORT = 3000;
 const listenService = new ListenService();
 // Make listenService globally accessible so other modules (e.g., windowManager, askService) can reuse the same instance
 global.listenService = listenService;
-let deeplink = null; // Initialize as null
-let pendingDeepLinkUrl = null; // Store any deep link that arrives before initialization
 
-function createMainWindows() {
-    createWindows();
+// Native deep link handling - cross-platform compatible
+let pendingDeepLinkUrl = null;
 
-    const { windowPool } = require('./electron/windowManager');
-    const headerWindow = windowPool.get('header');
-    
-    // Initialize deeplink after windows are created
-    if (!deeplink && headerWindow) {
-        try {
-            deeplink = new Deeplink({
-                app,
-                mainWindow: headerWindow,     
-                protocol: 'pickleglass',
-                isDev: !app.isPackaged,
-                debugLogging: true
-            });
-            
-            deeplink.on('received', (url) => {
-                console.log('[deeplink] received:', url);
-                handleCustomUrl(url);
-            });
-            
-            console.log('[deeplink] Initialized with main window');
-            
-            // Handle any pending deep link
-            if (pendingDeepLinkUrl) {
-                console.log('[deeplink] Processing pending deep link:', pendingDeepLinkUrl);
-                handleCustomUrl(pendingDeepLinkUrl);
-                pendingDeepLinkUrl = null;
-            }
-        } catch (error) {
-            console.error('[deeplink] Failed to initialize deep link:', error);
-            deeplink = null;
-        }
+function setupProtocolHandling() {
+    // Protocol registration - must be done before app is ready
+    if (!app.isDefaultProtocolClient('pickleglass')) {
+        app.setAsDefaultProtocolClient('pickleglass');
+        console.log('[Protocol] Set as default protocol client for pickleglass://');
     }
+
+    // Handle protocol URLs on Windows/Linux
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+        // Focus existing window first
+        focusMainWindow();
+        
+        // Look for protocol URL in command line arguments
+        const protocolUrl = commandLine.find(arg => arg.startsWith('pickleglass://'));
+        if (protocolUrl) {
+            console.log('[Protocol] Received URL from second instance:', protocolUrl);
+            handleCustomUrl(protocolUrl);
+        }
+    });
+
+    // Handle protocol URLs on macOS
+    app.on('open-url', (event, url) => {
+        event.preventDefault();
+        console.log('[Protocol] Received URL via open-url:', url);
+        
+        if (!url || !url.startsWith('pickleglass://')) {
+            console.warn('[Protocol] Invalid URL format:', url);
+            return;
+        }
+
+        if (app.isReady()) {
+            handleCustomUrl(url);
+        } else {
+            pendingDeepLinkUrl = url;
+            console.log('[Protocol] App not ready, storing URL for later');
+        }
+    });
 }
 
+function focusMainWindow() {
+    const { windowPool } = require('./electron/windowManager');
+    if (windowPool) {
+        const header = windowPool.get('header');
+        if (header && !header.isDestroyed()) {
+            if (header.isMinimized()) header.restore();
+            header.focus();
+            return true;
+        }
+    }
+    
+    // Fallback: focus any available window
+    const windows = BrowserWindow.getAllWindows();
+    if (windows.length > 0) {
+        const mainWindow = windows[0];
+        if (!mainWindow.isDestroyed()) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Setup protocol handling before app.whenReady()
+setupProtocolHandling();
+
 app.whenReady().then(async () => {
+    // Single instance lock - must be first
     const gotTheLock = app.requestSingleInstanceLock();
     if (!gotTheLock) {
         app.quit();
         return;
-    } else {
-        app.on('second-instance', (event, commandLine, workingDirectory) => {
-            const { windowPool } = require('./electron/windowManager');
-            if (windowPool) {
-                const header = windowPool.get('header');
-                if (header) {
-                    if (header.isMinimized()) header.restore();
-                    header.focus();
-                    return;
-                }
-            }
-            
-            const windows = BrowserWindow.getAllWindows();
-            if (windows.length > 0) {
-                const mainWindow = windows[0];
-                if (mainWindow.isMinimized()) mainWindow.restore();
-                mainWindow.focus();
-            }
-        });
     }
 
+    // Initialize core services
     initializeFirebase();
     
     databaseInitializer.initialize()
@@ -121,9 +134,16 @@ app.whenReady().then(async () => {
     WEB_PORT = await startWebStack();
     console.log('Web front-end listening on', WEB_PORT);
     
-    createMainWindows();
+    createWindows();
 
     initAutoUpdater();
+
+    // Process any pending deep link after everything is initialized
+    if (pendingDeepLinkUrl) {
+        console.log('[Protocol] Processing pending URL:', pendingDeepLinkUrl);
+        handleCustomUrl(pendingDeepLinkUrl);
+        pendingDeepLinkUrl = null;
+    }
 });
 
 app.on('window-all-closed', () => {
@@ -142,34 +162,17 @@ app.on('before-quit', async () => {
 
 app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindows();
+        createWindows();
     }
 });
-
-// Add macOS native deep link handling as fallback
-app.on('open-url', (event, url) => {
-    event.preventDefault();
-    console.log('[app] open-url received:', url);
-    
-    if (!deeplink) {
-        // Store the URL if deeplink isn't ready yet
-        pendingDeepLinkUrl = url;
-        console.log('[app] Deep link stored for later processing');
-    } else {
-        handleCustomUrl(url);
-    }
-});
-
-// Ensure app can handle the protocol
-app.setAsDefaultProtocolClient('pickleglass');
 
 function setupGeneralIpcHandlers() {
     const userRepository = require('./common/repositories/user');
     const presetRepository = require('./common/repositories/preset');
 
-    ipcMain.handle('save-api-key', async (event, apiKey) => {
+    ipcMain.handle('save-api-key', (event, apiKey) => {
         try {
-            await userRepository.saveApiKey(apiKey, authService.getCurrentUserId());
+            userRepository.saveApiKey(apiKey, authService.getCurrentUserId());
             BrowserWindow.getAllWindows().forEach(win => {
                 win.webContents.send('api-key-updated');
             });
@@ -180,12 +183,12 @@ function setupGeneralIpcHandlers() {
         }
     });
 
-    ipcMain.handle('get-user-presets', async () => {
-        return await presetRepository.getPresets(authService.getCurrentUserId());
+    ipcMain.handle('get-user-presets', () => {
+        return presetRepository.getPresets(authService.getCurrentUserId());
     });
 
-    ipcMain.handle('get-preset-templates', async () => {
-        return await presetRepository.getPresetTemplates();
+    ipcMain.handle('get-preset-templates', () => {
+        return presetRepository.getPresetTemplates();
     });
 
     ipcMain.handle('start-firebase-auth', async () => {
@@ -204,7 +207,7 @@ function setupGeneralIpcHandlers() {
         return process.env.pickleglass_WEB_URL || 'http://localhost:3000';
     });
 
-    ipcMain.handle('get-current-user', async () => {
+    ipcMain.handle('get-current-user', () => {
         return authService.getCurrentUser();
     });
 
@@ -220,72 +223,72 @@ function setupWebDataHandlers() {
     const userRepository = require('./common/repositories/user');
     const presetRepository = require('./common/repositories/preset');
 
-    const handleRequest = async (channel, responseChannel, payload) => {
+    const handleRequest = (channel, responseChannel, payload) => {
         let result;
         const currentUserId = authService.getCurrentUserId();
         try {
             switch (channel) {
                 // SESSION
                 case 'get-sessions':
-                    result = await sessionRepository.getAllByUserId(currentUserId);
+                    result = sessionRepository.getAllByUserId(currentUserId);
                     break;
                 case 'get-session-details':
-                    const session = await sessionRepository.getById(payload);
+                    const session = sessionRepository.getById(payload);
                     if (!session) {
                         result = null;
                         break;
                     }
-                    const transcripts = await sttRepository.getAllTranscriptsBySessionId(payload);
-                    const ai_messages = await askRepository.getAllAiMessagesBySessionId(payload);
-                    const summary = await summaryRepository.getSummaryBySessionId(payload);
+                    const transcripts = sttRepository.getAllTranscriptsBySessionId(payload);
+                    const ai_messages = askRepository.getAllAiMessagesBySessionId(payload);
+                    const summary = summaryRepository.getSummaryBySessionId(payload);
                     result = { session, transcripts, ai_messages, summary };
                     break;
                 case 'delete-session':
-                    result = await sessionRepository.deleteWithRelatedData(payload);
+                    result = sessionRepository.deleteWithRelatedData(payload);
                     break;
                 case 'create-session':
-                    const id = await sessionRepository.create(currentUserId, 'ask');
+                    const id = sessionRepository.create(currentUserId, 'ask');
                     if (payload.title) {
-                        await sessionRepository.updateTitle(id, payload.title);
+                        sessionRepository.updateTitle(id, payload.title);
                     }
                     result = { id };
                     break;
                 
                 // USER
                 case 'get-user-profile':
-                    result = await userRepository.getById(currentUserId);
+                    result = userRepository.getById(currentUserId);
                     break;
                 case 'update-user-profile':
-                    result = await userRepository.update({ uid: currentUserId, ...payload });
+                    result = userRepository.update({ uid: currentUserId, ...payload });
                     break;
                 case 'find-or-create-user':
-                    result = await userRepository.findOrCreate(payload);
+                    result = userRepository.findOrCreate(payload);
                     break;
                 case 'save-api-key':
-                    result = await userRepository.saveApiKey(payload, currentUserId);
+                    result = userRepository.saveApiKey(payload, currentUserId);
                     break;
                 case 'check-api-key-status':
-                    const user = await userRepository.getById(currentUserId);
+                    const user = userRepository.getById(currentUserId);
                     result = { hasApiKey: !!user?.api_key && user.api_key.length > 0 };
                     break;
                 case 'delete-account':
-                    result = await userRepository.deleteById(currentUserId);
+                    result = userRepository.deleteById(currentUserId);
                     break;
 
                 // PRESET
                 case 'get-presets':
-                    result = await presetRepository.getPresets(currentUserId);
+                    result = presetRepository.getPresets(currentUserId);
                     break;
                 case 'create-preset':
-                    result = await presetRepository.create({ ...payload, uid: currentUserId });
+                    result = presetRepository.create({ ...payload, uid: currentUserId });
                     settingsService.notifyPresetUpdate('created', result.id, payload.title);
                     break;
                 case 'update-preset':
-                    result = await presetRepository.update(payload.id, payload.data, currentUserId);
+                    result = presetRepository.update(payload.id, payload.data, currentUserId);
                     settingsService.notifyPresetUpdate('updated', payload.id, payload.data.title);
                     break;
                 case 'delete-preset':
-                    result = await presetRepository.delete(payload, currentUserId);
+                    result = presetRepository.delete(payload, currentUserId);
                     settingsService.notifyPresetUpdate('deleted', payload);
                     break;
                 
@@ -295,13 +298,13 @@ function setupWebDataHandlers() {
                     const batchResult = {};
             
                     if (includes.includes('profile')) {
-                        batchResult.profile = await userRepository.getById(currentUserId);
+                        batchResult.profile = userRepository.getById(currentUserId);
                     }
                     if (includes.includes('presets')) {
-                        batchResult.presets = await presetRepository.getPresets(currentUserId);
+                        batchResult.presets = presetRepository.getPresets(currentUserId);
                     }
                     if (includes.includes('sessions')) {
-                        batchResult.sessions = await sessionRepository.getAllByUserId(currentUserId);
+                        batchResult.sessions = sessionRepository.getAllByUserId(currentUserId);
                     }
                     result = batchResult;
                     break;
@@ -392,7 +395,7 @@ async function handleFirebaseAuthCallback(params) {
         };
 
         // 1. Sync user data to local DB
-        await userRepository.findOrCreate(firebaseUser);
+        userRepository.findOrCreate(firebaseUser);
         console.log('[Auth] User data synced with local DB.');
 
         // 2. Sign in using the authService in the main process
