@@ -217,7 +217,7 @@ function toggleAllWindowsVisibility(movementManager) {
                     //         win.hide();
                     //     }
                     // }, 200);
-                    instantHideWindow(win);
+                    win.hide();
                 }
             }
         });
@@ -227,6 +227,7 @@ function toggleAllWindowsVisibility(movementManager) {
         movementManager.hideToEdge(nearestEdge, () => {
             header.hide();
             console.log('[Visibility] Smart hide completed');
+        }, { instant: true });
         }, { instant: true });
     } else {
         header.webContents.send('cancel-animations');
@@ -353,7 +354,7 @@ function createWindows() {
     //     loadAndRegisterShortcuts();
     // });
 
-    ipcMain.handle('toggle-all-windows-visibility', toggleAllWindowsVisibility);
+    ipcMain.handle('toggle-all-windows-visibility', () => toggleAllWindowsVisibility(movementManager));
 
     ipcMain.handle('toggle-feature', async (event, featureName) => {
         if (!windowPool.get(featureName) && currentHeaderState === 'main') {

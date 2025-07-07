@@ -60,140 +60,55 @@ class SmoothMovementManager {
         this.currentDisplayId = targetDisplay.id;
     }
 
-    hideToEdge(edge, callback) {
+    hideToEdge(edge, callback, { instant = false } = {}) {
         const header = this.windowPool.get('header');
-        if (!this._isWindowValid(header) || !header.isVisible() || this.isAnimating) return;
-    
-        const currentBounds = header.getBounds();
-        const display = this.getCurrentDisplay(header);
-    
-        if (
-            !currentBounds || typeof currentBounds.x !== 'number' || typeof currentBounds.y !== 'number' ||
-            !display || !display.workArea || !display.workAreaSize ||
-            typeof display.workArea.x !== 'number' || typeof display.workArea.y !== 'number' ||
-            typeof display.workAreaSize.width !== 'number' || typeof display.workAreaSize.height !== 'number'
-        ) {
-            console.error('[MovementManager] Invalid bounds or display info for hideToEdge. Aborting.');
+        if (!header || header.isDestroyed()) {
+            if (typeof callback === 'function') callback();
             return;
         }
-    
-        this.lastVisiblePosition = { x: currentBounds.x, y: currentBounds.y };
-        this.headerPosition = { x: currentBounds.x, y: currentBounds.y };
-    
-        const { width: screenWidth, height: screenHeight } = display.workAreaSize;
-        const { x: workAreaX, y: workAreaY } = display.workArea;
-        
-        let targetX = this.headerPosition.x;
-        let targetY = this.headerPosition.y;
-    
-        switch (edge) {
-            case 'top': targetY = workAreaY - currentBounds.height - 20; break;
-            case 'bottom': targetY = workAreaY + screenHeight + 20; break;
-            case 'left': targetX = workAreaX - currentBounds.width - 20; break;
-            case 'right': targetX = workAreaX + screenWidth + 20; break;
+      
+        const { x, y } = header.getBounds();
+        this.lastVisiblePosition = { x, y };
+        this.hiddenPosition     = { edge };
+      
+        if (instant) {
+            header.hide();
+            if (typeof callback === 'function') callback();
+            return;
         }
-    
-        this.hiddenPosition = { x: targetX, y: targetY, edge };
-        this.isAnimating = true;
-        const startX = this.headerPosition.x;
-        const startY = this.headerPosition.y;
-        const duration = 400;
-        const startTime = Date.now();
-    
-        const animate = () => {
-            if (!this._isWindowValid(header)) return;
 
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const eased = progress * progress * progress;
-            const currentX = startX + (targetX - startX) * eased;
-            const currentY = startY + (targetY - startY) * eased;
-            
-            if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
-                this.isAnimating = false;
-                return;
-            }
-    
-            if (!this._isWindowValid(header)) return;
-            header.setPosition(Math.round(currentX), Math.round(currentY));
-    
-            if (progress < 1) {
-                this.animationFrameId = setTimeout(animate, 8);
-            } else {
-                this.animationFrameId = null;
-                this.headerPosition = { x: targetX, y: targetY };
-                if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    if (!this._isWindowValid(header)) return;
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
-                }
-                this.isAnimating = false;
-                if (typeof callback === 'function') callback();
-            }
-        };
-        animate();
+        header.webContents.send('window-hide-animation');
+      
+        setTimeout(() => {
+            if (!header.isDestroyed()) header.hide();
+            if (typeof callback === 'function') callback();
+        }, 5);
     }
-
+      
     showFromEdge(callback) {
         const header = this.windowPool.get('header');
-        if (
-            !this._isWindowValid(header) || this.isAnimating ||
-            !this.hiddenPosition || !this.lastVisiblePosition ||
-            typeof this.hiddenPosition.x !== 'number' || typeof this.hiddenPosition.y !== 'number' ||
-            typeof this.lastVisiblePosition.x !== 'number' || typeof this.lastVisiblePosition.y !== 'number'
-        ) {
-            console.error('[MovementManager] Invalid state for showFromEdge. Aborting.');
-            this.isAnimating = false;
-            this.hiddenPosition = null;
-            this.lastVisiblePosition = null;
+        if (!header || header.isDestroyed()) {
+            if (typeof callback === 'function') callback();
             return;
         }
-
-        if (!this._isWindowValid(header)) return;
-        header.setPosition(this.hiddenPosition.x, this.hiddenPosition.y);
-        
-        this.headerPosition = { x: this.hiddenPosition.x, y: this.hiddenPosition.y };
-        const targetX = this.lastVisiblePosition.x;
-        const targetY = this.lastVisiblePosition.y;
-        this.isAnimating = true;
-        const startX = this.headerPosition.x;
-        const startY = this.headerPosition.y;
-        const duration = 500;
-        const startTime = Date.now();
-
-        const animate = () => {
-            if (!this._isWindowValid(header)) return;
-
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const c1 = 1.70158;
-            const c3 = c1 + 1;
-            const eased = 1 + c3 * Math.pow(progress - 1, 3) + c1 * Math.pow(progress - 1, 2);
-            const currentX = startX + (targetX - startX) * eased;
-            const currentY = startY + (targetY - startY) * eased;
-            if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
-                this.isAnimating = false;
-                return;
-            }
-
-            if (!this._isWindowValid(header)) return;
-            header.setPosition(Math.round(currentX), Math.round(currentY));
-
-            if (progress < 1) {
-                this.animationFrameId = setTimeout(animate, 8);
-            } else {
-                this.animationFrameId = null;
-                this.headerPosition = { x: targetX, y: targetY };
-                if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
-                    if (!this._isWindowValid(header)) return;
-                    header.setPosition(Math.round(targetX), Math.round(targetY));
-                }
-                this.isAnimating = false;
-                this.hiddenPosition = null;
-                this.lastVisiblePosition = null;
-                if (callback) callback();
-            }
-        };
-        animate();
+      
+        // 숨기기 전에 기억해둔 위치 복구
+        if (this.lastVisiblePosition) {
+            header.setPosition(
+                this.lastVisiblePosition.x,
+                this.lastVisiblePosition.y,
+                false   // animate: false
+            );
+        }
+      
+        header.show();
+        header.webContents.send('window-show-animation');
+      
+        // 내부 상태 초기화
+        this.hiddenPosition      = null;
+        this.lastVisiblePosition = null;
+      
+        if (typeof callback === 'function') callback();
     }
 
     moveStep(direction) {
