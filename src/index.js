@@ -38,21 +38,43 @@ let pendingDeepLinkUrl = null;
 
 function setupProtocolHandling() {
     // Protocol registration - must be done before app is ready
-    if (!app.isDefaultProtocolClient('pickleglass')) {
-        app.setAsDefaultProtocolClient('pickleglass');
-        console.log('[Protocol] Set as default protocol client for pickleglass://');
+    try {
+        if (!app.isDefaultProtocolClient('pickleglass')) {
+            const success = app.setAsDefaultProtocolClient('pickleglass');
+            if (success) {
+                console.log('[Protocol] Successfully set as default protocol client for pickleglass://');
+            } else {
+                console.warn('[Protocol] Failed to set as default protocol client - this may affect deep linking');
+            }
+        } else {
+            console.log('[Protocol] Already registered as default protocol client for pickleglass://');
+        }
+    } catch (error) {
+        console.error('[Protocol] Error during protocol registration:', error);
     }
 
     // Handle protocol URLs on Windows/Linux
     app.on('second-instance', (event, commandLine, workingDirectory) => {
+        console.log('[Protocol] Second instance command line:', commandLine);
+        
         // Focus existing window first
         focusMainWindow();
         
-        // Look for protocol URL in command line arguments
-        const protocolUrl = commandLine.find(arg => arg.startsWith('pickleglass://'));
+        // Look for protocol URL in command line arguments - filter out invalid paths
+        const protocolUrl = commandLine.find(arg => {
+            return arg && 
+                   typeof arg === 'string' && 
+                   arg.startsWith('pickleglass://') && 
+                   arg.includes('://') && 
+                   !arg.includes('\\') && // Exclude Windows paths
+                   !arg.includes('₩'); // Exclude corrupted characters
+        });
+        
         if (protocolUrl) {
-            console.log('[Protocol] Received URL from second instance:', protocolUrl);
+            console.log('[Protocol] Valid URL found from second instance:', protocolUrl);
             handleCustomUrl(protocolUrl);
+        } else {
+            console.log('[Protocol] No valid protocol URL found in command line arguments');
         }
     });
 
@@ -100,16 +122,31 @@ function focusMainWindow() {
     return false;
 }
 
-// Setup protocol handling before app.whenReady()
+if (process.platform === 'win32') {
+    const protocolArg = process.argv.find(arg => 
+        arg && 
+        typeof arg === 'string' && 
+        arg.startsWith('pickleglass://') && 
+        !arg.includes('\\') && 
+        !arg.includes('₩')
+    );
+    
+    if (protocolArg) {
+        console.log('[Protocol] Found protocol URL in initial arguments:', protocolArg);
+        pendingDeepLinkUrl = protocolArg;
+    }
+}
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    app.quit();
+    process.exit(0);
+}
+
+// setup protocol after single instance lock
 setupProtocolHandling();
 
 app.whenReady().then(async () => {
-    // Single instance lock - must be first
-    const gotTheLock = app.requestSingleInstanceLock();
-    if (!gotTheLock) {
-        app.quit();
-        return;
-    }
 
     // Initialize core services
     initializeFirebase();
@@ -118,7 +155,7 @@ app.whenReady().then(async () => {
         .then(() => {
             console.log('>>> [index.js] Database initialized successfully');
             
-            // Clean up any zombie sessions from previous runs first
+            // Clean up zombie sessions from previous runs first
             sessionRepository.endAllActiveSessions();
 
             authService.initialize();
@@ -325,6 +362,18 @@ function setupWebDataHandlers() {
 async function handleCustomUrl(url) {
     try {
         console.log('[Custom URL] Processing URL:', url);
+        
+        // val url
+        if (!url || typeof url !== 'string' || !url.startsWith('pickleglass://')) {
+            console.error('[Custom URL] Invalid URL format:', url);
+            return;
+        }
+        
+        // val url
+        if (url.includes('\\') || url.includes('₩')) {
+            console.error('[Custom URL] URL contains invalid path characters:', url);
+            return;
+        }
         
         const urlObj = new URL(url);
         const action = urlObj.hostname;
