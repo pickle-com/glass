@@ -157,6 +157,53 @@ class SQLiteClient {
         return result.length > 0 && result[0].value === 'true';
     }
 
+    getAutoUpdate(uid = this.defaultUserId) {
+        try {
+            const row = this.query(
+                'SELECT auto_update_enabled FROM users WHERE uid = ?',
+                [uid]
+            );
+            
+            if (row.length > 0) {
+                return row[0].auto_update_enabled !== 0;
+            } else {
+                // User doesn't exist, create them with default settings
+                const now = Math.floor(Date.now() / 1000);
+                this.query(
+                    'INSERT OR REPLACE INTO users (uid, display_name, email, created_at, auto_update_enabled) VALUES (?, ?, ?, ?, ?)',
+                    [uid, 'User', 'user@example.com', now, 1]
+                );
+                return true; // default to enabled
+            }
+        } catch (error) {
+            console.error('Error getting auto_update_enabled setting:', error);
+            return true; // fallback to enabled
+        }
+    }
+
+    setAutoUpdate(isEnabled, uid = this.defaultUserId) {
+        try {
+            const result = this.query(
+                'UPDATE users SET auto_update_enabled = ? WHERE uid = ?',
+                [isEnabled ? 1 : 0, uid]
+            );
+            
+            // If no rows were updated, the user might not exist, so create them
+            if (result.changes === 0) {
+                const now = Math.floor(Date.now() / 1000);
+                this.query(
+                    'INSERT OR REPLACE INTO users (uid, display_name, email, created_at, auto_update_enabled) VALUES (?, ?, ?, ?, ?)',
+                    [uid, 'User', 'user@example.com', now, isEnabled ? 1 : 0]
+                );
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Error setting auto-update:', error);
+            throw error;
+        }
+    }
+
     close() {
         if (this.db) {
             try {

@@ -456,6 +456,8 @@ export class SettingsView extends LitElement {
         presets: { type: Array, state: true },
         selectedPreset: { type: Object, state: true },
         showPresets: { type: Boolean, state: true },
+        autoUpdateEnabled: { type: Boolean, state: true },
+        autoUpdateLoading: { type: Boolean, state: true },
     };
     //////// after_modelStateService ////////
 
@@ -479,8 +481,44 @@ export class SettingsView extends LitElement {
         this.selectedPreset = null;
         this.showPresets = false;
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this)
+        this.autoUpdateEnabled = true;
+        this.autoUpdateLoading = true;
         this.loadInitialData();
         //////// after_modelStateService ////////
+    }
+
+    async loadAutoUpdateSetting() {
+        if (!window.require) return;
+        const { ipcRenderer } = window.require('electron');
+        this.autoUpdateLoading = true;
+        try {
+            const enabled = await ipcRenderer.invoke('get-auto-update');
+            this.autoUpdateEnabled = enabled;
+        } catch (e) {
+            this.autoUpdateEnabled = true; // fallback
+        }
+        this.autoUpdateLoading = false;
+        this.requestUpdate();
+    }
+
+    async handleToggleAutoUpdate() {
+        if (!window.require || this.autoUpdateLoading) return;
+        const { ipcRenderer } = window.require('electron');
+        this.autoUpdateLoading = true;
+        this.requestUpdate();
+        try {
+            const newValue = !this.autoUpdateEnabled;
+            const success = await ipcRenderer.invoke('set-auto-update', newValue);
+            if (success) {
+                this.autoUpdateEnabled = newValue;
+            } else {
+                console.error('Failed to update auto-update setting');
+            }
+        } catch (e) {
+            console.error('Error toggling auto-update:', e);
+        }
+        this.autoUpdateLoading = false;
+        this.requestUpdate();
     }
 
     //////// after_modelStateService ////////
@@ -617,6 +655,7 @@ export class SettingsView extends LitElement {
         this.setupEventListeners();
         this.setupIpcListeners();
         this.setupWindowResize();
+        this.loadAutoUpdateSetting();
     }
 
     disconnectedCallback() {
@@ -1160,6 +1199,9 @@ export class SettingsView extends LitElement {
                 <div class="buttons-section">
                     <button class="settings-button full-width" @click=${this.handlePersonalize}>
                         <span>Personalize / Meeting Notes</span>
+                    </button>
+                    <button class="settings-button full-width" @click=${this.handleToggleAutoUpdate} ?disabled=${this.autoUpdateLoading}>
+                        <span>Automatic Updates: ${this.autoUpdateEnabled ? 'On' : 'Off'}</span>
                     </button>
                     
                     <div class="move-buttons">

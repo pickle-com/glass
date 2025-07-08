@@ -26,6 +26,7 @@ const askService = require('./features/ask/askService');
 const settingsService = require('./features/settings/settingsService');
 const sessionRepository = require('./common/repositories/session');
 const ModelStateService = require('./common/services/modelStateService');
+const sqliteClient = require('./common/services/sqliteClient');
 
 const eventBridge = new EventEmitter();
 let WEB_PORT = 3000;
@@ -288,6 +289,27 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('get-current-user', () => {
         return authService.getCurrentUser();
+    });
+
+    ipcMain.handle('get-auto-update', () => {
+        const uid = authService.getCurrentUserId();
+        try {
+            return sqliteClient.getAutoUpdate(uid);
+        } catch (error) {
+            console.error('Error getting auto-update setting:', error);
+            return true; // fallback to enabled
+        }
+    });
+
+    ipcMain.handle('set-auto-update', (event, isEnabled) => {
+        const uid = authService.getCurrentUserId();
+        try {
+            sqliteClient.setAutoUpdate(isEnabled, uid);
+            return true;
+        } catch (error) {
+            console.error('Error setting auto-update:', error);
+            return false;
+        }
     });
 
     // --- Web UI Data Handlers (New) ---
@@ -653,6 +675,11 @@ async function startWebStack() {
 // Auto-update initialization
 function initAutoUpdater() {
     try {
+        const autoUpdateEnabled = sqliteClient.getAutoUpdate();
+        if (!autoUpdateEnabled) {
+            console.log('[AutoUpdater] Skipped because auto-updates are disabled in settings');
+            return;
+        }
         // Skip auto-updater in development mode
         if (!app.isPackaged) {
             console.log('[AutoUpdater] Skipped in development (app is not packaged)');
