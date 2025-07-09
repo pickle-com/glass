@@ -1,3 +1,5 @@
+// IMPORTANT: Set your Firebase config values in a .env file at the project root.
+// NEVER commit secrets or API keys to version control. See .gitignore for .env exclusion.
 const { initializeApp } = require('firebase/app');
 const { initializeAuth } = require('firebase/auth');
 const Store = require('electron-store');
@@ -54,15 +56,23 @@ function createElectronStorePersistence(storeName = 'firebase-auth-session') {
     };
 }
 
+// Firebase config is now loaded from environment variables for security reasons.
 const firebaseConfig = {
-    apiKey: 'AIzaSyAgtJrmsFWG1C7m9S55HyT1laICEzuUS2g',
-    authDomain: 'pickle-3651a.firebaseapp.com',
-    projectId: 'pickle-3651a',
-    storageBucket: 'pickle-3651a.firebasestorage.app',
-    messagingSenderId: '904706892885',
-    appId: '1:904706892885:web:0e42b3dda796674ead20dc',
-    measurementId: 'G-SQ0WM6S28T',
+    apiKey: process.env.FIREBASE_API_KEY,
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.FIREBASE_APP_ID,
+    measurementId: process.env.FIREBASE_MEASUREMENT_ID,
 };
+
+// Validate that all required Firebase config values are set
+for (const [key, value] of Object.entries(firebaseConfig)) {
+    if (!value) {
+        throw new Error(`[FirebaseClient] Missing required Firebase config value: ${key}. Please set it in your .env file.`);
+    }
+}
 
 let firebaseApp = null;
 let firebaseAuth = null;
