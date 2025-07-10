@@ -949,7 +949,34 @@ async function sendMessage(userPrompt, options = {}) {
         const conversationHistory = formatRealtimeConversationHistory();
         console.log(`📝 Using conversation history: ${realtimeConversationHistory.length} texts`);
 
-        const systemPrompt = PICKLE_GLASS_SYSTEM_PROMPT.replace('{{CONVERSATION_HISTORY}}', conversationHistory);
+        // Get custom prompt from user settings
+        let customPrompt = "";
+        try {
+            customPrompt = localStorage.getItem("customPrompt") || "";
+            if (!customPrompt && window.require) {
+                const { ipcRenderer } = window.require("electron");
+                const userPresets = await ipcRenderer.invoke("get-user-presets");
+                if (userPresets && userPresets.length > 0) {
+                    let preset = userPresets.find(p => p.id === "personalized" || p._id === "personalized");
+                    if (!preset) preset = userPresets[0];
+                    if (preset && preset.prompt) {
+                        customPrompt = preset.prompt;
+                        console.log("📝 Using custom prompt from user presets");
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Failed to get custom prompt:", error);
+        }
+
+        // Build system prompt with custom context
+        let systemPrompt = PICKLE_GLASS_SYSTEM_PROMPT;
+        if (customPrompt && customPrompt.trim()) {
+            console.log("📝 Applying custom prompt to system message");
+            const customSection = `nn<user_context>nThe user has provided the following custom context and instructions:nn${customPrompt.trim()}nnPlease incorporate this context into your responses and follow any specific instructions provided.n</user_context>nn`;
+            systemPrompt = systemPrompt.replace("{{CONVERSATION_HISTORY}}", customSection + "{{CONVERSATION_HISTORY}}");
+        }
+        systemPrompt = systemPrompt.replace("{{CONVERSATION_HISTORY}}", conversationHistory);
 
         let API_KEY = localStorage.getItem('openai_api_key');
 
