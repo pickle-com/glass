@@ -188,6 +188,16 @@ class ModelStateService {
                     this.setApiKey(provider, key);
                     return { success: true };
                 }
+            case 'soniox': {
+                // Soniox API key is a 32+ char string, optionally validate format or do a real API call
+                if (typeof key !== 'string' || key.length < 32) {
+                    return { success: false, error: 'Invalid Soniox API key format.' };
+                }
+                
+                this.setApiKey(provider, key);
+                console.log(`[ModelStateService] API key for ${provider} is valid.`);
+                return { success: true };
+            }
             default:
                 return { success: false, error: 'Unknown provider.' };
         }

@@ -133,37 +133,18 @@ class SttService {
                 return;
             }
             
-            if (this.modelInfo.provider === 'whisper') {
-                // Whisper STT emits 'transcription' events with different structure
+            if (this.modelInfo.provider === 'whisper' || this.modelInfo.provider === 'soniox') {
+                // Whisper and Soniox STT emit 'transcription' events with similar structure
                 if (message.text && message.text.trim()) {
                     const finalText = message.text.trim();
-                    
-                    // Filter out Whisper noise transcriptions
+                    // Filter out noise for Whisper, for Soniox just check length
                     const noisePatterns = [
-                        '[BLANK_AUDIO]',
-                        '[INAUDIBLE]',
-                        '[MUSIC]',
-                        '[SOUND]',
-                        '[NOISE]',
-                        '(BLANK_AUDIO)',
-                        '(INAUDIBLE)',
-                        '(MUSIC)',
-                        '(SOUND)',
-                        '(NOISE)'
+                        '[BLANK_AUDIO]', '[INAUDIBLE]', '[MUSIC]', '[SOUND]', '[NOISE]',
+                        '(BLANK_AUDIO)', '(INAUDIBLE)', '(MUSIC)', '(SOUND)', '(NOISE)'
                     ];
-                    
-
-                    
-                    const normalizedText = finalText.toLowerCase().trim();
-                    
-                    const isNoise = noisePatterns.some(pattern => 
-                        finalText.includes(pattern) || finalText === pattern
-                    );
-                    
-                    
+                    const isNoise = this.modelInfo.provider === 'whisper' && noisePatterns.some(pattern => finalText.includes(pattern) || finalText === pattern);
                     if (!isNoise && finalText.length > 2) {
                         this.debounceMyCompletion(finalText);
-                        
                         this.sendToRenderer('stt-update', {
                             speaker: 'Me',
                             text: finalText,
@@ -171,7 +152,7 @@ class SttService {
                             isFinal: true,
                             timestamp: Date.now(),
                         });
-                    } else {
+                    } else if (this.modelInfo.provider === 'whisper') {
                         console.log(`[Whisper-Me] Filtered noise: "${finalText}"`);
                     }
                 }
@@ -246,37 +227,16 @@ class SttService {
                 return;
             }
             
-            if (this.modelInfo.provider === 'whisper') {
-                // Whisper STT emits 'transcription' events with different structure
+            if (this.modelInfo.provider === 'whisper' || this.modelInfo.provider === 'soniox') {
                 if (message.text && message.text.trim()) {
                     const finalText = message.text.trim();
-                    
-                    // Filter out Whisper noise transcriptions
                     const noisePatterns = [
-                        '[BLANK_AUDIO]',
-                        '[INAUDIBLE]',
-                        '[MUSIC]',
-                        '[SOUND]',
-                        '[NOISE]',
-                        '(BLANK_AUDIO)',
-                        '(INAUDIBLE)',
-                        '(MUSIC)',
-                        '(SOUND)',
-                        '(NOISE)'
+                        '[BLANK_AUDIO]', '[INAUDIBLE]', '[MUSIC]', '[SOUND]', '[NOISE]',
+                        '(BLANK_AUDIO)', '(INAUDIBLE)', '(MUSIC)', '(SOUND)', '(NOISE)'
                     ];
-                    
-                    
-                    const normalizedText = finalText.toLowerCase().trim();
-                    
-                    const isNoise = noisePatterns.some(pattern => 
-                        finalText.includes(pattern) || finalText === pattern
-                    );
-                    
-                    
-                    // Only process if it's not noise, not a false positive, and has meaningful content
+                    const isNoise = this.modelInfo.provider === 'whisper' && noisePatterns.some(pattern => finalText.includes(pattern) || finalText === pattern);
                     if (!isNoise && finalText.length > 2) {
                         this.debounceTheirCompletion(finalText);
-                        
                         this.sendToRenderer('stt-update', {
                             speaker: 'Them',
                             text: finalText,
@@ -284,7 +244,7 @@ class SttService {
                             isFinal: true,
                             timestamp: Date.now(),
                         });
-                    } else {
+                    } else if (this.modelInfo.provider === 'whisper') {
                         console.log(`[Whisper-Them] Filtered noise: "${finalText}"`);
                     }
                 }
@@ -613,4 +573,4 @@ class SttService {
     }
 }
 
-module.exports = SttService; 
+module.exports = SttService;
