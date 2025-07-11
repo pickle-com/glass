@@ -2,7 +2,9 @@ import { html, css, LitElement } from '../assets/lit-core-2.7.4.min.js';
 
 export class MainHeader extends LitElement {
     static properties = {
-        isSessionActive: { type: Boolean, state: true },
+        // isSessionActive: { type: Boolean, state: true },
+        isTogglingSession: { type: Boolean, state: true },
+        actionText: { type: String, state: true },
         shortcuts: { type: Object, state: true },
     };
 
@@ -95,12 +97,35 @@ export class MainHeader extends LitElement {
             position: relative;
         }
 
+        .listen-button:disabled {
+            cursor: default;
+            opacity: 0.8;
+        }
+
         .listen-button.active::before {
             background: rgba(215, 0, 0, 0.5);
         }
 
         .listen-button.active:hover::before {
             background: rgba(255, 20, 20, 0.6);
+        }
+
+        .listen-button.done {
+            background-color: rgba(255, 255, 255, 0.6);
+            transition: background-color 0.15s ease;
+        }
+
+        .listen-button.done .action-text-content {
+            color: black;
+        }
+        
+        .listen-button.done .listen-icon svg rect,
+        .listen-button.done .listen-icon svg path {
+            fill: black;
+        }
+
+        .listen-button.done:hover {
+            background-color: #f0f0f0;
         }
 
         .listen-button:hover::before {
@@ -130,6 +155,38 @@ export class MainHeader extends LitElement {
             -webkit-mask-composite: destination-out;
             mask-composite: exclude;
             pointer-events: none;
+        }
+
+        .listen-button.done::after {
+            display: none;
+        }
+
+        .loading-dots {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .loading-dots span {
+            width: 6px;
+            height: 6px;
+            background-color: white;
+            border-radius: 50%;
+            animation: pulse 1.4s infinite ease-in-out both;
+        }
+        .loading-dots span:nth-of-type(1) {
+            animation-delay: -0.32s;
+        }
+        .loading-dots span:nth-of-type(2) {
+            animation-delay: -0.16s;
+        }
+        @keyframes pulse {
+            0%, 80%, 100% {
+                opacity: 0.2;
+            }
+            40% {
+                opacity: 1.0;
+            }
         }
 
         .header-actions {
@@ -242,7 +299,9 @@ export class MainHeader extends LitElement {
         this.isAnimating = false;
         this.hasSlidIn = false;
         this.settingsHideTimer = null;
-        this.isSessionActive = false;
+        // this.isSessionActive = false;
+        this.isTogglingSession = false;
+        this.actionText = 'Listen';
         this.animationEndTimer = null;
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
     }
@@ -305,10 +364,19 @@ export class MainHeader extends LitElement {
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            this._sessionStateListener = (event, { isActive }) => {
-                this.isSessionActive = isActive;
+
+            this._sessionStateTextListener = (event, text) => {
+                this.actionText = text;
+                this.isTogglingSession = false;
             };
-            ipcRenderer.on('session-state-changed', this._sessionStateListener);
+            ipcRenderer.on('session-state-text', this._sessionStateTextListener);
+
+
+            // this._sessionStateListener = (event, { isActive }) => {
+            //     this.isSessionActive = isActive;
+            //     this.isTogglingSession = false;
+            // };
+            // ipcRenderer.on('session-state-changed', this._sessionStateListener);
             this._shortcutListener = (event, keybinds) => {
                 console.log('[MainHeader] Received updated shortcuts:', keybinds);
                 this.shortcuts = keybinds;
@@ -328,9 +396,12 @@ export class MainHeader extends LitElement {
         
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            if (this._sessionStateListener) {
-                ipcRenderer.removeListener('session-state-changed', this._sessionStateListener);
+            if (this._sessionStateTextListener) {
+                ipcRenderer.removeListener('session-state-text', this._sessionStateTextListener);
             }
+            // if (this._sessionStateListener) {
+            //     ipcRenderer.removeListener('session-state-changed', this._sessionStateListener);
+            // }
             if (this._shortcutListener) {
                 ipcRenderer.removeListener('shortcuts-updated', this._shortcutListener);
             }
@@ -341,6 +412,7 @@ export class MainHeader extends LitElement {
         if (window.require) {
             window.require('electron').ipcRenderer.invoke(channel, ...args);
         }
+        // return Promise.resolve();
     }
 
     showSettingsWindow(element) {
@@ -369,6 +441,23 @@ export class MainHeader extends LitElement {
         }
     }
 
+    async _handleListenClick() {
+        if (this.isTogglingSession) {
+            return;
+        }
+
+        this.isTogglingSession = true;
+
+        try {
+            const channel = 'toggle-feature';
+            const args = ['listen'];
+            await this.invoke(channel, ...args);
+        } catch (error) {
+            console.error('IPC invoke for session toggle failed:', error);
+            this.isTogglingSession = false;
+        }
+    }
+
 
     renderShortcut(accelerator) {
         if (!accelerator) return html``;
@@ -394,31 +483,45 @@ export class MainHeader extends LitElement {
     }
 
     render() {
+        const buttonClasses = {
+            active: this.actionText === 'Stop',
+            done: this.actionText === 'Done',
+        };
+        const showStopIcon = this.actionText === 'Stop' || this.actionText === 'Done';
+
         return html`
             <div class="header">
                 <button 
-                    class="listen-button ${this.isSessionActive ? 'active' : ''}"
-                    @click=${() => this.invoke(this.isSessionActive ? 'close-session' : 'toggle-feature', 'listen')}
+                    class="listen-button ${Object.keys(buttonClasses).filter(k => buttonClasses[k]).join(' ')}"
+                    @click=${this._handleListenClick}
+                    ?disabled=${this.isTogglingSession}
                 >
-                    <div class="action-text">
-                        <div class="action-text-content">${this.isSessionActive ? 'Stop' : 'Listen'}</div>
-                    </div>
-                    <div class="listen-icon">
-                        ${this.isSessionActive
-                            ? html`
-                                <svg width="9" height="9" viewBox="0 0 9 9" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <rect width="9" height="9" rx="1" fill="white"/>
-                                </svg>
-
-                            `
-                            : html`
-                                <svg width="12" height="11" viewBox="0 0 12 11" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M1.69922 2.7515C1.69922 2.37153 2.00725 2.0635 2.38722 2.0635H2.73122C3.11119 2.0635 3.41922 2.37153 3.41922 2.7515V8.2555C3.41922 8.63547 3.11119 8.9435 2.73122 8.9435H2.38722C2.00725 8.9435 1.69922 8.63547 1.69922 8.2555V2.7515Z" fill="white"/>
-                                    <path d="M5.13922 1.3755C5.13922 0.995528 5.44725 0.6875 5.82722 0.6875H6.17122C6.55119 0.6875 6.85922 0.995528 6.85922 1.3755V9.6315C6.85922 10.0115 6.55119 10.3195 6.17122 10.3195H5.82722C5.44725 10.3195 5.13922 10.0115 5.13922 9.6315V1.3755Z" fill="white"/>
-                                    <path d="M8.57922 3.0955C8.57922 2.71553 8.88725 2.4075 9.26722 2.4075H9.61122C9.99119 2.4075 10.2992 2.71553 10.2992 3.0955V7.9115C10.2992 8.29147 9.99119 8.5995 9.61122 8.5995H9.26722C8.88725 8.5995 8.57922 8.29147 8.57922 7.9115V3.0955Z" fill="white"/>
-                                </svg>
-                            `}
-                    </div>
+                    ${this.isTogglingSession
+                        ? html`
+                            <div class="loading-dots">
+                                <span></span><span></span><span></span>
+                            </div>
+                        `
+                        : html`
+                            <div class="action-text">
+                                <div class="action-text-content">${this.actionText}</div>
+                            </div>
+                            <div class="listen-icon">
+                                ${showStopIcon
+                                    ? html`
+                                        <svg width="9" height="9" viewBox="0 0 9 9" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <rect width="9" height="9" rx="1" fill="white"/>
+                                        </svg>
+                                    `
+                                    : html`
+                                        <svg width="12" height="11" viewBox="0 0 12 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M1.69922 2.7515C1.69922 2.37153 2.00725 2.0635 2.38722 2.0635H2.73122C3.11119 2.0635 3.41922 2.37153 3.41922 2.7515V8.2555C3.41922 8.63547 3.11119 8.9435 2.73122 8.9435H2.38722C2.00725 8.9435 1.69922 8.63547 1.69922 8.2555V2.7515Z" fill="white"/>
+                                            <path d="M5.13922 1.3755C5.13922 0.995528 5.44725 0.6875 5.82722 0.6875H6.17122C6.55119 0.6875 6.85922 0.995528 6.85922 1.3755V9.6315C6.85922 10.0115 6.55119 10.3195 6.17122 10.3195H5.82722C5.44725 10.3195 5.13922 10.0115 5.13922 9.6315V1.3755Z" fill="white"/>
+                                            <path d="M8.57922 3.0955C8.57922 2.71553 8.88725 2.4075 9.26722 2.4075H9.61122C9.99119 2.4075 10.2992 2.71553 10.2992 3.0955V7.9115C10.2992 8.29147 9.99119 8.5995 9.61122 8.5995H9.26722C8.88725 8.5995 8.57922 8.29147 8.57922 7.9115V3.0955Z" fill="white"/>
+                                        </svg>
+                                    `}
+                            </div>
+                        `}
                 </button>
 
                 <div class="header-actions ask-action" @click=${() => this.invoke('toggle-feature', 'ask')}>

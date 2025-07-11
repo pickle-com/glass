@@ -415,7 +415,7 @@ export class AskView extends LitElement {
             background: rgba(0, 0, 0, 0.1);
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             flex-shrink: 0;
-            transition: all 0.3s ease-in-out;
+            transition: opacity 0.1s ease-in-out, transform 0.1s ease-in-out;
             transform-origin: bottom;
         }
 
@@ -541,6 +541,7 @@ export class AskView extends LitElement {
         this.handleStreamChunk = this.handleStreamChunk.bind(this);
         this.handleStreamEnd = this.handleStreamEnd.bind(this);
         this.handleSendText = this.handleSendText.bind(this);
+        this.handleGlobalSendRequest = this.handleGlobalSendRequest.bind(this);
         this.handleTextKeydown = this.handleTextKeydown.bind(this);
         this.closeResponsePanel = this.closeResponsePanel.bind(this);
         this.handleCopy = this.handleCopy.bind(this);
@@ -556,7 +557,6 @@ export class AskView extends LitElement {
         this.loadLibraries();
 
         // --- Resize helpers ---
-        this.adjustHeightThrottle = null;
         this.isThrottled = false;
     }
 
@@ -1220,6 +1220,14 @@ export class AskView extends LitElement {
 
     handleGlobalSendRequest() {
         const textInput = this.shadowRoot?.getElementById('textInput');
+
+        if (!this.showTextInput) {
+            this.showTextInput = true;
+            this.requestUpdate();
+            this.focusTextInput();
+            return;
+        }
+
         if (!textInput) return;
 
         textInput.focus();
@@ -1349,12 +1357,11 @@ export class AskView extends LitElement {
     adjustWindowHeightThrottled() {
         if (this.isThrottled) return;
 
-        this.adjustWindowHeight();
         this.isThrottled = true;
-
-        this.adjustHeightThrottle = setTimeout(() => {
+        requestAnimationFrame(() => {
+            this.adjustWindowHeight();
             this.isThrottled = false;
-        }, 16);
+        });
     }
 }
 

@@ -2,7 +2,7 @@ const Store = require('electron-store');
 const fetch = require('node-fetch');
 const { ipcMain, webContents } = require('electron');
 const { PROVIDERS } = require('../ai/factory');
-const cryptoService = require('./cryptoService');
+const encryptionService = require('./encryptionService');
 
 class ModelStateService {
     constructor(authService) {
@@ -11,8 +11,8 @@ class ModelStateService {
         this.state = {};
     }
 
-    initialize() {
-        this._loadStateForCurrentUser();
+    async initialize() {
+        await this._loadStateForCurrentUser();
 
         this.setupIpcHandlers();
         console.log('[ModelStateService] Initialized.');
@@ -64,8 +64,12 @@ class ModelStateService {
         });
     }
 
-    _loadStateForCurrentUser() {
+    async _loadStateForCurrentUser() {
         const userId = this.authService.getCurrentUserId();
+        
+        // Initialize encryption service for current user
+        await encryptionService.initializeKey(userId);
+        
         const initialApiKeys = Object.keys(PROVIDERS).reduce((acc, key) => {
             acc[key] = null;
             return acc;
@@ -83,7 +87,7 @@ class ModelStateService {
                 this.state.apiKeys[p] = null;
             } else if (this.state.apiKeys[p] && p !== 'ollama' && p !== 'whisper') {
                 try {
-                    this.state.apiKeys[p] = cryptoService.decrypt(this.state.apiKeys[p]);
+                    this.state.apiKeys[p] = encryptionService.decrypt(this.state.apiKeys[p]);
                 } catch (error) {
                     console.error(`[ModelStateService] Failed to decrypt API key for ${p}, resetting`);
                     this.state.apiKeys[p] = null;
@@ -107,7 +111,7 @@ class ModelStateService {
         for (const [provider, key] of Object.entries(stateToSave.apiKeys)) {
             if (key && provider !== 'ollama' && provider !== 'whisper') {
                 try {
-                    stateToSave.apiKeys[provider] = cryptoService.encrypt(key);
+                    stateToSave.apiKeys[provider] = encryptionService.encrypt(key);
                 } catch (error) {
                     console.error(`[ModelStateService] Failed to encrypt API key for ${provider}`);
                     stateToSave.apiKeys[provider] = null;

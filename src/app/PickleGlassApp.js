@@ -68,12 +68,24 @@ export class PickleGlassApp extends LitElement {
         this.selectedScreenshotInterval = localStorage.getItem('selectedScreenshotInterval') || '5';
         this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'medium';
         this._isClickThrough = false;
-        this.outlines = [];
-        this.analysisRequests = [];
 
-        window.pickleGlass.setStructuredData = data => {
-            this.updateStructuredData(data);
+        // Initialize structured data for Live insights
+        this.structuredData = {
+            summary: [],
+            topic: { header: '', bullets: [] },
+            actions: [],
+            followUps: [],
         };
+
+        // Set up structured data callback for Live insights
+        if (window.pickleGlass) {
+            window.pickleGlass.setStructuredData = data => {
+                this.updateStructuredData(data);
+            };
+        }
+
+        // Load language from settings on startup
+        this.loadLanguageFromSettings();
     }
 
     connectedCallback() {
@@ -82,14 +94,21 @@ export class PickleGlassApp extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             
-            ipcRenderer.on('update-status', (_, status) => this.setStatus(status));
             ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
-            ipcRenderer.on('start-listening-session', () => {
-                console.log('Received start-listening-session command, calling handleListenClick.');
-                this.handleListenClick();
+            
+            // Language change listener for multi-language support
+            ipcRenderer.on('language-changed', (_, languageCode) => {
+                console.log('Language changed to:', languageCode);
+                this.selectedLanguage = languageCode;
+                localStorage.setItem('selectedLanguage', languageCode);
             });
+            
+            // ipcRenderer.on('start-listening-session', () => {
+            //     console.log('Received start-listening-session command, calling handleListenClick.');
+            //     this.handleListenClick();
+            // });
         }
     }
 
@@ -97,16 +116,16 @@ export class PickleGlassApp extends LitElement {
         super.disconnectedCallback();
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
-            ipcRenderer.removeAllListeners('start-listening-session');
+            ipcRenderer.removeAllListeners('language-changed');
+            // ipcRenderer.removeAllListeners('start-listening-session');
         }
     }
 
     updated(changedProperties) {
-        if (changedProperties.has('isMainViewVisible') || changedProperties.has('currentView')) {
-            this.requestWindowResize();
-        }
+        // if (changedProperties.has('isMainViewVisible') || changedProperties.has('currentView')) {
+        //     this.requestWindowResize();
+        // }
 
         if (changedProperties.has('currentView')) {
             const viewContainer = this.shadowRoot?.querySelector('.view-container');
@@ -136,93 +155,51 @@ export class PickleGlassApp extends LitElement {
         }
     }
 
-    setStatus(text) {
-        this.statusText = text;
-    }
 
-    async handleListenClick() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            const isActive = await ipcRenderer.invoke('is-session-active');
-            if (isActive) {
-                console.log('Session is already active. No action needed.');
-                return;
-            }
-        }
+    // async handleListenClick() {
+    //     if (window.require) {
+    //         const { ipcRenderer } = window.require('electron');
+    //         const isActive = await ipcRenderer.invoke('is-session-active');
+    //         // if (isActive) {
+    //         //     console.log('Session is already active. No action needed.');
+    //         //     return;
+    //         // }
+    //     }
 
-        if (window.pickleGlass) {
-            await window.pickleGlass.initializeopenai(this.selectedProfile, this.selectedLanguage);
-            window.pickleGlass.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
-        }
+    //     if (window.pickleGlass) {
+    //         // await window.pickleGlass.initializeopenai(this.selectedProfile, this.selectedLanguage);
+    //         window.pickleGlass.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+    //     }
 
-        // 🔄 Clear previous summary/analysis when a new listening session begins
-        this.structuredData = {
-            summary: [],
-            topic: { header: '', bullets: [] },
-            actions: [],
-            followUps: [],
-        };
+    //     // 🔄 Clear previous summary/analysis when a new listening session begins
+    //     this.structuredData = {
+    //         summary: [],
+    //         topic: { header: '', bullets: [] },
+    //         actions: [],
+    //         followUps: [],
+    //     };
 
-        this.currentResponseIndex = -1;
-        this.startTime = Date.now();
-        this.currentView = 'listen';
-        this.isMainViewVisible = true;
-    }
-
-    handleShowHideClick() {
-        this.isMainViewVisible = !this.isMainViewVisible;
-    }
-
-    handleSettingsClick() {
-        this.currentView = 'settings';
-        this.isMainViewVisible = true;
-    }
-
-    handleHelpClick() {
-        this.currentView = 'help';
-        this.isMainViewVisible = true;
-    }
-
-    handleHistoryClick() {
-        this.currentView = 'history';
-        this.isMainViewVisible = true;
-    }
-
-    async handleClose() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('quit-application');
-        }
-    }
-
-    handleBackClick() {
-        this.currentView = 'listen';
-    }
-
-    async handleSendText(message) {
-        if (window.pickleGlass) {
-            const result = await window.pickleGlass.sendTextMessage(message);
-
-            if (!result.success) {
-                console.error('Failed to send message:', result.error);
-                this.setStatus('Error sending message: ' + result.error);
-            } else {
-                this.setStatus('Message sent...');
-            }
-        }
-    }
-
-    // updateOutline(outline) {
-    //     console.log('📝 PickleGlassApp updateOutline:', outline);
-    //     this.outlines = [...outline];
-    //     this.requestUpdate();
+    //     this.currentResponseIndex = -1;
+    //     this.startTime = Date.now();
+    //     this.currentView = 'listen';
+    //     this.isMainViewVisible = true;
     // }
 
-    // updateAnalysisRequests(requests) {
-    //     console.log('📝 PickleGlassApp updateAnalysisRequests:', requests);
-    //     this.analysisRequests = [...requests];
-    //     this.requestUpdate();
-    // }
+    async loadLanguageFromSettings() {
+        if (!window.require) return;
+        
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const currentLanguage = await ipcRenderer.invoke('settings:get-current-language');
+            if (currentLanguage && currentLanguage !== this.selectedLanguage) {
+                this.selectedLanguage = currentLanguage;
+                localStorage.setItem('selectedLanguage', currentLanguage);
+                console.log(`[PickleGlassApp] Language loaded from settings: ${currentLanguage}`);
+            }
+        } catch (error) {
+            console.warn('[PickleGlassApp] Failed to load language from settings:', error);
+        }
+    }
 
     updateStructuredData(data) {
         console.log('📝 PickleGlassApp updateStructuredData:', data);
@@ -236,9 +213,15 @@ export class PickleGlassApp extends LitElement {
         }
     }
 
-    handleResponseIndexChanged(e) {
-        this.currentResponseIndex = e.detail.index;
+    async handleClose() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('quit-application');
+        }
     }
+
+
+
 
     render() {
         switch (this.currentView) {
@@ -247,7 +230,6 @@ export class PickleGlassApp extends LitElement {
                     .currentResponseIndex=${this.currentResponseIndex}
                     .selectedProfile=${this.selectedProfile}
                     .structuredData=${this.structuredData}
-                    .onSendText=${message => this.handleSendText(message)}
                     @response-index-changed=${e => (this.currentResponseIndex = e.detail.index)}
                 ></assistant-view>`;
             case 'ask':

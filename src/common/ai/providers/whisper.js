@@ -1,9 +1,10 @@
-let spawn, path, EventEmitter;
+let spawn, path, EventEmitter, getLanguageForProvider;
 
 if (typeof window === 'undefined') {
     spawn = require('child_process').spawn;
     path = require('path');
     EventEmitter = require('events').EventEmitter;
+    getLanguageForProvider = require('../../config/languages').getLanguageForProvider;
 } else {
     class DummyEventEmitter {
         on() {}
@@ -11,14 +12,16 @@ if (typeof window === 'undefined') {
         removeAllListeners() {}
     }
     EventEmitter = DummyEventEmitter;
+    getLanguageForProvider = () => 'en';
 }
 
 class WhisperSTTSession extends EventEmitter {
-    constructor(model, whisperService, sessionId) {
+    constructor(model, whisperService, sessionId, language = 'en') {
         super();
         this.model = model;
         this.whisperService = whisperService;
         this.sessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        this.language = language;
         this.process = null;
         this.isRunning = false;
         this.audioBuffer = Buffer.alloc(0);
@@ -71,13 +74,17 @@ class WhisperSTTSession extends EventEmitter {
                 return;
             }
 
+            // Get the proper language code for Whisper
+            const whisperLanguage = getLanguageForProvider(this.language, 'whisper');
+            console.log(`[WhisperSTT-${this.sessionId}] Using language: ${whisperLanguage} (from ${this.language})`);
+
             this.process = spawn(whisperPath, [
                 '-m', modelPath,
                 '-f', tempFile,
                 '--no-timestamps',
                 '--output-txt',
                 '--output-json',
-                '--language', 'auto',
+                '--language', whisperLanguage,
                 '--threads', '4',
                 '--print-progress', 'false'
             ]);
@@ -190,11 +197,12 @@ class WhisperProvider {
         
         const model = config.model || 'whisper-tiny';
         const sessionType = config.sessionType || 'unknown';
-        console.log(`[WhisperProvider] Creating ${sessionType} STT session with model: ${model}`);
+        const language = config.language || 'en';
+        console.log(`[WhisperProvider] Creating ${sessionType} STT session with model: ${model}, language: ${language}`);
         
         // Create unique session ID based on type
         const sessionId = `${sessionType}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-        const session = new WhisperSTTSession(model, this.whisperService, sessionId);
+        const session = new WhisperSTTSession(model, this.whisperService, sessionId, language);
         
         // Log session creation
         console.log(`[WhisperProvider] Created session: ${sessionId}`);

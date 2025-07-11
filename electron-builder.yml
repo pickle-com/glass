@@ -46,8 +46,11 @@ win:
         - target: portable
           arch: x64
     requestedExecutionLevel: asInvoker
-    # Disable code signing to avoid symbolic link issues on Windows
     signAndEditExecutable: true
+    cscLink: build\certs\glass-dev.pfx
+    cscKeyPassword: "${env.CSC_KEY_PASSWORD}"
+    signtoolOptions:
+      certificateSubjectName: "Glass Dev Code Signing"
 
 # NSIS installer configuration for Windows
 nsis:

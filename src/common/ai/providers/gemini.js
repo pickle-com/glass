@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai")
 const { GoogleGenAI } = require("@google/genai")
+const { getLanguageForProvider } = require('../../config/languages')
 
 /**
  * Creates a Gemini STT session
@@ -9,11 +10,12 @@ const { GoogleGenAI } = require("@google/genai")
  * @param {object} [opts.callbacks] - Event callbacks
  * @returns {Promise<object>} STT session
  */
-async function createSTT({ apiKey, language = "en-US", callbacks = {}, ...config }) {
+async function createSTT({ apiKey, language = "en", callbacks = {}, ...config }) {
   const liveClient = new GoogleGenAI({ vertexai: false, apiKey })
 
-  // Language code BCP-47 conversion
-  const lang = language.includes("-") ? language : `${language}-US`
+  // Get the proper language code for Gemini (BCP-47 format)
+  const geminiLanguage = getLanguageForProvider(language, 'gemini');
+  console.log(`[Gemini STT] Using language: ${geminiLanguage} (from ${language})`);
 
   const session = await liveClient.live.connect({
 
@@ -29,7 +31,7 @@ async function createSTT({ apiKey, language = "en-US", callbacks = {}, ...config
 
     config: {
       inputAudioTranscription: {},
-      speechConfig: { languageCode: lang },
+      speechConfig: { languageCode: geminiLanguage },
     },
   })
 

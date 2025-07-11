@@ -48,25 +48,28 @@ export class AssistantView extends LitElement {
     margin: 8px 0 !important;
     overflow-x: auto !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    white-space: pre !important;
-    word-wrap: normal !important;
-    word-break: normal !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    word-break: break-word !important;
+    max-width: 100% !important;
 }
 
 .insights-container code {
     font-family: 'Monaco', 'Menlo', 'Consolas', monospace !important;
     font-size: 11px !important;
     background: transparent !important;
-    white-space: pre !important;
-    word-wrap: normal !important;
-    word-break: normal !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    word-break: break-word !important;
+    max-width: 100% !important;
 }
 
 .insights-container pre code {
-    white-space: pre !important;
-    word-wrap: normal !important;
-    word-break: normal !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    word-break: break-word !important;
     display: block !important;
+    max-width: 100% !important;
 }
 
 .insights-container p code {

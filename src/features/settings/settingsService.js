@@ -4,6 +4,7 @@ const authService = require('../../common/services/authService');
 const userRepository = require('../../common/repositories/user');
 const settingsRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, windowPool } = require('../../electron/windowManager');
+const { DEFAULT_LANGUAGE, normalizeLanguageCode, isValidLanguageCode } = require('../../common/config/languages');
 
 const store = new Store({
     name: 'pickle-glass-settings',
@@ -154,7 +155,7 @@ function getDefaultSettings() {
     const isMac = process.platform === 'darwin';
     return {
         profile: 'school',
-        language: 'en',
+        language: 'DEFAULT_LANGUAGE',
         screenshotInterval: '5000',
         imageQuality: '0.8',
         layoutMode: 'stacked',
@@ -192,6 +193,17 @@ async function saveSettings(settings) {
         
         const currentSaved = store.get(userSettingsKey, {});
         const newSettings = { ...currentSaved, ...settings };
+        
+        // Validate and normalize language if provided
+        if (settings.language) {
+            const normalizedLanguage = normalizeLanguageCode(settings.language);
+            if (!isValidLanguageCode(normalizedLanguage)) {
+                console.warn(`[SettingsService] Invalid language code: ${settings.language}, using default`);
+                newSettings.language = DEFAULT_LANGUAGE;
+            } else {
+                newSettings.language = normalizedLanguage;
+            }
+        }
         
         store.set(userSettingsKey, newSettings);
         currentSettings = newSettings;
@@ -436,6 +448,36 @@ function initialize() {
     ipcMain.handle('settings:set-auto-update', async (event, isEnabled) => {
         console.log('[SettingsService] Setting auto update setting:', isEnabled);
         return await setAutoUpdateSetting(isEnabled);
+    });
+    
+    // Language-specific handlers
+    ipcMain.handle('settings:get-available-languages', async () => {
+        const { getAvailableLanguages } = require('../../common/config/languages');
+        return getAvailableLanguages();
+    });
+
+    ipcMain.handle('settings:get-popular-languages', async () => {
+        const { getPopularLanguages } = require('../../common/config/languages');
+        return getPopularLanguages();
+    });
+
+    ipcMain.handle('settings:get-current-language', async () => {
+        const settings = await getSettings();
+        return settings.language || DEFAULT_LANGUAGE;
+    });
+
+    ipcMain.handle('settings:set-language', async (event, languageCode) => {
+        console.log('[SettingsService] Setting language:', languageCode);
+        const result = await saveSettings({ language: languageCode });
+        if (result.success) {
+            // Notify all windows about language change
+            BrowserWindow.getAllWindows().forEach(win => {
+                if (!win.isDestroyed()) {
+                    win.webContents.send('language-changed', languageCode);
+                }
+            });
+        }
+        return result;
     });
     
     console.log('[SettingsService] Initialized and ready.');
