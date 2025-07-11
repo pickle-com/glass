@@ -70,6 +70,10 @@ class SonioxSTTSession extends EventEmitter {
         if (typeof audioBuffer === 'string') {
             audioBuffer = Buffer.from(audioBuffer, 'base64');
         }
+        // Convert to WAV if not already (assume PCM input)
+        if (!isWav(audioBuffer)) {
+            audioBuffer = pcmToWav(audioBuffer);
+        }
         await this.processAudioChunk(audioBuffer);
     }
 
@@ -81,6 +85,31 @@ class SonioxSTTSession extends EventEmitter {
         this.stop();
         this.removeAllListeners();
     }
+}
+
+// Helper: Convert PCM to WAV (16-bit, mono, 16kHz)
+function pcmToWav(buffer, sampleRate = 16000, numChannels = 1) {
+    const header = Buffer.alloc(44);
+    const dataLength = buffer.length;
+    header.write('RIFF', 0); // ChunkID
+    header.writeUInt32LE(36 + dataLength, 4); // ChunkSize
+    header.write('WAVE', 8); // Format
+    header.write('fmt ', 12); // Subchunk1ID
+    header.writeUInt32LE(16, 16); // Subchunk1Size
+    header.writeUInt16LE(1, 20); // AudioFormat (PCM)
+    header.writeUInt16LE(numChannels, 22); // NumChannels
+    header.writeUInt32LE(sampleRate, 24); // SampleRate
+    header.writeUInt32LE(sampleRate * numChannels * 2, 28); // ByteRate
+    header.writeUInt16LE(numChannels * 2, 32); // BlockAlign
+    header.writeUInt16LE(16, 34); // BitsPerSample
+    header.write('data', 36); // Subchunk2ID
+    header.writeUInt32LE(dataLength, 40); // Subchunk2Size
+    return Buffer.concat([header, buffer]);
+}
+
+// Helper: Check if buffer is already a WAV file
+function isWav(buffer) {
+    return buffer && buffer.length > 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WAVE';
 }
 
 function createSTT(opts) {
