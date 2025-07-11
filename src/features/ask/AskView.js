@@ -689,120 +689,183 @@ export class AskView extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-
-        console.log('📱 AskView connectedCallback - IPC 이벤트 리스너 설정');
-
-        document.addEventListener('click', this.handleDocumentClick, true);
-        document.addEventListener('keydown', this.handleEscKey);
-
-        this.resizeObserver = new ResizeObserver(entries => {
-            for (const entry of entries) {
-                const needed = entry.contentRect.height;
-                const current = window.innerHeight;
-
-                if (needed > current - 4) {
-                    this.requestWindowResize(Math.ceil(needed));
-                }
-            }
-        });
-
-        const container = this.shadowRoot?.querySelector('.ask-container');
-        if (container) this.resizeObserver.observe(container);
-
-        this.handleQuestionFromAssistant = (event, question) => {
-            console.log('📨 AskView: Received question from AssistantView:', question);
-            this.currentResponse = '';
-            this.isStreaming = false;
-            this.requestUpdate();
-
-            this.currentQuestion = question;
-            this.isLoading = true;
-            this.showTextInput = false;
-            this.headerText = 'analyzing screen...';
-            this.startHeaderAnimation();
-            this.requestUpdate();
-
-            this.processAssistantQuestion(question);
-        };
+        this.addEventListener('animationend', this.handleAnimationEnd);
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('ask-global-send', this.handleGlobalSendRequest);
-            ipcRenderer.on('toggle-text-input', this.handleToggleTextInput);
-            ipcRenderer.on('receive-question-from-assistant', this.handleQuestionFromAssistant);
-            ipcRenderer.on('hide-text-input', () => {
-                console.log('📤 Hide text input signal received');
-                this.showTextInput = false;
+
+            this._sessionStateTextListener = (event, text) => {
+                this.actionText = text;
+                this.isTogglingSession = false;
+            };
+            ipcRenderer.on('session-state-text', this._sessionStateTextListener);
+
+            this._shortcutListener = (event, keybinds) => {
+                console.log('[AskView] Received updated shortcuts:', keybinds);
+                this.shortcuts = keybinds;
+            };
+            ipcRenderer.on('shortcuts-updated', this._shortcutListener);
+
+            // Handle toggle text input for follow-up questions
+            this._toggleTextInputListener = () => {
+                console.log('[AskView] Received toggle-text-input command');
+                this.showTextInput = !this.showTextInput;
                 this.requestUpdate();
-            });
-            ipcRenderer.on('clear-ask-response', () => {
-                console.log('📤 Clear response signal received');
-                this.currentResponse = '';
-                this.isStreaming = false;
-                this.isLoading = false;
-                this.headerText = 'AI Response';
-                this.requestUpdate();
-            });
-            ipcRenderer.on('window-hide-animation', () => {
-                console.log('📤 Ask window hiding - clearing response content');
-                setTimeout(() => {
-                    this.clearResponseContent();
-                }, 250);
-            });
-            ipcRenderer.on('window-blur', this.handleWindowBlur);
-            ipcRenderer.on('window-did-show', () => {
-                if (!this.currentResponse && !this.isLoading && !this.isStreaming) {
+                if (this.showTextInput) {
                     this.focusTextInput();
                 }
-            });
+            };
+            ipcRenderer.on('toggle-text-input', this._toggleTextInputListener);
 
-            ipcRenderer.on('ask-response-chunk', this.handleStreamChunk);
-            ipcRenderer.on('ask-response-stream-end', this.handleStreamEnd);
+            // Handle show text input for new questions
+            this._showTextInputForNewQuestionListener = () => {
+                console.log('[AskView] Received show-text-input-for-new-question command');
+                this.showTextInput = true;
+                this.currentResponse = '';
+                this.currentQuestion = '';
+                this.isLoading = false;
+                this.isStreaming = false;
+                this.requestUpdate();
+                this.focusTextInput();
+            };
+            ipcRenderer.on('show-text-input-for-new-question', this._showTextInputForNewQuestionListener);
 
-            ipcRenderer.on('scroll-response-up', () => this.handleScroll('up'));
-            ipcRenderer.on('scroll-response-down', () => this.handleScroll('down'));
-            console.log('✅ AskView: IPC 이벤트 리스너 등록 완료');
+            // Handle global send request
+            this._askGlobalSendListener = () => {
+                console.log('[AskView] Received ask-global-send command');
+                this.handleGlobalSendRequest();
+            };
+            ipcRenderer.on('ask-global-send', this._askGlobalSendListener);
+
+            // Handle scroll commands
+            this._scrollUpListener = () => {
+                console.log('[AskView] Received scroll-response-up command');
+                this.handleScroll('up');
+            };
+            ipcRenderer.on('scroll-response-up', this._scrollUpListener);
+
+            this._scrollDownListener = () => {
+                console.log('[AskView] Received scroll-response-down command');
+                this.handleScroll('down');
+            };
+            ipcRenderer.on('scroll-response-down', this._scrollDownListener);
+
+            // Handle window show/hide animations
+            this._windowShowAnimationListener = () => {
+                console.log('[AskView] Received window-show-animation command');
+                this.classList.add('showing');
+                this.classList.remove('hidden', 'hiding');
+            };
+            ipcRenderer.on('window-show-animation', this._windowShowAnimationListener);
+
+            this._windowHideAnimationListener = () => {
+                console.log('[AskView] Received window-hide-animation command');
+                this.classList.add('hiding');
+                this.classList.remove('showing', 'hidden');
+            };
+            ipcRenderer.on('window-hide-animation', this._windowHideAnimationListener);
+
+            this._windowDidShowListener = () => {
+                console.log('[AskView] Received window-did-show command');
+                this.classList.remove('showing');
+            };
+            ipcRenderer.on('window-did-show', this._windowDidShowListener);
+
+            // Handle receiving questions from assistant
+            this._receiveQuestionListener = (event, question) => {
+                console.log('[AskView] Received question from assistant:', question);
+                this.processAssistantQuestion(question);
+            };
+            ipcRenderer.on('receive-question-from-assistant', this._receiveQuestionListener);
+
+            // Handle ask:response events
+            this._askResponseListener = (event, { response, isStreaming }) => {
+                console.log('[AskView] Received ask:response:', { response, isStreaming });
+                this.isStreaming = isStreaming;
+                this.currentResponse = response;
+                this.renderContent();
+            };
+            ipcRenderer.on('ask:response', this._askResponseListener);
+
+            // Handle ask:stream events
+            this._askStreamListener = (event, { token }) => {
+                console.log('[AskView] Received ask:stream token:', token);
+                this.handleStreamChunk(event, { token });
+            };
+            ipcRenderer.on('ask:stream', this._askStreamListener);
+
+            // Handle ask:streamEnd events
+            this._askStreamEndListener = () => {
+                console.log('[AskView] Received ask:streamEnd');
+                this.handleStreamEnd();
+            };
+            ipcRenderer.on('ask:streamEnd', this._askStreamEndListener);
         }
     }
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        this.resizeObserver?.disconnect();
-
-        console.log('📱 AskView disconnectedCallback - IPC 이벤트 리스너 제거');
-
-        document.removeEventListener('click', this.handleDocumentClick, true);
-        document.removeEventListener('keydown', this.handleEscKey);
-
-        if (this.copyTimeout) {
-            clearTimeout(this.copyTimeout);
-        }
-
-        if (this.headerAnimationTimeout) {
-            clearTimeout(this.headerAnimationTimeout);
-        }
-
-        if (this.streamingTimeout) {
-            clearTimeout(this.streamingTimeout);
-        }
-
-        Object.values(this.lineCopyTimeouts).forEach(timeout => clearTimeout(timeout));
+        this.removeEventListener('animationend', this.handleAnimationEnd);
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeListener('ask-global-send', this.handleGlobalSendRequest);
-            ipcRenderer.removeListener('toggle-text-input', this.handleToggleTextInput);
-            ipcRenderer.removeListener('clear-ask-response', () => {});
-            ipcRenderer.removeListener('hide-text-input', () => {});
-            ipcRenderer.removeListener('window-hide-animation', () => {});
-            ipcRenderer.removeListener('window-blur', this.handleWindowBlur);
 
-            ipcRenderer.removeListener('ask-response-chunk', this.handleStreamChunk);
-            ipcRenderer.removeListener('ask-response-stream-end', this.handleStreamEnd);
+            // Remove all event listeners
+            if (this._sessionStateTextListener) {
+                ipcRenderer.removeListener('session-state-text', this._sessionStateTextListener);
+            }
+            if (this._shortcutListener) {
+                ipcRenderer.removeListener('shortcuts-updated', this._shortcutListener);
+            }
+            if (this._toggleTextInputListener) {
+                ipcRenderer.removeListener('toggle-text-input', this._toggleTextInputListener);
+            }
+            if (this._showTextInputForNewQuestionListener) {
+                ipcRenderer.removeListener('show-text-input-for-new-question', this._showTextInputForNewQuestionListener);
+            }
+            if (this._askGlobalSendListener) {
+                ipcRenderer.removeListener('ask-global-send', this._askGlobalSendListener);
+            }
+            if (this._scrollUpListener) {
+                ipcRenderer.removeListener('scroll-response-up', this._scrollUpListener);
+            }
+            if (this._scrollDownListener) {
+                ipcRenderer.removeListener('scroll-response-down', this._scrollDownListener);
+            }
+            if (this._windowShowAnimationListener) {
+                ipcRenderer.removeListener('window-show-animation', this._windowShowAnimationListener);
+            }
+            if (this._windowHideAnimationListener) {
+                ipcRenderer.removeListener('window-hide-animation', this._windowHideAnimationListener);
+            }
+            if (this._windowDidShowListener) {
+                ipcRenderer.removeListener('window-did-show', this._windowDidShowListener);
+            }
+            if (this._receiveQuestionListener) {
+                ipcRenderer.removeListener('receive-question-from-assistant', this._receiveQuestionListener);
+            }
+            if (this._askResponseListener) {
+                ipcRenderer.removeListener('ask:response', this._askResponseListener);
+            }
+            if (this._askStreamListener) {
+                ipcRenderer.removeListener('ask:stream', this._askStreamListener);
+            }
+            if (this._askStreamEndListener) {
+                ipcRenderer.removeListener('ask:streamEnd', this._askStreamEndListener);
+            }
+        }
 
-            ipcRenderer.removeListener('scroll-response-up', () => this.handleScroll('up'));
-            ipcRenderer.removeListener('scroll-response-down', () => this.handleScroll('down'));
-            console.log('✅ AskView: IPC 이벤트 리스너 제거 완료');
+        // Clear timeouts
+        if (this.headerAnimationTimeout) {
+            clearTimeout(this.headerAnimationTimeout);
+        }
+        if (this.copyTimeout) {
+            clearTimeout(this.copyTimeout);
+        }
+        if (this.lineCopyTimeouts) {
+            Object.values(this.lineCopyTimeouts).forEach(timeout => {
+                if (timeout) clearTimeout(timeout);
+            });
         }
     }
     

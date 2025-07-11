@@ -556,16 +556,18 @@ function createWindows() {
                     console.log(`[WindowManager] Ask window visible, hasResponse: ${hasResponse}`);
 
                     if (hasResponse) {
+                        // Show text input for follow-up questions
                         askWindow.webContents.send('toggle-text-input');
-                        console.log('[WindowManager] Sent toggle-text-input command');
+                        console.log('[WindowManager] Sent toggle-text-input command for follow-up');
                     } else {
-                        console.log('[WindowManager] No response found, closing window');
-                        askWindow.webContents.send('window-hide-animation');
+                        // If no response, show text input for new question
+                        askWindow.webContents.send('show-text-input-for-new-question');
+                        console.log('[WindowManager] Sent show-text-input-for-new-question command');
                     }
                 } catch (error) {
                     console.error('[WindowManager] Error checking Ask window state:', error);
-                    console.log('[WindowManager] Falling back to toggle text input');
-                    askWindow.webContents.send('toggle-text-input');
+                    console.log('[WindowManager] Falling back to show text input');
+                    askWindow.webContents.send('show-text-input-for-new-question');
                 }
             } else {
                 console.log('[WindowManager] Showing hidden Ask window');
@@ -1230,6 +1232,7 @@ function getDefaultKeybinds() {
         toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
         toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
         nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
+        closeAsk: isMac ? 'Cmd+Escape' : 'Ctrl+Escape',
         manualScreenshot: isMac ? 'Cmd+Shift+S' : 'Ctrl+Shift+S',
         previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
         nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
@@ -1374,6 +1377,14 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                     break;
                 case 'nextResponse':
                     callback = () => sendToRenderer('navigate-next-response');
+                    break;
+                case 'closeAsk':
+                    callback = () => {
+                        const askWindow = windowPool.get('ask');
+                        if (askWindow && !askWindow.isDestroyed()) {
+                            askWindow.hide();
+                        }
+                    };
                     break;
             }
             

@@ -1047,6 +1047,7 @@ export class SettingsView extends LitElement {
         return [
             { name: 'Show / Hide', accelerator: this.shortcuts.toggleVisibility },
             { name: 'Ask Anything', accelerator: this.shortcuts.nextStep },
+            { name: 'Close Ask Window', accelerator: this.shortcuts.closeAsk },
             { name: 'Scroll Up Response', accelerator: this.shortcuts.scrollUp },
             { name: 'Scroll Down Response', accelerator: this.shortcuts.scrollDown },
         ];
