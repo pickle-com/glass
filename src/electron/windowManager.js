@@ -34,7 +34,7 @@ if (shouldUseLiquidGlass) {
 }
 /* ────────────────[ GLASS BYPASS ]─────────────── */
 
-let isContentProtectionOn = true;
+let isContentProtectionOn = false;
 let currentDisplayId = null;
 
 let mouseEventsIgnored = false;
@@ -62,14 +62,18 @@ let movementManager = null;
 
 let storedProvider = 'openai';
 
-const featureWindows = ['listen','ask','settings'];
+const featureWindows = ['listen','ask','settings','task'];
 function isAllowed(name) {
     if (name === 'header') return true;
     return featureWindows.includes(name) && currentHeaderState === 'main';
 }
 
 function createFeatureWindows(header) {
-    if (windowPool.has('listen')) return;
+    console.log('[WindowManager] createFeatureWindows called');
+    if (windowPool.has('listen')) {
+        console.log('[WindowManager] Feature windows already exist');
+        return;
+    }
 
     const commonChildOptions = {
         parent: header,
@@ -119,7 +123,18 @@ function createFeatureWindows(header) {
     windowPool.set('listen', listen);
 
     // ask
-    const ask = new BrowserWindow({ ...commonChildOptions, width:600 });
+    const ask = new BrowserWindow({ 
+        ...commonChildOptions, 
+        parent: undefined, // Remove parent to allow independent dragging
+        width: 320,      // Narrower for vertical bar
+        height: 800,     // Increased from 600 to 800 for better vertical space
+        minWidth: 280,   // Minimum width constraint
+        maxWidth: 400,   // Maximum width constraint
+        minHeight: 500,  // Increased minimum height
+        maxHeight: 1000, // Increased from 800 to 1000 for maximum height
+        movable: true,   // Allow dragging
+        resizable: true  // Allow resizing
+    });
     ask.setContentProtection(isContentProtectionOn);
     ask.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
     if (process.platform === 'darwin') {
@@ -147,6 +162,12 @@ function createFeatureWindows(header) {
     }
 
     ask.on('blur',()=>ask.webContents.send('window-blur'));
+    
+    // Track if user has manually moved the ask window
+    ask.on('moved', () => {
+        ask.__userMoved = true;
+        console.log('[WindowManager] Ask window moved by user - disabling auto-positioning');
+    });
     
     // Open DevTools in development
     if (!app.isPackaged) {
@@ -184,6 +205,44 @@ function createFeatureWindows(header) {
         });
     }
     windowPool.set('settings', settings);   
+
+    // task
+    const task = new BrowserWindow({
+        ...commonChildOptions,
+        width: 320,
+        height: 300,
+        minWidth: 280,
+        maxWidth: 400,
+        minHeight: 200,
+        maxHeight: 500,
+        parent: undefined
+    });
+    task.setContentProtection(isContentProtectionOn);
+    task.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
+    if (process.platform === 'darwin') {
+        task.setWindowButtonVisibility(false);
+    }
+    const taskLoadOptions = { query: { view: 'task' } };
+    if (!shouldUseLiquidGlass) {
+        task.loadFile(path.join(__dirname, '../app/content.html'), taskLoadOptions);
+    }
+    else {
+        taskLoadOptions.query.glass = 'true';
+        task.loadFile(path.join(__dirname, '../app/content.html'), taskLoadOptions);
+        task.webContents.once('did-finish-load', () => {
+            const viewId = liquidGlass.addView(task.getNativeWindowHandle(), {
+                cornerRadius: 12,
+                tintColor: '#FF00001A', // Red tint
+                opaque: false, 
+            });
+            if (viewId !== -1) {
+                liquidGlass.unstable_setVariant(viewId, 2);
+            }
+        });
+    }
+    windowPool.set('task', task);
+    console.log('[WindowManager] Task window created and added to pool');
+    console.log('[WindowManager] Current windowPool keys:', Array.from(windowPool.keys()));
 }
 
 function destroyFeatureWindows() {
@@ -759,6 +818,18 @@ function setupIpcHandlers(movementManager) {
         return isContentProtectionOn;
     });
 
+    // Reset ask window position
+    ipcMain.handle('reset-ask-window-position', () => {
+        const ask = windowPool.get('ask');
+        if (ask && !ask.isDestroyed()) {
+            ask.__userMoved = false;
+            console.log('[WindowManager] Ask window position reset - re-enabling auto-positioning');
+            updateLayout(); // Trigger layout update to reposition
+            return { success: true };
+        }
+        return { success: false, error: 'Ask window not found' };
+    });
+
     ipcMain.on('header-state-changed', (event, state) => {
         console.log(`[WindowManager] Header state changed to: ${state}`);
         currentHeaderState = state;
@@ -1108,6 +1179,10 @@ function setupIpcHandlers(movementManager) {
         if (askWindow && !askWindow.isFocused()) {
             askWindow.hide();
         }
+    });
+
+    ipcMain.on('update-layout', () => {
+        updateLayout();
     });
 }
 

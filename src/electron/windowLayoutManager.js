@@ -62,6 +62,7 @@ class WindowLayoutManager {
         const strategy = this.determineLayoutStrategy(headerBounds, screenWidth, screenHeight, relativeX, relativeY);
 
         this.positionFeatureWindows(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
+        this.positionTaskWindow(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
         this.positionSettingsWindow(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY);
     }
 
@@ -100,44 +101,88 @@ class WindowLayoutManager {
         if (!askVisible && !listenVisible) return;
 
         const PAD = 8;
-        const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
         let askBounds = askVisible ? ask.getBounds() : null;
         let listenBounds = listenVisible ? listen.getBounds() : null;
 
-        if (askVisible && listenVisible) {
-            const combinedWidth = listenBounds.width + PAD + askBounds.width;
-            let groupStartXRel = headerCenterXRel - combinedWidth / 2;
-            let listenXRel = groupStartXRel;
-            let askXRel = groupStartXRel + listenBounds.width + PAD;
-
-            if (listenXRel < PAD) {
-                listenXRel = PAD;
-                askXRel = listenXRel + listenBounds.width + PAD;
-            }
-            if (askXRel + askBounds.width > screenWidth - PAD) {
-                askXRel = screenWidth - PAD - askBounds.width;
-                listenXRel = askXRel - listenBounds.width - PAD;
-            }
-
-            let yRel = (strategy.primary === 'above')
-                ? headerBounds.y - workAreaY - Math.max(askBounds.height, listenBounds.height) - PAD
-                : headerBounds.y - workAreaY + headerBounds.height + PAD;
-
-            listen.setBounds({ x: Math.round(listenXRel + workAreaX), y: Math.round(yRel + workAreaY), width: listenBounds.width, height: listenBounds.height });
-            ask.setBounds({ x: Math.round(askXRel + workAreaX), y: Math.round(yRel + workAreaY), width: askBounds.width, height: askBounds.height });
-        } else {
-            const win = askVisible ? ask : listen;
-            const winBounds = askVisible ? askBounds : listenBounds;
-            let xRel = headerCenterXRel - winBounds.width / 2;
-            let yRel = (strategy.primary === 'above')
-                ? headerBounds.y - workAreaY - winBounds.height - PAD
-                : headerBounds.y - workAreaY + headerBounds.height + PAD;
-
-            xRel = Math.max(PAD, Math.min(screenWidth - winBounds.width - PAD, xRel));
-            yRel = Math.max(PAD, Math.min(screenHeight - winBounds.height - PAD, yRel));
-
-            win.setBounds({ x: Math.round(xRel + workAreaX), y: Math.round(yRel + workAreaY), width: winBounds.width, height: winBounds.height });
+        // Position ask window on the left side as a vertical bar (only if not moved by user)
+        if (askVisible && !ask.__userMoved) {
+            const askX = workAreaX + PAD; // Left edge of screen with padding
+            const askY = workAreaY + PAD; // Top with padding
+            const askWidth = askBounds.width;
+            const askHeight = Math.min(askBounds.height, screenHeight - 2 * PAD); // Fit within screen height
+            
+            ask.setBounds({ 
+                x: askX, 
+                y: askY, 
+                width: askWidth, 
+                height: askHeight 
+            });
         }
+
+        // Position listen window normally (relative to header) if ask is not visible, 
+        // or to the right of ask window if both are visible
+        if (listenVisible) {
+            if (askVisible && !ask.__userMoved) {
+                // Position listen to the right of ask window (only if ask is in default position)
+                const listenX = workAreaX + PAD + askBounds.width + PAD;
+                const listenY = workAreaY + PAD;
+                const listenWidth = listenBounds.width;
+                const listenHeight = Math.min(listenBounds.height, screenHeight - 2 * PAD);
+                
+                listen.setBounds({ 
+                    x: listenX, 
+                    y: listenY, 
+                    width: listenWidth, 
+                    height: listenHeight 
+                });
+            } else {
+                // Position listen normally relative to header when ask is not visible
+                const headerCenterXRel = headerBounds.x - workAreaX + headerBounds.width / 2;
+                let xRel = headerCenterXRel - listenBounds.width / 2;
+                let yRel = (strategy.primary === 'above')
+                    ? headerBounds.y - workAreaY - listenBounds.height - PAD
+                    : headerBounds.y - workAreaY + headerBounds.height + PAD;
+
+                xRel = Math.max(PAD, Math.min(screenWidth - listenBounds.width - PAD, xRel));
+                yRel = Math.max(PAD, Math.min(screenHeight - listenBounds.height - PAD, yRel));
+
+                listen.setBounds({ x: Math.round(xRel + workAreaX), y: Math.round(yRel + workAreaY), width: listenBounds.width, height: listenBounds.height });
+            }
+        }
+    }
+
+    /**
+     * 'task' 창의 위치를 조정합니다 (항상 상단 우측).
+     */
+    positionTaskWindow(headerBounds, strategy, screenWidth, screenHeight, workAreaX, workAreaY) {
+        const task = this.windowPool.get('task');
+        console.log('[WindowLayoutManager] positionTaskWindow called');
+        console.log('[WindowLayoutManager] task window exists:', !!task);
+        console.log('[WindowLayoutManager] task window visible:', task ? task.isVisible() : 'N/A');
+        
+        if (!task?.getBounds || !task.isVisible()) {
+            console.log('[WindowLayoutManager] Task window not available or not visible');
+            return;
+        }
+
+        const taskBounds = task.getBounds();
+        const PAD = 16;
+        
+        // Position in top right corner of screen
+        const taskX = workAreaX + screenWidth - taskBounds.width - PAD;
+        const taskY = workAreaY + PAD;
+        
+        console.log('[WindowLayoutManager] Positioning task window at:', { taskX, taskY, width: taskBounds.width, height: taskBounds.height });
+        console.log('[WindowLayoutManager] Screen dimensions:', { screenWidth, screenHeight, workAreaX, workAreaY });
+        
+        task.setBounds({ 
+            x: taskX, 
+            y: taskY, 
+            width: taskBounds.width, 
+            height: taskBounds.height 
+        });
+        
+        console.log('[WindowLayoutManager] Task window positioned successfully');
     }
 
     /**

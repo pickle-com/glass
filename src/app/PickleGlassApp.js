@@ -2,6 +2,7 @@ import { html, css, LitElement } from '../assets/lit-core-2.7.4.min.js';
 import { SettingsView } from '../features/settings/SettingsView.js';
 import { AssistantView } from '../features/listen/AssistantView.js';
 import { AskView } from '../features/ask/AskView.js';
+import { TaskView } from '../features/task/TaskView.js';
 
 import '../features/listen/renderer/renderer.js';
 
@@ -22,7 +23,7 @@ export class PickleGlassApp extends LitElement {
             height: 100%;
         }
 
-        ask-view, settings-view, history-view, help-view, setup-view {
+        ask-view, settings-view, history-view, help-view, setup-view, task-view {
             display: block;
             width: 100%;
             height: 100%;
@@ -274,6 +275,8 @@ export class PickleGlassApp extends LitElement {
                 return html`<help-view></help-view>`;
             case 'setup':
                 return html`<setup-view></setup-view>`;
+            case 'task':
+                return html`<task-view></task-view>`;
             default:
                 return html`<div>Unknown view: ${this.currentView}</div>`;
         }
