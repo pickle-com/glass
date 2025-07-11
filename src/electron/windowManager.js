@@ -20,6 +20,7 @@ try {
 const authService = require('../common/services/authService');
 const systemSettingsRepository = require('../common/repositories/systemSettings');
 const userRepository = require('../common/repositories/user');
+const { getSettings } = require('../features/settings/settingsService');
 const fetch = require('node-fetch');
 const Store = require('electron-store');
 const shortCutStore = new Store({
@@ -76,6 +77,159 @@ function updateLayout() {
 }
 
 let movementManager = null;
+
+
+async function toggleFeature(featureName) {
+    if (!windowPool.get(featureName) && currentHeaderState === 'main') {
+        createFeatureWindows(windowPool.get('header'));
+    }
+
+    const header = windowPool.get('header');
+    if (featureName === 'listen') {
+        console.log(`[WindowManager] Toggling feature: ${featureName}`);
+        const listenWindow = windowPool.get(featureName);
+        const listenService = global.listenService;
+        if (listenService && listenService.isSessionActive()) {
+            console.log('[WindowManager] Listen session is active, closing it via toggle.');
+            await listenService.closeSession();
+            listenWindow.webContents.send('session-state-changed', { isActive: false });
+            header.webContents.send('session-state-text', 'Done');
+            // return;
+        } else {
+            if (listenWindow.isVisible()) {
+                listenWindow.webContents.send('window-hide-animation');
+                listenWindow.webContents.send('session-state-changed', { isActive: false });
+                header.webContents.send('session-state-text', 'Listen');
+            } else {
+                listenWindow.show();
+                updateLayout();
+                listenWindow.webContents.send('window-show-animation');
+                
+                // Get current language setting and pass it to initializeSession
+                try {
+                    const settings = await getSettings();
+                    const language = settings.language || 'en';
+                    console.log(`[WindowManager] Initializing session with language: ${language}`);
+                    await listenService.initializeSession(language);
+                } catch (error) {
+                    console.error('[WindowManager] Failed to get language setting, using default:', error);
+                    await listenService.initializeSession('en');
+                }
+                
+                listenWindow.webContents.send('session-state-changed', { isActive: true });
+                header.webContents.send('session-state-text', 'Stop');
+            }
+        }
+    }
+
+    if (featureName === 'ask') {
+        let askWindow = windowPool.get('ask');
+
+        if (!askWindow || askWindow.isDestroyed()) {
+            console.log('[WindowManager] Ask window not found, creating new one');
+            return;
+        }
+
+        if (askWindow.isVisible()) {
+            try {
+                const hasResponse = await askWindow.webContents.executeJavaScript(`
+                    (() => {
+                        try {
+                            // PickleGlassApp의 Shadow DOM 내부로 접근
+                            const pickleApp = document.querySelector('pickle-glass-app');
+                            if (!pickleApp || !pickleApp.shadowRoot) {
+                                console.log('PickleGlassApp not found');
+                                return false;
+                            }
+                            
+                            // PickleGlassApp의 shadowRoot 내부에서 ask-view 찾기
+                            const askView = pickleApp.shadowRoot.querySelector('ask-view');
+                            if (!askView) {
+                                console.log('AskView not found in PickleGlassApp shadow DOM');
+                                return false;
+                            }
+                            
+                            console.log('AskView found, checking state...');
+                            console.log('currentResponse:', askView.currentResponse);
+                            console.log('isLoading:', askView.isLoading);
+                            console.log('isStreaming:', askView.isStreaming);
+                            
+                            const hasContent = !!(askView.currentResponse || askView.isLoading || askView.isStreaming);
+                            
+                            if (!hasContent && askView.shadowRoot) {
+                                const responseContainer = askView.shadowRoot.querySelector('.response-container');
+                                if (responseContainer && !responseContainer.classList.contains('hidden')) {
+                                    const textContent = responseContainer.textContent.trim();
+                                    const hasActualContent = textContent && 
+                                        !textContent.includes('Ask a question to see the response here') &&
+                                        textContent.length > 0;
+                                    console.log('Response container content check:', hasActualContent);
+                                    return hasActualContent;
+                                }
+                            }
+                            
+                            return hasContent;
+                        } catch (error) {
+                            console.error('Error checking AskView state:', error);
+                            return false;
+                        }
+                    })()
+                `);
+
+                console.log(`[WindowManager] Ask window visible, hasResponse: ${hasResponse}`);
+
+                if (hasResponse) {
+                    askWindow.webContents.send('toggle-text-input');
+                    console.log('[WindowManager] Sent toggle-text-input command');
+                } else {
+                    console.log('[WindowManager] No response found, closing window');
+                    askWindow.webContents.send('window-hide-animation');
+                }
+            } catch (error) {
+                console.error('[WindowManager] Error checking Ask window state:', error);
+                console.log('[WindowManager] Falling back to toggle text input');
+                askWindow.webContents.send('toggle-text-input');
+            }
+        } else {
+            console.log('[WindowManager] Showing hidden Ask window');
+            askWindow.show();
+            updateLayout();
+            askWindow.webContents.send('window-show-animation');
+            askWindow.webContents.send('window-did-show');
+        }
+    }
+
+    if (featureName === 'settings') {
+        const settingsWindow = windowPool.get(featureName);
+
+        if (settingsWindow) {
+            if (settingsWindow.isDestroyed()) {
+                console.error(`Window ${featureName} is destroyed, cannot toggle`);
+                return;
+            }
+
+            if (settingsWindow.isVisible()) {
+                if (featureName === 'settings') {
+                    settingsWindow.webContents.send('settings-window-hide-animation');
+                } else {
+                    settingsWindow.webContents.send('window-hide-animation');
+                }
+            } else {
+                try {
+                    settingsWindow.show();
+                    updateLayout();
+
+                    settingsWindow.webContents.send('window-show-animation');
+                } catch (e) {
+                    console.error('Error showing window:', e);
+                }
+            }
+        } else {
+            console.error(`Window not found for feature: ${featureName}`);
+            console.error('Available windows:', Array.from(windowPool.keys()));
+        }
+    }
+}
 
 
 function createFeatureWindows(header, namesToCreate) {
@@ -450,144 +604,7 @@ function createWindows() {
     ipcMain.handle('toggle-all-windows-visibility', () => toggleAllWindowsVisibility());
 
     ipcMain.handle('toggle-feature', async (event, featureName) => {
-        if (!windowPool.get(featureName) && currentHeaderState === 'main') {
-            createFeatureWindows(windowPool.get('header'));
-        }
-
-        const header = windowPool.get('header');
-        if (featureName === 'listen') {
-            console.log(`[WindowManager] Toggling feature: ${featureName}`);
-            const listenWindow = windowPool.get(featureName);
-            const listenService = global.listenService;
-            if (listenService && listenService.isSessionActive()) {
-                console.log('[WindowManager] Listen session is active, closing it via toggle.');
-                await listenService.closeSession();
-                listenWindow.webContents.send('session-state-changed', { isActive: false });
-                header.webContents.send('session-state-text', 'Done');
-                // return;
-            } else {
-                if (listenWindow.isVisible()) {
-                    listenWindow.webContents.send('window-hide-animation');
-                    listenWindow.webContents.send('session-state-changed', { isActive: false });
-                    header.webContents.send('session-state-text', 'Listen');
-                } else {
-                    listenWindow.show();
-                    updateLayout();
-                    listenWindow.webContents.send('window-show-animation');
-                    await listenService.initializeSession();
-                    listenWindow.webContents.send('session-state-changed', { isActive: true });
-                    header.webContents.send('session-state-text', 'Stop');
-                }
-            }
-        }
-
-        if (featureName === 'ask') {
-            let askWindow = windowPool.get('ask');
-
-            if (!askWindow || askWindow.isDestroyed()) {
-                console.log('[WindowManager] Ask window not found, creating new one');
-                return;
-            }
-
-            if (askWindow.isVisible()) {
-                try {
-                    const hasResponse = await askWindow.webContents.executeJavaScript(`
-                        (() => {
-                            try {
-                                // PickleGlassApp의 Shadow DOM 내부로 접근
-                                const pickleApp = document.querySelector('pickle-glass-app');
-                                if (!pickleApp || !pickleApp.shadowRoot) {
-                                    console.log('PickleGlassApp not found');
-                                    return false;
-                                }
-                                
-                                // PickleGlassApp의 shadowRoot 내부에서 ask-view 찾기
-                                const askView = pickleApp.shadowRoot.querySelector('ask-view');
-                                if (!askView) {
-                                    console.log('AskView not found in PickleGlassApp shadow DOM');
-                                    return false;
-                                }
-                                
-                                console.log('AskView found, checking state...');
-                                console.log('currentResponse:', askView.currentResponse);
-                                console.log('isLoading:', askView.isLoading);
-                                console.log('isStreaming:', askView.isStreaming);
-                                
-                                const hasContent = !!(askView.currentResponse || askView.isLoading || askView.isStreaming);
-                                
-                                if (!hasContent && askView.shadowRoot) {
-                                    const responseContainer = askView.shadowRoot.querySelector('.response-container');
-                                    if (responseContainer && !responseContainer.classList.contains('hidden')) {
-                                        const textContent = responseContainer.textContent.trim();
-                                        const hasActualContent = textContent && 
-                                            !textContent.includes('Ask a question to see the response here') &&
-                                            textContent.length > 0;
-                                        console.log('Response container content check:', hasActualContent);
-                                        return hasActualContent;
-                                    }
-                                }
-                                
-                                return hasContent;
-                            } catch (error) {
-                                console.error('Error checking AskView state:', error);
-                                return false;
-                            }
-                        })()
-                    `);
-
-                    console.log(`[WindowManager] Ask window visible, hasResponse: ${hasResponse}`);
-
-                    if (hasResponse) {
-                        askWindow.webContents.send('toggle-text-input');
-                        console.log('[WindowManager] Sent toggle-text-input command');
-                    } else {
-                        console.log('[WindowManager] No response found, closing window');
-                        askWindow.webContents.send('window-hide-animation');
-                    }
-                } catch (error) {
-                    console.error('[WindowManager] Error checking Ask window state:', error);
-                    console.log('[WindowManager] Falling back to toggle text input');
-                    askWindow.webContents.send('toggle-text-input');
-                }
-            } else {
-                console.log('[WindowManager] Showing hidden Ask window');
-                askWindow.show();
-                updateLayout();
-                askWindow.webContents.send('window-show-animation');
-                askWindow.webContents.send('window-did-show');
-            }
-        }
-
-        if (featureName === 'settings') {
-            const settingsWindow = windowPool.get(featureName);
-
-            if (settingsWindow) {
-                if (settingsWindow.isDestroyed()) {
-                    console.error(`Window ${featureName} is destroyed, cannot toggle`);
-                    return;
-                }
-
-                if (settingsWindow.isVisible()) {
-                    if (featureName === 'settings') {
-                        settingsWindow.webContents.send('settings-window-hide-animation');
-                    } else {
-                        settingsWindow.webContents.send('window-hide-animation');
-                    }
-                } else {
-                    try {
-                        settingsWindow.show();
-                        updateLayout();
-
-                        settingsWindow.webContents.send('window-show-animation');
-                    } catch (e) {
-                        console.error('Error showing window:', e);
-                    }
-                }
-            } else {
-                console.error(`Window not found for feature: ${featureName}`);
-                console.error('Available windows:', Array.from(windowPool.keys()));
-            }
-        }
+        return toggleFeature(featureName);
     });
 
     ipcMain.handle('send-question-to-ask', (event, question) => {
@@ -621,11 +638,7 @@ function createWindows() {
                 adjustedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
             }
             
-            // Ensure width remains fixed for listen window
-            const isListenWindow = senderWindow === windowPool.get('listen');
-            const targetWidth = isListenWindow ? 400 : currentBounds.width;
-            
-            senderWindow.setSize(targetWidth, adjustedHeight, false);
+            senderWindow.setSize(currentBounds.width, adjustedHeight, false);
 
             if (!wasResizable) {
                 senderWindow.setResizable(false);
@@ -950,56 +963,56 @@ function setupIpcHandlers(movementManager) {
         }
     });
 
-    // ipcMain.handle('get-header-position', () => {
-    //     const header = windowPool.get('header');
-    //     if (header) {
-    //         const [x, y] = header.getPosition();
-    //         return { x, y };
-    //     }
-    //     return { x: 0, y: 0 };
-    // });
+    ipcMain.handle('get-header-position', () => {
+        const header = windowPool.get('header');
+        if (header) {
+            const [x, y] = header.getPosition();
+            return { x, y };
+        }
+        return { x: 0, y: 0 };
+    });
 
-    // ipcMain.handle('move-header', (event, newX, newY) => {
-    //     const header = windowPool.get('header');
-    //     if (header) {
-    //         const currentY = newY !== undefined ? newY : header.getBounds().y;
-    //         header.setPosition(newX, currentY, false);
+    ipcMain.handle('move-header', (event, newX, newY) => {
+        const header = windowPool.get('header');
+        if (header) {
+            const currentY = newY !== undefined ? newY : header.getBounds().y;
+            header.setPosition(newX, currentY, false);
 
-    //         updateLayout();
-    //     }
-    // });
+            updateLayout();
+        }
+    });
 
-    // ipcMain.handle('move-header-to', (event, newX, newY) => {
-    //     const header = windowPool.get('header');
-    //     if (header) {
-    //         const targetDisplay = screen.getDisplayNearestPoint({ x: newX, y: newY });
-    //         const { x: workAreaX, y: workAreaY, width, height } = targetDisplay.workArea;
-    //         const headerBounds = header.getBounds();
+    ipcMain.handle('move-header-to', (event, newX, newY) => {
+        const header = windowPool.get('header');
+        if (header) {
+            const targetDisplay = screen.getDisplayNearestPoint({ x: newX, y: newY });
+            const { x: workAreaX, y: workAreaY, width, height } = targetDisplay.workArea;
+            const headerBounds = header.getBounds();
 
-    //         // Only clamp if the new position would actually go out of bounds
-    //         // This prevents progressive restriction of movement
-    //         let clampedX = newX;
-    //         let clampedY = newY;
+            // Only clamp if the new position would actually go out of bounds
+            // This prevents progressive restriction of movement
+            let clampedX = newX;
+            let clampedY = newY;
             
-    //         // Check if we need to clamp X position
-    //         if (newX < workAreaX) {
-    //             clampedX = workAreaX;
-    //         } else if (newX + headerBounds.width > workAreaX + width) {
-    //             clampedX = workAreaX + width - headerBounds.width;
-    //         }
+            // Check if we need to clamp X position
+            if (newX < workAreaX) {
+                clampedX = workAreaX;
+            } else if (newX + headerBounds.width > workAreaX + width) {
+                clampedX = workAreaX + width - headerBounds.width;
+            }
             
-    //         // Check if we need to clamp Y position  
-    //         if (newY < workAreaY) {
-    //             clampedY = workAreaY;
-    //         } else if (newY + headerBounds.height > workAreaY + height) {
-    //             clampedY = workAreaY + height - headerBounds.height;
-    //         }
+            // Check if we need to clamp Y position  
+            if (newY < workAreaY) {
+                clampedY = workAreaY;
+            } else if (newY + headerBounds.height > workAreaY + height) {
+                clampedY = workAreaY + height - headerBounds.height;
+            }
 
-    //         header.setPosition(clampedX, clampedY, false);
+            header.setPosition(clampedX, clampedY, false);
 
-    //         updateLayout();
-    //     }
-    // });
+            updateLayout();
+        }
+    });
 
 
     ipcMain.handle('move-window-step', (event, direction) => {
@@ -1346,17 +1359,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, movementMan
                     callback = () => toggleAllWindowsVisibility();
                     break;
                 case 'nextStep':
-                    callback = () => {
-                        const askWindow = windowPool.get('ask');
-                        if (!askWindow || askWindow.isDestroyed()) return;
-                        if (askWindow.isVisible()) {
-                            askWindow.webContents.send('ask-global-send');
-                        } else {
-                            askWindow.show();
-                            updateLayout();
-                            askWindow.webContents.send('window-show-animation');
-                        }
-                    };
+                    callback = () => toggleFeature('ask');
                     break;
                 case 'scrollUp':
                     callback = () => {
