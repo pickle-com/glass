@@ -41,6 +41,56 @@ export class AskView extends LitElement {
             pointer-events: none;
         }
 
+        @keyframes slideUp {
+            0% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0px);
+            }
+            30% {
+                opacity: 0.7;
+                transform: translateY(-20%) scale(0.98);
+                filter: blur(0.5px);
+            }
+            70% {
+                opacity: 0.3;
+                transform: translateY(-80%) scale(0.92);
+                filter: blur(1.5px);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-150%) scale(0.85);
+                filter: blur(2px);
+            }
+        }
+
+        @keyframes slideDown {
+            0% {
+                opacity: 0;
+                transform: translateY(-150%) scale(0.85);
+                filter: blur(2px);
+            }
+            30% {
+                opacity: 0.5;
+                transform: translateY(-50%) scale(0.92);
+                filter: blur(1px);
+            }
+            65% {
+                opacity: 0.9;
+                transform: translateY(-5%) scale(0.99);
+                filter: blur(0.2px);
+            }
+            85% {
+                opacity: 0.98;
+                transform: translateY(2%) scale(1.005);
+                filter: blur(0px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0px);
+            }
+        }
 
         * {
             font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -202,6 +252,20 @@ export class AskView extends LitElement {
             animation: fadeInOut 0.3s ease-in-out;
         }
 
+        @keyframes fadeInOut {
+            0% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            50% {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
 
         .header-right {
             display: flex;
@@ -356,6 +420,19 @@ export class AskView extends LitElement {
 
         .loading-dot:nth-child(3) {
             animation-delay: 0.4s;
+        }
+
+        @keyframes pulse {
+            0%,
+            80%,
+            100% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+            40% {
+                opacity: 1;
+                transform: scale(1.2);
+            }
         }
 
         .response-line {
@@ -518,6 +595,117 @@ export class AskView extends LitElement {
             height: 100%;
             color: rgba(255, 255, 255, 0.5);
             font-size: 14px;
+        }
+
+        .btn-gap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 4px;
+        }
+
+        /* ────────────────[ GLASS BYPASS ]─────────────── */
+        :host-context(body.has-glass) .ask-container,
+        :host-context(body.has-glass) .response-header,
+        :host-context(body.has-glass) .response-icon,
+        :host-context(body.has-glass) .copy-button,
+        :host-context(body.has-glass) .close-button,
+        :host-context(body.has-glass) .line-copy-button,
+        :host-context(body.has-glass) .text-input-container,
+        :host-context(body.has-glass) .response-container pre,
+        :host-context(body.has-glass) .response-container p code,
+        :host-context(body.has-glass) .response-container pre code {
+            background: transparent !important;
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+        }
+
+        :host-context(body.has-glass) .ask-container::before {
+            display: none !important;
+        }
+
+        :host-context(body.has-glass) .copy-button:hover,
+        :host-context(body.has-glass) .close-button:hover,
+        :host-context(body.has-glass) .line-copy-button,
+        :host-context(body.has-glass) .line-copy-button:hover,
+        :host-context(body.has-glass) .response-line:hover {
+            background: transparent !important;
+        }
+
+        :host-context(body.has-glass) .response-container::-webkit-scrollbar-track,
+        :host-context(body.has-glass) .response-container::-webkit-scrollbar-thumb {
+            background: transparent !important;
+        }
+
+        .submit-btn, .clear-btn {
+            display: flex;
+            align-items: center;
+            background: transparent;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            margin-left: 8px;
+            font-size: 13px;
+            font-family: 'Helvetica Neue', sans-serif;
+            font-weight: 500;
+            overflow: hidden;
+            cursor: pointer;
+            transition: background 0.15s;
+            height: 32px;
+            padding: 0 10px;
+            box-shadow: none;
+        }
+        .submit-btn:hover, .clear-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .btn-label {
+            margin-right: 8px;
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+        .btn-icon {
+            background: rgba(255,255,255,0.1);
+            border-radius: 13%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+        }
+        .btn-icon img, .btn-icon svg {
+            width: 13px;
+            height: 13px;
+            display: block;
+        }
+        .header-clear-btn {
+            background: transparent;
+            border: none;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            cursor: pointer;
+            padding: 0 2px;
+        }
+        .header-clear-btn .icon-box {
+            color: white;
+            font-size: 12px;
+            font-family: 'Helvetica Neue', sans-serif;
+            font-weight: 500;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 13%;
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header-clear-btn:hover .icon-box {
+            background-color: rgba(255,255,255,0.18);
         }
     `;
 
@@ -792,9 +980,9 @@ export class AskView extends LitElement {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeListener('ask-global-send', this.handleGlobalSendRequest);
             ipcRenderer.removeListener('toggle-text-input', this.handleToggleTextInput);
-            ipcRenderer.removeListener('clear-ask-response', () => {});
-            ipcRenderer.removeListener('hide-text-input', () => {});
-            ipcRenderer.removeListener('window-hide-animation', () => {});
+            ipcRenderer.removeListener('clear-ask-response', () => { });
+            ipcRenderer.removeListener('hide-text-input', () => { });
+            ipcRenderer.removeListener('window-hide-animation', () => { });
             ipcRenderer.removeListener('window-blur', this.handleWindowBlur);
 
             ipcRenderer.removeListener('ask-response-chunk', this.handleStreamChunk);
@@ -805,7 +993,7 @@ export class AskView extends LitElement {
             console.log('✅ AskView: IPC 이벤트 리스너 제거 완료');
         }
     }
-    
+
     handleScroll(direction) {
         const scrollableElement = this.shadowRoot.querySelector('#responseContainer');
         if (scrollableElement) {
@@ -1205,10 +1393,10 @@ export class AskView extends LitElement {
         }
     }
 
-    focusTextInput(){
+    focusTextInput() {
         requestAnimationFrame(() => {
             const textInput = this.shadowRoot?.getElementById('textInput');
-            if (textInput){
+            if (textInput) {
                 textInput.focus();
             }
         });
@@ -1323,6 +1511,15 @@ export class AskView extends LitElement {
                         @focus=${this.handleInputFocus}
                         @blur=${this.handleInputBlur}
                     />
+                    <button
+                        class="submit-btn"
+                        @click=${this.handleSendText}
+                    >
+                        <span class="btn-label">Submit</span>
+                        <span class="btn-icon">
+                            ↵
+                        </span>
+                    </button>
                 </div>
             </div>
         `;
@@ -1333,15 +1530,15 @@ export class AskView extends LitElement {
         if (!window.require) return;
 
         this.updateComplete.then(() => {
-            const headerEl   = this.shadowRoot.querySelector('.response-header');
+            const headerEl = this.shadowRoot.querySelector('.response-header');
             const responseEl = this.shadowRoot.querySelector('.response-container');
-            const inputEl    = this.shadowRoot.querySelector('.text-input-container');
+            const inputEl = this.shadowRoot.querySelector('.text-input-container');
 
             if (!headerEl || !responseEl) return;
 
-            const headerHeight   = headerEl.classList.contains('hidden') ? 0 : headerEl.offsetHeight;
+            const headerHeight = headerEl.classList.contains('hidden') ? 0 : headerEl.offsetHeight;
             const responseHeight = responseEl.scrollHeight;
-            const inputHeight    = (inputEl && !inputEl.classList.contains('hidden')) ? inputEl.offsetHeight : 0;
+            const inputHeight = (inputEl && !inputEl.classList.contains('hidden')) ? inputEl.offsetHeight : 0;
 
             const idealHeight = headerHeight + responseHeight + inputHeight;
 

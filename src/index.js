@@ -396,21 +396,6 @@ function setupGeneralIpcHandlers() {
     const userRepository = require('./common/repositories/user');
     const presetRepository = require('./common/repositories/preset');
 
-    ipcMain.handle('save-api-key', (event, apiKey) => {
-        try {
-            // The adapter injects the UID and handles local/firebase logic.
-            // Assuming a default provider if not specified.
-            userRepository.saveApiKey(apiKey, 'openai');
-            BrowserWindow.getAllWindows().forEach(win => {
-                win.webContents.send('api-key-updated');
-            });
-            return { success: true };
-        } catch (error) {
-            console.error('IPC: Failed to save API key:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
     ipcMain.handle('get-user-presets', () => {
         // The adapter injects the UID.
         return presetRepository.getPresets();

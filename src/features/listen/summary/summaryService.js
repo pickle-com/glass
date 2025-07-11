@@ -27,23 +27,6 @@ class SummaryService {
         this.currentSessionId = sessionId;
     }
 
-    // async getApiKey() {
-    //     const storedKey = await getStoredApiKey();
-    //     if (storedKey) {
-    //         console.log('[SummaryService] Using stored API key');
-    //         return storedKey;
-    //     }
-
-    //     const envKey = process.env.OPENAI_API_KEY;
-    //     if (envKey) {
-    //         console.log('[SummaryService] Using environment API key');
-    //         return envKey;
-    //     }
-
-    //     console.error('[SummaryService] No API key found in storage or environment');
-    //     return null;
-    // }
-
     sendToRenderer(channel, data) {
         BrowserWindow.getAllWindows().forEach(win => {
             if (!win.isDestroyed()) {
@@ -327,7 +310,7 @@ Keep all points concise and build upon previous analysis if provided.`,
                 .then(data => {
                     if (data) {
                         console.log('📤 Sending structured data to renderer');
-                        this.sendToRenderer('update-structured-data', data);
+                        this.sendToRenderer('summary-update', data);
                         
                         // Notify callback
                         if (this.onAnalysisComplete) {

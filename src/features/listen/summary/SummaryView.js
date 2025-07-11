@@ -264,7 +264,7 @@ export class SummaryView extends LitElement {
         super.connectedCallback();
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('update-structured-data', (event, data) => {
+            ipcRenderer.on('summary-update', (event, data) => {
                 this.structuredData = data;
                 this.requestUpdate();
             });
@@ -275,7 +275,7 @@ export class SummaryView extends LitElement {
         super.disconnectedCallback();
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('update-structured-data');
+            ipcRenderer.removeAllListeners('summary-update');
         }
     }
 

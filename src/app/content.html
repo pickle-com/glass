@@ -304,11 +304,6 @@
             const params = new URLSearchParams(window.location.search);
             if (params.get('glass') === 'true') {
                 document.body.classList.add('has-glass');
-                // --- ADDED: Link to centralized glass-bypass styles ---
-                const link = document.createElement('link');
-                link.rel = 'stylesheet';
-                link.href = '../common/styles/glass-bypass.css';
-                document.head.appendChild(link);
             }
         </script>
     </body>

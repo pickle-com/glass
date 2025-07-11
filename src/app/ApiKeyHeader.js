@@ -259,6 +259,29 @@ export class ApiKeyHeader extends LitElement {
             font-weight: 500; /* Medium */
             margin: 10px 0;
         }
+        /* ────────────────[ GLASS BYPASS ]─────────────── */
+        :host-context(body.has-glass) .container,
+        :host-context(body.has-glass) .api-input,
+        :host-context(body.has-glass) .provider-select,
+        :host-context(body.has-glass) .action-button,
+        :host-context(body.has-glass) .close-button {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+        }
+
+        :host-context(body.has-glass) .container::after,
+        :host-context(body.has-glass) .action-button::after {
+            display: none !important;
+        }
+
+        :host-context(body.has-glass) .action-button:hover,
+        :host-context(body.has-glass) .provider-select:hover,
+        :host-context(body.has-glass) .close-button:hover {
+            background: transparent !important;
+        }
     `
 
   constructor() {
