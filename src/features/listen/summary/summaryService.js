@@ -324,7 +324,7 @@ Keep all points concise and build upon previous analysis if provided.`,
                 .then(data => {
                     if (data) {
                         console.log('📤 Sending structured data to renderer');
-                        this.sendToRenderer('update-structured-data', data);
+                        this.sendToRenderer('summary-update', data);
                         
                         // Notify callback
                         if (this.onAnalysisComplete) {

@@ -116,13 +116,9 @@ function createFeatureWindows(header, namesToCreate) {
                     listenLoadOptions.query.glass = 'true';
                     listen.loadFile(path.join(__dirname, '../app/content.html'), listenLoadOptions);
                     listen.webContents.once('did-finish-load', () => {
-                        const viewId = liquidGlass.addView(listen.getNativeWindowHandle(), {
-                            cornerRadius: 12,
-                            tintColor: '#FF00001A', // Red tint
-                            opaque: false, 
-                        });
+                        const viewId = liquidGlass.addView(listen.getNativeWindowHandle());
                         if (viewId !== -1) {
-                            liquidGlass.unstable_setVariant(viewId, 2);
+                            liquidGlass.unstable_setVariant(viewId, liquidGlass.GlassMaterialVariant.bubbles);
                             // liquidGlass.unstable_setScrim(viewId, 1);
                             // liquidGlass.unstable_setSubdued(viewId, 1);
                         }
@@ -148,13 +144,9 @@ function createFeatureWindows(header, namesToCreate) {
                     askLoadOptions.query.glass = 'true';
                     ask.loadFile(path.join(__dirname, '../app/content.html'), askLoadOptions);
                     ask.webContents.once('did-finish-load', () => {
-                        const viewId = liquidGlass.addView(ask.getNativeWindowHandle(), {
-                            cornerRadius: 12,
-                            tintColor: '#FF00001A', // Red tint
-                            opaque: false, 
-                        });
+                        const viewId = liquidGlass.addView(ask.getNativeWindowHandle());
                         if (viewId !== -1) {
-                            liquidGlass.unstable_setVariant(viewId, 2);
+                            liquidGlass.unstable_setVariant(viewId, liquidGlass.GlassMaterialVariant.bubbles);
                             // liquidGlass.unstable_setScrim(viewId, 1);
                             // liquidGlass.unstable_setSubdued(viewId, 1);
                         }
@@ -189,13 +181,9 @@ function createFeatureWindows(header, namesToCreate) {
                     settings.loadFile(path.join(__dirname,'../app/content.html'), settingsLoadOptions)
                         .catch(console.error);
                     settings.webContents.once('did-finish-load', () => {
-                        const viewId = liquidGlass.addView(settings.getNativeWindowHandle(), {
-                            cornerRadius: 12,
-                            tintColor: '#FF00001A', // Red tint
-                            opaque: false, 
-                        });
+                        const viewId = liquidGlass.addView(settings.getNativeWindowHandle());
                         if (viewId !== -1) {
-                            liquidGlass.unstable_setVariant(viewId, 2);
+                            liquidGlass.unstable_setVariant(viewId, liquidGlass.GlassMaterialVariant.bubbles);
                             // liquidGlass.unstable_setScrim(viewId, 1);
                             // liquidGlass.unstable_setSubdued(viewId, 1);
                         }
@@ -254,11 +242,9 @@ function createFeatureWindows(header, namesToCreate) {
                     loadOptions.query.glass = 'true';
                     shortcutEditor.loadFile(path.join(__dirname, '../app/content.html'), loadOptions);
                     shortcutEditor.webContents.once('did-finish-load', () => {
-                        const viewId = liquidGlass.addView(shortcutEditor.getNativeWindowHandle(), {
-                            cornerRadius: 12, tintColor: '#FF00001A', opaque: false, 
-                        });
+                        const viewId = liquidGlass.addView(shortcutEditor.getNativeWindowHandle());
                         if (viewId !== -1) {
-                            liquidGlass.unstable_setVariant(viewId, 2);
+                            liquidGlass.unstable_setVariant(viewId, liquidGlass.GlassMaterialVariant.bubbles);
                         }
                     });
                 }
@@ -408,13 +394,9 @@ function createWindows() {
         headerLoadOptions.query = { glass: 'true' };
         header.loadFile(path.join(__dirname, '../app/header.html'), headerLoadOptions);
         header.webContents.once('did-finish-load', () => {
-            const viewId = liquidGlass.addView(header.getNativeWindowHandle(), {
-                cornerRadius: 12,
-                tintColor: '#FF00001A', // Red tint
-                opaque: false, 
-            });
+            const viewId = liquidGlass.addView(header.getNativeWindowHandle());
             if (viewId !== -1) {
-                liquidGlass.unstable_setVariant(viewId, 2); 
+                liquidGlass.unstable_setVariant(viewId, liquidGlass.GlassMaterialVariant.bubbles);
                 // liquidGlass.unstable_setScrim(viewId, 1); 
                 // liquidGlass.unstable_setSubdued(viewId, 1);
             }
@@ -967,6 +949,57 @@ function setupIpcHandlers(movementManager) {
             updateLayout();
         }
     });
+
+    // ipcMain.handle('get-header-position', () => {
+    //     const header = windowPool.get('header');
+    //     if (header) {
+    //         const [x, y] = header.getPosition();
+    //         return { x, y };
+    //     }
+    //     return { x: 0, y: 0 };
+    // });
+
+    // ipcMain.handle('move-header', (event, newX, newY) => {
+    //     const header = windowPool.get('header');
+    //     if (header) {
+    //         const currentY = newY !== undefined ? newY : header.getBounds().y;
+    //         header.setPosition(newX, currentY, false);
+
+    //         updateLayout();
+    //     }
+    // });
+
+    // ipcMain.handle('move-header-to', (event, newX, newY) => {
+    //     const header = windowPool.get('header');
+    //     if (header) {
+    //         const targetDisplay = screen.getDisplayNearestPoint({ x: newX, y: newY });
+    //         const { x: workAreaX, y: workAreaY, width, height } = targetDisplay.workArea;
+    //         const headerBounds = header.getBounds();
+
+    //         // Only clamp if the new position would actually go out of bounds
+    //         // This prevents progressive restriction of movement
+    //         let clampedX = newX;
+    //         let clampedY = newY;
+            
+    //         // Check if we need to clamp X position
+    //         if (newX < workAreaX) {
+    //             clampedX = workAreaX;
+    //         } else if (newX + headerBounds.width > workAreaX + width) {
+    //             clampedX = workAreaX + width - headerBounds.width;
+    //         }
+            
+    //         // Check if we need to clamp Y position  
+    //         if (newY < workAreaY) {
+    //             clampedY = workAreaY;
+    //         } else if (newY + headerBounds.height > workAreaY + height) {
+    //             clampedY = workAreaY + height - headerBounds.height;
+    //         }
+
+    //         header.setPosition(clampedX, clampedY, false);
+
+    //         updateLayout();
+    //     }
+    // });
 
 
     ipcMain.handle('move-window-step', (event, direction) => {
