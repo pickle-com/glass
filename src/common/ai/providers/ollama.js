@@ -1,6 +1,22 @@
 const http = require('http');
 const fetch = require('node-fetch');
 
+class OllamaProvider {
+    static async validateApiKey() {
+        try {
+            const response = await fetch('http://localhost:11434/api/tags');
+            if (response.ok) {
+                return { success: true };
+            } else {
+                return { success: false, error: 'Ollama service is not running. Please start Ollama first.' };
+            }
+        } catch (error) {
+            return { success: false, error: 'Cannot connect to Ollama. Please ensure Ollama is installed and running.' };
+        }
+    }
+}
+
+
 function convertMessagesToOllamaFormat(messages) {
     return messages.map(msg => {
         if (Array.isArray(msg.content)) {
@@ -237,6 +253,8 @@ function createStreamingLLM({
 }
 
 module.exports = {
+    OllamaProvider,
     createLLM,
-    createStreamingLLM
+    createStreamingLLM,
+    convertMessagesToOllamaFormat
 }; 

@@ -266,6 +266,9 @@ function createFeatureWindows(header, namesToCreate) {
                         }
                     });
                 }
+                if (!app.isPackaged) {
+                    listen.webContents.openDevTools({ mode: 'detach' });
+                }
                 windowPool.set('listen', listen);
                 break;
             }

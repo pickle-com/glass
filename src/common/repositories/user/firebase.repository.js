@@ -3,7 +3,7 @@ const { getFirestoreInstance } = require('../../services/firebaseClient');
 const { createEncryptedConverter } = require('../firestoreConverter');
 const encryptionService = require('../../services/encryptionService');
 
-const userConverter = createEncryptedConverter(['api_key']);
+const userConverter = createEncryptedConverter([]);
 
 function usersCol() {
     const db = getFirestoreInstance();
@@ -38,11 +38,7 @@ async function getById(uid) {
     return docSnap.exists() ? docSnap.data() : null;
 }
 
-async function saveApiKey(uid, apiKey, provider = 'openai') {
-    const docRef = doc(usersCol(), uid);
-    await setDoc(docRef, { api_key: apiKey, provider }, { merge: true });
-    return { changes: 1 };
-}
+
 
 async function update({ uid, displayName }) {
     const docRef = doc(usersCol(), uid);
@@ -85,7 +81,6 @@ async function deleteById(uid) {
 module.exports = {
     findOrCreate,
     getById,
-    saveApiKey,
     update,
     deleteById,
 }; 

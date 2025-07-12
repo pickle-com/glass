@@ -173,6 +173,11 @@ class WhisperSTTSession extends EventEmitter {
 }
 
 class WhisperProvider {
+    static async validateApiKey() {
+        // Whisper is a local service, no API key validation needed.
+        return { success: true };
+    }
+
     constructor() {
         this.whisperService = null;
     }
@@ -224,8 +229,12 @@ class WhisperProvider {
     }
 
     async createStreamingLLM() {
-        throw new Error('Whisper provider does not support streaming LLM functionality');
+        console.warn('[WhisperProvider] Streaming LLM is not supported by Whisper.');
+        throw new Error('Whisper does not support LLM.');
     }
 }
 
-module.exports = new WhisperProvider();
+module.exports = {
+    WhisperProvider,
+    WhisperSTTSession
+};

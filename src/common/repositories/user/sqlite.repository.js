@@ -40,17 +40,7 @@ function getById(uid) {
     return db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
 }
 
-function saveApiKey(uid, apiKey, provider = 'openai') {
-    const db = sqliteClient.getDb();
-    try {
-        const result = db.prepare('UPDATE users SET api_key = ?, provider = ? WHERE uid = ?').run(apiKey, provider, uid);
-        console.log(`SQLite: API key saved for user ${uid} with provider ${provider}.`);
-        return { changes: result.changes };
-    } catch (err) {
-        console.error('SQLite: Failed to save API key:', err);
-        throw err;
-    }
-}
+
 
 function update({ uid, displayName }) {
     const db = sqliteClient.getDb();
@@ -96,7 +86,6 @@ function deleteById(uid) {
 module.exports = {
     findOrCreate,
     getById,
-    saveApiKey,
     update,
     setMigrationComplete,
     deleteById

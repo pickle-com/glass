@@ -1,6 +1,31 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai")
 const { GoogleGenAI } = require("@google/genai")
 
+class GeminiProvider {
+    static async validateApiKey(key) {
+        if (!key || typeof key !== 'string') {
+            return { success: false, error: 'Invalid Gemini API key format.' };
+        }
+
+        try {
+            const validationUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+            const response = await fetch(validationUrl);
+
+            if (response.ok) {
+                return { success: true };
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                const message = errorData.error?.message || `Validation failed with status: ${response.status}`;
+                return { success: false, error: message };
+            }
+        } catch (error) {
+            console.error(`[GeminiProvider] Network error during key validation:`, error);
+            return { success: false, error: 'A network error occurred during validation.' };
+        }
+    }
+}
+
+
 /**
  * Creates a Gemini STT session
  * @param {object} opts - Configuration options
@@ -296,7 +321,8 @@ function createStreamingLLM({ apiKey, model = "gemini-2.5-flash", temperature = 
 }
 
 module.exports = {
-  createSTT,
-  createLLM,
-  createStreamingLLM,
-}
+    GeminiProvider,
+    createSTT,
+    createLLM,
+    createStreamingLLM
+};

@@ -33,6 +33,13 @@ class SQLiteClient {
         return this.db;
     }
 
+    _validateAndQuoteIdentifier(identifier) {
+        if (!/^[a-zA-Z0-9_]+$/.test(identifier)) {
+            throw new Error(`Invalid database identifier used: ${identifier}. Only alphanumeric characters and underscores are allowed.`);
+        }
+        return `"${identifier}"`;
+    }
+
     synchronizeSchema() {
         console.log('[DB Sync] Starting schema synchronization...');
         const tablesInDb = this.getTablesFromDb();
@@ -57,24 +64,41 @@ class SQLiteClient {
     }
 
     createTable(tableName, tableSchema) {
-        const columnDefs = tableSchema.columns.map(col => `"${col.name}" ${col.type}`).join(', ');
-        const query = `CREATE TABLE IF NOT EXISTS "${tableName}" (${columnDefs})`;
-
+        const safeTableName = this._validateAndQuoteIdentifier(tableName);
+        const columnDefs = tableSchema.columns
+            .map(col => `${this._validateAndQuoteIdentifier(col.name)} ${col.type}`)
+            .join(', ');
+        
+        const constraints = tableSchema.constraints || [];
+        const constraintsDef = constraints.length > 0 ? ', ' + constraints.join(', ') : '';
+        
+        const query = `CREATE TABLE IF NOT EXISTS ${safeTableName} (${columnDefs}${constraintsDef})`;
         console.log(`[DB Sync] Creating table: ${tableName}`);
-        this.db.prepare(query).run();
+        this.db.exec(query);
     }
 
     updateTable(tableName, tableSchema) {
-        const existingColumns = this.db.prepare(`PRAGMA table_info("${tableName}")`).all();
-        const existingColumnNames = existingColumns.map(c => c.name);
-        const columnsToAdd = tableSchema.columns.filter(col => !existingColumnNames.includes(col.name));
+        const safeTableName = this._validateAndQuoteIdentifier(tableName);
+        
+        // Get current columns
+        const currentColumns = this.db.prepare(`PRAGMA table_info(${safeTableName})`).all();
+        const currentColumnNames = currentColumns.map(col => col.name);
 
-        if (columnsToAdd.length > 0) {
-            console.log(`[DB Sync] Updating table: ${tableName}. Adding columns: ${columnsToAdd.map(c=>c.name).join(', ')}`);
-            for (const column of columnsToAdd) {
-                const addColumnQuery = `ALTER TABLE "${tableName}" ADD COLUMN "${column.name}" ${column.type}`;
-                this.db.prepare(addColumnQuery).run();
+        // Check for new columns to add
+        const newColumns = tableSchema.columns.filter(col => !currentColumnNames.includes(col.name));
+
+        if (newColumns.length > 0) {
+            console.log(`[DB Sync] Adding ${newColumns.length} new column(s) to ${tableName}`);
+            for (const col of newColumns) {
+                const safeColName = this._validateAndQuoteIdentifier(col.name);
+                const addColumnQuery = `ALTER TABLE ${safeTableName} ADD COLUMN ${safeColName} ${col.type}`;
+                this.db.exec(addColumnQuery);
+                console.log(`[DB Sync] Added column ${col.name} to ${tableName}`);
             }
+        }
+
+        if (tableSchema.constraints && tableSchema.constraints.length > 0) {
+            console.log(`[DB Sync] Note: Constraints for ${tableName} can only be set during table creation`);
         }
     }
 

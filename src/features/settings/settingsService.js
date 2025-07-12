@@ -1,7 +1,6 @@
 const { ipcMain, BrowserWindow } = require('electron');
 const Store = require('electron-store');
 const authService = require('../../common/services/authService');
-const userRepository = require('../../common/repositories/user');
 const settingsRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, windowPool } = require('../../electron/windowManager');
 
@@ -282,26 +281,13 @@ async function deletePreset(id) {
 
 async function saveApiKey(apiKey, provider = 'openai') {
     try {
-        const user = authService.getCurrentUser();
-        if (!user.isLoggedIn) {
-            // For non-logged-in users, save to local storage
-            const Store = require('electron-store');
-            const store = new Store();
-            store.set('apiKey', apiKey);
-            store.set('provider', provider);
-            
-            // Notify windows
-            BrowserWindow.getAllWindows().forEach(win => {
-                if (!win.isDestroyed()) {
-                    win.webContents.send('api-key-validated', apiKey);
-                }
-            });
-            
-            return { success: true };
+        // Use ModelStateService as the single source of truth for API key management
+        const modelStateService = global.modelStateService;
+        if (!modelStateService) {
+            throw new Error('ModelStateService not initialized');
         }
         
-        // For logged-in users, use the repository adapter which injects the UID.
-        await userRepository.saveApiKey(apiKey, provider);
+        await modelStateService.setApiKey(provider, apiKey);
         
         // Notify windows
         BrowserWindow.getAllWindows().forEach(win => {
@@ -319,16 +305,16 @@ async function saveApiKey(apiKey, provider = 'openai') {
 
 async function removeApiKey() {
     try {
-        const user = authService.getCurrentUser();
-        if (!user.isLoggedIn) {
-            // For non-logged-in users, remove from local storage
-            const Store = require('electron-store');
-            const store = new Store();
-            store.delete('apiKey');
-            store.delete('provider');
-        } else {
-            // For logged-in users, use the repository adapter.
-            await userRepository.saveApiKey(null, null);
+        // Use ModelStateService as the single source of truth for API key management
+        const modelStateService = global.modelStateService;
+        if (!modelStateService) {
+            throw new Error('ModelStateService not initialized');
+        }
+        
+        // Remove all API keys for all providers
+        const providers = ['openai', 'anthropic', 'gemini', 'ollama', 'whisper'];
+        for (const provider of providers) {
+            await modelStateService.removeApiKey(provider);
         }
         
         // Notify windows

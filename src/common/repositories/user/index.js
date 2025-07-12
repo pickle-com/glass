@@ -1,8 +1,16 @@
 const sqliteRepository = require('./sqlite.repository');
 const firebaseRepository = require('./firebase.repository');
-const authService = require('../../services/authService');
+
+let authService = null;
+
+function setAuthService(service) {
+    authService = service;
+}
 
 function getBaseRepository() {
+    if (!authService) {
+        throw new Error('AuthService has not been set for the user repository.');
+    }
     const user = authService.getCurrentUser();
     if (user && user.isLoggedIn) {
         return firebaseRepository;
@@ -21,10 +29,7 @@ const userRepositoryAdapter = {
         return getBaseRepository().getById(uid);
     },
 
-    saveApiKey: (apiKey, provider) => {
-        const uid = authService.getCurrentUserId();
-        return getBaseRepository().saveApiKey(uid, apiKey, provider);
-    },
+
 
     update: (updateData) => {
         const uid = authService.getCurrentUserId();
@@ -37,4 +42,7 @@ const userRepositoryAdapter = {
     }
 };
 
-module.exports = userRepositoryAdapter; 
+module.exports = {
+    ...userRepositoryAdapter,
+    setAuthService
+}; 

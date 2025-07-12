@@ -1,5 +1,35 @@
 const OpenAI = require('openai');
 const WebSocket = require('ws');
+const { Portkey } = require('portkey-ai');
+const { Readable } = require('stream');
+const { getProviderForModel } = require('../factory.js');
+
+
+class OpenAIProvider {
+    static async validateApiKey(key) {
+        if (!key || typeof key !== 'string' || !key.startsWith('sk-')) {
+            return { success: false, error: 'Invalid OpenAI API key format.' };
+        }
+
+        try {
+            const response = await fetch('https://api.openai.com/v1/models', {
+                headers: { 'Authorization': `Bearer ${key}` }
+            });
+
+            if (response.ok) {
+                return { success: true };
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                const message = errorData.error?.message || `Validation failed with status: ${response.status}`;
+                return { success: false, error: message };
+            }
+        } catch (error) {
+            console.error(`[OpenAIProvider] Network error during key validation:`, error);
+            return { success: false, error: 'A network error occurred during validation.' };
+        }
+    }
+}
+
 
 /**
  * Creates an OpenAI STT session
@@ -206,7 +236,7 @@ function createLLM({ apiKey, model = 'gpt-4.1', temperature = 0.7, maxTokens = 2
   };
 }
 
-/**
+/** 
  * Creates an OpenAI streaming LLM instance
  * @param {object} opts - Configuration options
  * @param {string} opts.apiKey - OpenAI API key
@@ -257,7 +287,8 @@ function createStreamingLLM({ apiKey, model = 'gpt-4.1', temperature = 0.7, maxT
 }
 
 module.exports = {
-  createSTT,
-  createLLM,
-  createStreamingLLM
+    OpenAIProvider,
+    createSTT,
+    createLLM,
+    createStreamingLLM
 }; 
