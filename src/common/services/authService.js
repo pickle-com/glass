@@ -5,6 +5,8 @@ const fetch = require('node-fetch');
 const encryptionService = require('./encryptionService');
 const migrationService = require('./migrationService');
 const sessionRepository = require('../repositories/session');
+const providerSettingsRepository = require('../repositories/providerSettings');
+const userModelSelectionsRepository = require('../repositories/userModelSelections');
 
 async function getVirtualKeyByEmail(email, idToken) {
     if (!idToken) {
@@ -40,10 +42,13 @@ class AuthService {
         this.currentUser = null;
         this.isInitialized = false;
 
-        // Initialize immediately for the default local user on startup.
         // This ensures the key is ready before any login/logout state change.
         encryptionService.initializeKey(this.currentUserId);
         this.initializationPromise = null;
+
+        sessionRepository.setAuthService(this);
+        providerSettingsRepository.setAuthService(this);
+        userModelSelectionsRepository.setAuthService(this);
     }
 
     initialize() {

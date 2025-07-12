@@ -680,13 +680,13 @@ function setupWebDataHandlers() {
                     result = await userRepository.findOrCreate(payload);
                     break;
                 case 'save-api-key':
-                    // Assuming payload is { apiKey, provider }
-                    result = await userRepository.saveApiKey(payload.apiKey, payload.provider);
+                    // Use ModelStateService as the single source of truth for API key management
+                    result = await modelStateService.setApiKey(payload.provider, payload.apiKey);
                     break;
                 case 'check-api-key-status':
-                    // Adapter injects UID
-                    const user = await userRepository.getById();
-                    result = { hasApiKey: !!user?.api_key && user.api_key.length > 0 };
+                    // Use ModelStateService to check API key status
+                    const hasApiKey = await modelStateService.hasValidApiKey();
+                    result = { hasApiKey };
                     break;
                 case 'delete-account':
                     // Adapter injects UID

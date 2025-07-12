@@ -66,15 +66,14 @@ const PROVIDERS = {
   'whisper': {
       name: 'Whisper (Local)',
       handler: () => {
-          // Only load in main process
+          // This needs to remain a function due to its conditional logic for renderer/main process
           if (typeof window === 'undefined') {
               return require("./providers/whisper");
           }
-          // Return dummy for renderer
+          // Return a dummy object for the renderer process
           return {
+              validateApiKey: async () => ({ success: true }), // Mock validate for renderer
               createSTT: () => { throw new Error('Whisper STT is only available in main process'); },
-              createLLM: () => { throw new Error('Whisper does not support LLM'); },
-              createStreamingLLM: () => { throw new Error('Whisper does not support LLM'); }
           };
       },
       llmModels: [],
@@ -130,6 +129,32 @@ function createStreamingLLM(provider, opts) {
   return handler.createStreamingLLM(opts);
 }
 
+function getProviderClass(providerId) {
+    const providerConfig = PROVIDERS[providerId];
+    if (!providerConfig) return null;
+    
+    // Handle special cases for glass providers
+    let actualProviderId = providerId;
+    if (providerId === 'openai-glass') {
+        actualProviderId = 'openai';
+    }
+    
+    // The handler function returns the module, from which we get the class.
+    const module = providerConfig.handler();
+    
+    // Map provider IDs to their actual exported class names
+    const classNameMap = {
+        'openai': 'OpenAIProvider',
+        'anthropic': 'AnthropicProvider',
+        'gemini': 'GeminiProvider',
+        'ollama': 'OllamaProvider',
+        'whisper': 'WhisperProvider'
+    };
+    
+    const className = classNameMap[actualProviderId];
+    return className ? module[className] : null;
+}
+
 function getAvailableProviders() {
   const stt = [];
   const llm = [];
@@ -145,5 +170,6 @@ module.exports = {
   createSTT,
   createLLM,
   createStreamingLLM,
+  getProviderClass,
   getAvailableProviders,
 };

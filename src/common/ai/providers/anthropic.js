@@ -1,4 +1,38 @@
-const Anthropic = require("@anthropic-ai/sdk")
+const { Anthropic } = require("@anthropic-ai/sdk")
+
+class AnthropicProvider {
+    static async validateApiKey(key) {
+        if (!key || typeof key !== 'string' || !key.startsWith('sk-ant-')) {
+            return { success: false, error: 'Invalid Anthropic API key format.' };
+        }
+
+        try {
+            const response = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": key,
+                    "anthropic-version": "2023-06-01",
+                },
+                body: JSON.stringify({
+                    model: "claude-3-haiku-20240307",
+                    max_tokens: 1,
+                    messages: [{ role: "user", content: "Hi" }],
+                }),
+            });
+
+            if (response.ok || response.status === 400) { // 400 is a valid response for a bad request, not a bad key
+                return { success: true };
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                return { success: false, error: errorData.error?.message || `Validation failed with status: ${response.status}` };
+            }
+        } catch (error) {
+            console.error(`[AnthropicProvider] Network error during key validation:`, error);
+            return { success: false, error: 'A network error occurred during validation.' };
+        }
+    }
+}
 
 /**
  * Creates an Anthropic STT session
@@ -286,7 +320,8 @@ function createStreamingLLM({
 }
 
 module.exports = {
-  createSTT,
-  createLLM,
-  createStreamingLLM,
-}
+    AnthropicProvider,
+    createSTT,
+    createLLM,
+    createStreamingLLM
+};

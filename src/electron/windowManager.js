@@ -116,6 +116,7 @@ async function toggleFeature(featureName) {
                     await listenService.initializeSession('en');
                 }
                 
+
                 listenWindow.webContents.send('session-state-changed', { isActive: true });
                 header.webContents.send('session-state-text', 'Stop');
             }
@@ -277,6 +278,9 @@ function createFeatureWindows(header, namesToCreate) {
                             // liquidGlass.unstable_setSubdued(viewId, 1);
                         }
                     });
+                }
+                if (!app.isPackaged) {
+                    listen.webContents.openDevTools({ mode: 'detach' });
                 }
                 windowPool.set('listen', listen);
                 break;

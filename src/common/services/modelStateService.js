@@ -1,21 +1,28 @@
 const Store = require('electron-store');
 const fetch = require('node-fetch');
 const { ipcMain, webContents } = require('electron');
-const { PROVIDERS } = require('../ai/factory');
+const { PROVIDERS, getProviderClass } = require('../ai/factory');
 const encryptionService = require('./encryptionService');
+const providerSettingsRepository = require('../repositories/providerSettings');
+const userModelSelectionsRepository = require('../repositories/userModelSelections');
 
 class ModelStateService {
     constructor(authService) {
         this.authService = authService;
         this.store = new Store({ name: 'pickle-glass-model-state' });
         this.state = {};
+        this.hasMigrated = false;
+        
+        // Set auth service for repositories
+        providerSettingsRepository.setAuthService(authService);
+        userModelSelectionsRepository.setAuthService(authService);
     }
 
     async initialize() {
+        console.log('[ModelStateService] Initializing...');
         await this._loadStateForCurrentUser();
-
         this.setupIpcHandlers();
-        console.log('[ModelStateService] Initialized.');
+        console.log('[ModelStateService] Initialization complete');
     }
 
     _logCurrentSelection() {
@@ -64,44 +71,186 @@ class ModelStateService {
         });
     }
 
+    async _migrateFromElectronStore() {
+        console.log('[ModelStateService] Starting migration from electron-store to database...');
+        const userId = this.authService.getCurrentUserId();
+        
+        try {
+            // Get data from electron-store
+            const legacyData = this.store.get(`users.${userId}`, null);
+            
+            if (!legacyData) {
+                console.log('[ModelStateService] No legacy data to migrate');
+                return;
+            }
+            
+            console.log('[ModelStateService] Found legacy data, migrating...');
+            
+            // Migrate provider settings (API keys and selected models per provider)
+            const { apiKeys = {}, selectedModels = {} } = legacyData;
+            
+            for (const [provider, apiKey] of Object.entries(apiKeys)) {
+                if (apiKey && PROVIDERS[provider]) {
+                    // For encrypted keys, they are already decrypted in _loadStateForCurrentUser
+                    await providerSettingsRepository.upsert(provider, {
+                        api_key: apiKey
+                    });
+                    console.log(`[ModelStateService] Migrated API key for ${provider}`);
+                }
+            }
+            
+            // Migrate global model selections
+            if (selectedModels.llm || selectedModels.stt) {
+                const llmProvider = selectedModels.llm ? this.getProviderForModel('llm', selectedModels.llm) : null;
+                const sttProvider = selectedModels.stt ? this.getProviderForModel('stt', selectedModels.stt) : null;
+                
+                await userModelSelectionsRepository.upsert({
+                    selected_llm_provider: llmProvider,
+                    selected_llm_model: selectedModels.llm,
+                    selected_stt_provider: sttProvider,
+                    selected_stt_model: selectedModels.stt
+                });
+                console.log('[ModelStateService] Migrated global model selections');
+            }
+            
+            // Mark migration as complete by removing legacy data
+            this.store.delete(`users.${userId}`);
+            console.log('[ModelStateService] Migration completed and legacy data cleaned up');
+            
+        } catch (error) {
+            console.error('[ModelStateService] Migration failed:', error);
+            // Don't throw - continue with normal operation
+        }
+    }
+
+    async _loadStateFromDatabase() {
+        console.log('[ModelStateService] Loading state from database...');
+        const userId = this.authService.getCurrentUserId();
+        
+        try {
+            // Load provider settings
+            const providerSettings = await providerSettingsRepository.getAllByUid();
+            const apiKeys = {};
+            
+            // Reconstruct apiKeys object
+            Object.keys(PROVIDERS).forEach(provider => {
+                apiKeys[provider] = null;
+            });
+            
+            for (const setting of providerSettings) {
+                if (setting.api_key) {
+                    // API keys are stored encrypted in database, decrypt them
+                    if (setting.provider !== 'ollama' && setting.provider !== 'whisper') {
+                        try {
+                            apiKeys[setting.provider] = encryptionService.decrypt(setting.api_key);
+                        } catch (error) {
+                            console.error(`[ModelStateService] Failed to decrypt API key for ${setting.provider}, resetting`);
+                            apiKeys[setting.provider] = null;
+                        }
+                    } else {
+                        apiKeys[setting.provider] = setting.api_key;
+                    }
+                }
+            }
+            
+            // Load global model selections
+            const modelSelections = await userModelSelectionsRepository.get();
+            const selectedModels = {
+                llm: modelSelections?.selected_llm_model || null,
+                stt: modelSelections?.selected_stt_model || null
+            };
+            
+            this.state = {
+                apiKeys,
+                selectedModels
+            };
+            
+            console.log(`[ModelStateService] State loaded from database for user: ${userId}`);
+            
+        } catch (error) {
+            console.error('[ModelStateService] Failed to load state from database:', error);
+            // Fall back to default state
+            const initialApiKeys = Object.keys(PROVIDERS).reduce((acc, key) => {
+                acc[key] = null;
+                return acc;
+            }, {});
+            
+            this.state = {
+                apiKeys: initialApiKeys,
+                selectedModels: { llm: null, stt: null },
+            };
+        }
+    }
+
     async _loadStateForCurrentUser() {
         const userId = this.authService.getCurrentUserId();
         
         // Initialize encryption service for current user
         await encryptionService.initializeKey(userId);
         
-        const initialApiKeys = Object.keys(PROVIDERS).reduce((acc, key) => {
-            acc[key] = null;
-            return acc;
-        }, {});
-
-        const defaultState = {
-            apiKeys: initialApiKeys,
-            selectedModels: { llm: null, stt: null },
-        };
-        this.state = this.store.get(`users.${userId}`, defaultState);
-        console.log(`[ModelStateService] State loaded for user: ${userId}`);
+        // Try to load from database first
+        await this._loadStateFromDatabase();
         
-        for (const p of Object.keys(PROVIDERS)) {
-            if (!(p in this.state.apiKeys)) {
-                this.state.apiKeys[p] = null;
-            } else if (this.state.apiKeys[p] && p !== 'ollama' && p !== 'whisper') {
-                try {
-                    this.state.apiKeys[p] = encryptionService.decrypt(this.state.apiKeys[p]);
-                } catch (error) {
-                    console.error(`[ModelStateService] Failed to decrypt API key for ${p}, resetting`);
-                    this.state.apiKeys[p] = null;
-                }
-            }
+        // Check if we need to migrate from electron-store
+        const legacyData = this.store.get(`users.${userId}`, null);
+        if (legacyData && !this.hasMigrated) {
+            await this._migrateFromElectronStore();
+            // Reload state after migration
+            await this._loadStateFromDatabase();
+            this.hasMigrated = true;
         }
         
         this._autoSelectAvailableModels();
-        this._saveState();
+        await this._saveState();
         this._logCurrentSelection();
     }
 
+    async _saveState() {
+        console.log('[ModelStateService] Saving state to database...');
+        const userId = this.authService.getCurrentUserId();
+        
+        try {
+            // Save provider settings (API keys)
+            for (const [provider, apiKey] of Object.entries(this.state.apiKeys)) {
+                if (apiKey) {
+                    const encryptedKey = (provider !== 'ollama' && provider !== 'whisper') 
+                        ? encryptionService.encrypt(apiKey)
+                        : apiKey;
+                        
+                    await providerSettingsRepository.upsert(provider, {
+                        api_key: encryptedKey
+                    });
+                } else {
+                    // Remove empty API keys
+                    await providerSettingsRepository.remove(provider);
+                }
+            }
+            
+            // Save global model selections
+            const llmProvider = this.state.selectedModels.llm ? this.getProviderForModel('llm', this.state.selectedModels.llm) : null;
+            const sttProvider = this.state.selectedModels.stt ? this.getProviderForModel('stt', this.state.selectedModels.stt) : null;
+            
+            if (llmProvider || sttProvider || this.state.selectedModels.llm || this.state.selectedModels.stt) {
+                await userModelSelectionsRepository.upsert({
+                    selected_llm_provider: llmProvider,
+                    selected_llm_model: this.state.selectedModels.llm,
+                    selected_stt_provider: sttProvider,
+                    selected_stt_model: this.state.selectedModels.stt
+                });
+            }
+            
+            console.log(`[ModelStateService] State saved to database for user: ${userId}`);
+            this._logCurrentSelection();
+            
+        } catch (error) {
+            console.error('[ModelStateService] Failed to save state to database:', error);
+            // Fall back to electron-store for now
+            this._saveStateToElectronStore();
+        }
+    }
 
-    _saveState() {
+    _saveStateToElectronStore() {
+        console.log('[ModelStateService] Falling back to electron-store...');
         const userId = this.authService.getCurrentUserId();
         const stateToSave = {
             ...this.state,
@@ -120,93 +269,34 @@ class ModelStateService {
         }
         
         this.store.set(`users.${userId}`, stateToSave);
-        console.log(`[ModelStateService] State saved for user: ${userId}`);
+        console.log(`[ModelStateService] State saved to electron-store for user: ${userId}`);
         this._logCurrentSelection();
     }
 
     async validateApiKey(provider, key) {
-        if (!key || key.trim() === '') {
+        if (!key || (key.trim() === '' && provider !== 'ollama' && provider !== 'whisper')) {
             return { success: false, error: 'API key cannot be empty.' };
         }
 
-        let validationUrl, headers;
-        const body = undefined;
+        const ProviderClass = getProviderClass(provider);
 
-        switch (provider) {
-            case 'ollama':
-                // Ollama doesn't need API key validation
-                // Just check if the service is running
-                try {
-                    const response = await fetch('http://localhost:11434/api/tags');
-                    if (response.ok) {
-                        console.log(`[ModelStateService] Ollama service is accessible.`);
-                        this.setApiKey(provider, 'local'); // Use 'local' as a placeholder
-                        return { success: true };
-                    } else {
-                        return { success: false, error: 'Ollama service is not running. Please start Ollama first.' };
-                    }
-                } catch (error) {
-                    return { success: false, error: 'Cannot connect to Ollama. Please ensure Ollama is installed and running.' };
-                }
-            case 'whisper':
-                // Whisper is a local service, no API key validation needed
-                console.log(`[ModelStateService] Whisper is a local service.`);
-                this.setApiKey(provider, 'local'); // Use 'local' as a placeholder
-                return { success: true };
-            case 'openai':
-                validationUrl = 'https://api.openai.com/v1/models';
-                headers = { 'Authorization': `Bearer ${key}` };
-                break;
-            case 'gemini':
-                validationUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
-                headers = {};
-                break;
-            case 'anthropic': {
-                if (!key.startsWith('sk-ant-')) {
-                    throw new Error('Invalid Anthropic key format.');
-                }
-                const response = await fetch("https://api.anthropic.com/v1/messages", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "x-api-key": key,
-                        "anthropic-version": "2023-06-01",
-                    },
-                    body: JSON.stringify({
-                        model: "claude-3-haiku-20240307",
-                        max_tokens: 1,
-                        messages: [{ role: "user", content: "Hi" }],
-                    }),
-                });
-
-                if (!response.ok && response.status !== 400) {
-                        const errorData = await response.json().catch(() => ({}));
-                        return { success: false, error: errorData.error?.message || `Validation failed with status: ${response.status}` };
-                    }
-                
-                    console.log(`[ModelStateService] API key for ${provider} is valid.`);
-                    this.setApiKey(provider, key);
+        if (!ProviderClass || typeof ProviderClass.validateApiKey !== 'function') {
+            // Default to success if no specific validator is found
+            console.warn(`[ModelStateService] No validateApiKey function for provider: ${provider}. Assuming valid.`);
                     return { success: true };
-                }
-            default:
-                return { success: false, error: 'Unknown provider.' };
         }
 
         try {
-            const response = await fetch(validationUrl, { headers, body });
-            if (response.ok) {
+            const result = await ProviderClass.validateApiKey(key);
+            if (result.success) {
                 console.log(`[ModelStateService] API key for ${provider} is valid.`);
-                this.setApiKey(provider, key);
-                return { success: true };
             } else {
-                const errorData = await response.json().catch(() => ({}));
-                const message = errorData.error?.message || `Validation failed with status: ${response.status}`;
-                console.log(`[ModelStateService] API key for ${provider} is invalid: ${message}`);
-                return { success: false, error: message };
+                console.log(`[ModelStateService] API key for ${provider} is invalid: ${result.error}`);
             }
+            return result;
         } catch (error) {
-            console.error(`[ModelStateService] Network error during ${provider} key validation:`, error);
-            return { success: false, error: 'A network error occurred during validation.' };
+            console.error(`[ModelStateService] Error during ${provider} key validation:`, error);
+            return { success: false, error: 'An unexpected error occurred during validation.' };
         }
     }
     
@@ -239,33 +329,14 @@ class ModelStateService {
     setApiKey(provider, key) {
         if (provider in this.state.apiKeys) {
             this.state.apiKeys[provider] = key;
-
-            const llmModels = PROVIDERS[provider]?.llmModels;
-            const sttModels = PROVIDERS[provider]?.sttModels;
-
-            // Prioritize newly set API key provider over existing selections
-            // Only for non-local providers or if no model is currently selected
-            if (llmModels?.length > 0) {
-                if (!this.state.selectedModels.llm || provider !== 'ollama') {
-                    this.state.selectedModels.llm = llmModels[0].id;
-                    console.log(`[ModelStateService] Selected LLM model from newly configured provider ${provider}: ${llmModels[0].id}`);
-                }
-            }
-            if (sttModels?.length > 0) {
-                if (!this.state.selectedModels.stt || provider !== 'whisper') {
-                    this.state.selectedModels.stt = sttModels[0].id;
-                    console.log(`[ModelStateService] Selected STT model from newly configured provider ${provider}: ${sttModels[0].id}`);
-                }
-            }
             this._saveState();
-            this._logCurrentSelection();
             return true;
         }
         return false;
     }
 
     getApiKey(provider) {
-        return this.state.apiKeys[provider] || null;
+        return this.state.apiKeys[provider];
     }
 
     getAllApiKeys() {
@@ -349,6 +420,18 @@ class ModelStateService {
         const result = hasLlmKey && hasSttKey;
         console.log(`[ModelStateService] areProvidersConfigured: LLM=${hasLlmKey}, STT=${hasSttKey}, result=${result}`);
         return result;
+    }
+
+    hasValidApiKey() {
+        if (this.isLoggedInWithFirebase()) return true;
+        
+        // Check if any provider has a valid API key
+        return Object.entries(this.state.apiKeys).some(([provider, key]) => {
+            if (provider === 'ollama' || provider === 'whisper') {
+                return key === 'local';
+            }
+            return key && key.trim().length > 0;
+        });
     }
 
 
@@ -445,10 +528,28 @@ class ModelStateService {
     }
     
     setupIpcHandlers() {
-        ipcMain.handle('model:validate-key', (e, { provider, key }) => this.validateApiKey(provider, key));
+        ipcMain.handle('model:validate-key', async (e, { provider, key }) => {
+            const result = await this.validateApiKey(provider, key);
+            if (result.success) {
+                // Use 'local' as placeholder for local services
+                const finalKey = (provider === 'ollama' || provider === 'whisper') ? 'local' : key;
+                this.setApiKey(provider, finalKey);
+                // After setting the key, auto-select models
+                this._autoSelectAvailableModels();
+                this._saveState(); // Ensure state is saved after model selection
+            }
+            return result;
+        });
         ipcMain.handle('model:get-all-keys', () => this.getAllApiKeys());
-        ipcMain.handle('model:set-api-key', (e, { provider, key }) => this.setApiKey(provider, key));
-        ipcMain.handle('model:remove-api-key', (e, { provider }) => {
+        ipcMain.handle('model:set-api-key', async (e, { provider, key }) => {
+            const success = this.setApiKey(provider, key);
+            if (success) {
+                this._autoSelectAvailableModels();
+                await this._saveState();
+            }
+            return success;
+        });
+        ipcMain.handle('model:remove-api-key', async (e, { provider }) => {
             const success = this.removeApiKey(provider);
             if (success) {
                 const selectedModels = this.getSelectedModels();
@@ -461,7 +562,7 @@ class ModelStateService {
             return success;
         });
         ipcMain.handle('model:get-selected-models', () => this.getSelectedModels());
-        ipcMain.handle('model:set-selected-model', (e, { type, modelId }) => this.setSelectedModel(type, modelId));
+        ipcMain.handle('model:set-selected-model', async (e, { type, modelId }) => this.setSelectedModel(type, modelId));
         ipcMain.handle('model:get-available-models', (e, { type }) => this.getAvailableModels(type));
         ipcMain.handle('model:are-providers-configured', () => this.areProvidersConfigured());
         ipcMain.handle('model:get-current-model-info', (e, { type }) => this.getCurrentModelInfo(type));

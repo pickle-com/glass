@@ -5,8 +5,6 @@ const LATEST_SCHEMA = {
             { name: 'display_name', type: 'TEXT NOT NULL' },
             { name: 'email', type: 'TEXT NOT NULL' },
             { name: 'created_at', type: 'INTEGER' },
-            { name: 'api_key', type: 'TEXT' },
-            { name: 'provider', type: 'TEXT DEFAULT \'openai\'' },
             { name: 'auto_update_enabled', type: 'INTEGER DEFAULT 1' },
             { name: 'has_migrated_to_firebase', type: 'INTEGER DEFAULT 0' }
         ]
@@ -89,6 +87,28 @@ const LATEST_SCHEMA = {
             { name: 'size', type: 'TEXT NOT NULL' },
             { name: 'installed', type: 'INTEGER DEFAULT 0' },
             { name: 'installing', type: 'INTEGER DEFAULT 0' }
+        ]
+    },
+    provider_settings: {
+        columns: [
+            { name: 'uid', type: 'TEXT NOT NULL' },
+            { name: 'provider', type: 'TEXT NOT NULL' },
+            { name: 'api_key', type: 'TEXT' },
+            { name: 'selected_llm_model', type: 'TEXT' },
+            { name: 'selected_stt_model', type: 'TEXT' },
+            { name: 'created_at', type: 'INTEGER' },
+            { name: 'updated_at', type: 'INTEGER' }
+        ],
+        constraints: ['PRIMARY KEY (uid, provider)']
+    },
+    user_model_selections: {
+        columns: [
+            { name: 'uid', type: 'TEXT PRIMARY KEY' },
+            { name: 'selected_llm_provider', type: 'TEXT' },
+            { name: 'selected_llm_model', type: 'TEXT' },
+            { name: 'selected_stt_provider', type: 'TEXT' },
+            { name: 'selected_stt_model', type: 'TEXT' },
+            { name: 'updated_at', type: 'INTEGER' }
         ]
     }
 };
