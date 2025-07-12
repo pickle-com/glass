@@ -1336,7 +1336,7 @@ export class AskView extends LitElement {
         const textInput = this.shadowRoot?.getElementById('textInput');
         if (!textInput) return;
         const text = textInput.value.trim();
-        
+
         if (!text) {
             const defaultQuestion = "Answer any questions on my screen or from the audio. Provide insights based on the current context and any recent audio.";
             this.processAssistantQuestion(defaultQuestion);
