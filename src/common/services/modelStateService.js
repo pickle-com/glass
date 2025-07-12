@@ -284,6 +284,21 @@ class ModelStateService {
             // Default to success if no specific validator is found
             console.warn(`[ModelStateService] No validateApiKey function for provider: ${provider}. Assuming valid.`);
                     return { success: true };
+
+                }
+            case 'soniox': {
+                // Soniox API key is a 32+ char string, optionally validate format or do a real API call
+                if (typeof key !== 'string' || key.length < 32) {
+                    return { success: false, error: 'Invalid Soniox API key format.' };
+                }
+                
+                this.setApiKey(provider, key);
+                console.log(`[ModelStateService] API key for ${provider} is valid.`);
+                return { success: true };
+            }
+            default:
+                return { success: false, error: 'Unknown provider.' };
+
         }
 
         try {

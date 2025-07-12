@@ -84,6 +84,14 @@ const PROVIDERS = {
           { id: 'whisper-medium', name: 'Whisper Medium (769M)' },
       ],
   },
+  'soniox': {
+      name: 'Soniox',
+      handler: () => require("./providers/soniox"),
+      llmModels: [],
+      sttModels: [
+          { id: 'en_v2', name: 'Soniox English v2' }
+      ],
+  },
 };
 
 function sanitizeModelId(model) {
