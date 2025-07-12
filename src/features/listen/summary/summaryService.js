@@ -5,6 +5,8 @@ const authService = require('../../../common/services/authService');
 const sessionRepository = require('../../../common/repositories/session');
 const summaryRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../electron/windowManager');
+const { getLanguageLLMContext } = require('../../../common/config/languages');
+const { getSettings } = require('../../settings/settingsService');
 
 class SummaryService {
     constructor() {
@@ -93,6 +95,18 @@ Please build upon this context while analyzing the new conversation segments.
         const basePrompt = getSystemPrompt('pickle_glass_analysis', '', false);
         const systemPrompt = basePrompt.replace('{{CONVERSATION_HISTORY}}', recentConversation);
 
+        // Get language context
+        let languageContext = '';
+        try {
+            const settings = await getSettings();
+            languageContext = getLanguageLLMContext(settings.language || 'en');
+        } catch (error) {
+            console.warn('[SummaryService] Failed to get language context:', error);
+            languageContext = getLanguageLLMContext('en');
+        }
+
+        const systemPromptWithLanguage = `${systemPrompt}\n\n${languageContext}`;
+
         try {
             if (this.currentSessionId) {
                 await sessionRepository.touch(this.currentSessionId);
@@ -107,7 +121,7 @@ Please build upon this context while analyzing the new conversation segments.
             const messages = [
                 {
                     role: 'system',
-                    content: systemPrompt,
+                    content: systemPromptWithLanguage,
                 },
                 {
                     role: 'user',

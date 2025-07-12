@@ -549,6 +549,7 @@ export class MainHeader extends LitElement {
     }
 
     async _handleListenClick() {
+
         if (this.wasJustDragged) return;
         if (this.isTogglingSession) {
             return;

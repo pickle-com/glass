@@ -20,6 +20,7 @@ try {
 const authService = require('../common/services/authService');
 const systemSettingsRepository = require('../common/repositories/systemSettings');
 const userRepository = require('../common/repositories/user');
+const { getSettings } = require('../features/settings/settingsService');
 const fetch = require('node-fetch');
 const Store = require('electron-store');
 const shortCutStore = new Store({
@@ -103,7 +104,19 @@ async function toggleFeature(featureName) {
                 listenWindow.show();
                 updateLayout();
                 listenWindow.webContents.send('window-show-animation');
-                await listenService.initializeSession();
+                
+                // Get current language setting and pass it to initializeSession
+                try {
+                    const settings = await getSettings();
+                    const language = settings.language || 'en';
+                    console.log(`[WindowManager] Initializing session with language: ${language}`);
+                    await listenService.initializeSession(language);
+                } catch (error) {
+                    console.error('[WindowManager] Failed to get language setting, using default:', error);
+                    await listenService.initializeSession('en');
+                }
+                
+
                 listenWindow.webContents.send('session-state-changed', { isActive: true });
                 header.webContents.send('session-state-text', 'Stop');
             }

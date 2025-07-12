@@ -5,6 +5,8 @@ const authService = require('../../common/services/authService');
 const sessionRepository = require('../../common/repositories/session');
 const askRepository = require('./repositories');
 const { getSystemPrompt } = require('../../common/prompts/promptBuilder');
+const { getSettings } = require('../settings/settingsService');
+const { getLanguageLLMContext } = require('../../common/config/languages');
 
 function formatConversationForPrompt(conversationTexts) {
     if (!conversationTexts || conversationTexts.length === 0) return 'No conversation history available.';
@@ -52,11 +54,21 @@ async function sendMessage(userPrompt) {
         const conversationHistoryRaw = getConversationHistory();
         const conversationHistory = formatConversationForPrompt(conversationHistoryRaw);
 
-        const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
+        // Get language context
+        let languageContext = '';
+        try {
+            const settings = await getSettings();
+            languageContext = getLanguageLLMContext(settings.language || 'en');
+        } catch (error) {
+            console.warn('[AskService] Failed to get language context:', error);
+            languageContext = getLanguageLLMContext('en');
+        }
 
+        const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
+        const systemPromptWithLanguage = `${systemPrompt}\n\n${languageContext}`;
 
         const messages = [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: systemPromptWithLanguage },
             {
                 role: 'user',
                 content: [

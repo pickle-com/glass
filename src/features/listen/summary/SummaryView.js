@@ -17,25 +17,28 @@ export class SummaryView extends LitElement {
             margin: 8px 0 !important;
             overflow-x: auto !important;
             border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            white-space: pre !important;
-            word-wrap: normal !important;
-            word-break: normal !important;
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            word-break: break-word !important;
+            max-width: 100% !important;
         }
 
         .insights-container code {
             font-family: 'Monaco', 'Menlo', 'Consolas', monospace !important;
             font-size: 11px !important;
             background: transparent !important;
-            white-space: pre !important;
-            word-wrap: normal !important;
-            word-break: normal !important;
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            word-break: break-word !important;
+            max-width: 100% !important;
         }
 
         .insights-container pre code {
-            white-space: pre !important;
-            word-wrap: normal !important;
-            word-break: normal !important;
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            word-break: break-word !important;
             display: block !important;
+            max-width: 100% !important;
         }
 
         .insights-container p code {
@@ -78,12 +81,16 @@ export class SummaryView extends LitElement {
 
         .insights-container {
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 12px 16px 16px 16px;
             position: relative;
             z-index: 1;
             min-height: 150px;
             max-height: 600px;
             flex: 1;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         /* Visibility handled by parent component */
@@ -142,6 +149,10 @@ export class SummaryView extends LitElement {
             transition: background-color 0.15s ease;
             cursor: pointer;
             word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .outline-item:hover {
@@ -158,7 +169,11 @@ export class SummaryView extends LitElement {
             background: transparent;
             cursor: default;
             word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
             transition: background-color 0.15s ease;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .request-item.clickable {
@@ -181,7 +196,11 @@ export class SummaryView extends LitElement {
             background: transparent;
             cursor: pointer;
             word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
             transition: all 0.15s ease;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .markdown-content:hover {

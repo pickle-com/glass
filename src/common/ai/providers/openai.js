@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const WebSocket = require('ws');
+const { getLanguageForProvider } = require('../../config/languages');
 const { Portkey } = require('portkey-ai');
 const { Readable } = require('stream');
 const { getProviderForModel } = require('../factory.js');
@@ -30,7 +31,6 @@ class OpenAIProvider {
     }
 }
 
-
 /**
  * Creates an OpenAI STT session
  * @param {object} opts - Configuration options
@@ -44,6 +44,10 @@ class OpenAIProvider {
 async function createSTT({ apiKey, language = 'en', callbacks = {}, usePortkey = false, portkeyVirtualKey, ...config }) {
   const keyType = usePortkey ? 'vKey' : 'apiKey';
   const key = usePortkey ? (portkeyVirtualKey || apiKey) : apiKey;
+
+  // Get the proper language code for OpenAI
+  const openaiLanguage = getLanguageForProvider(language, 'openai');
+  console.log(`[OpenAI STT] Using language: ${openaiLanguage} (from ${language})`);
 
   const wsUrl = keyType === 'apiKey'
     ? 'wss://api.openai.com/v1/realtime?intent=transcription'
@@ -64,7 +68,7 @@ async function createSTT({ apiKey, language = 'en', callbacks = {}, usePortkey =
 
   return new Promise((resolve, reject) => {
     ws.onopen = () => {
-      console.log("WebSocket session opened.");
+      console.log(`[OpenAI STT] WebSocket session opened for language: ${openaiLanguage}`);
 
       const sessionConfig = {
         type: 'transcription_session.update',
@@ -73,7 +77,7 @@ async function createSTT({ apiKey, language = 'en', callbacks = {}, usePortkey =
           input_audio_transcription: {
             model: 'gpt-4o-mini-transcribe',
             prompt: config.prompt || '',
-            language: language || 'en'
+            language: openaiLanguage
           },
           turn_detection: {
             type: 'server_vad',

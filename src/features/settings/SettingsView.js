@@ -505,6 +505,9 @@ export class SettingsView extends LitElement {
         installingModels: { type: Object, state: true },
         // Whisper related properties
         whisperModels: { type: Array, state: true },
+        // Language properties
+        availableLanguages: { type: Array, state: true },
+        currentLanguage: { type: String, state: true },
     };
     //////// after_modelStateService ////////
 
@@ -538,6 +541,9 @@ export class SettingsView extends LitElement {
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this)
         this.autoUpdateEnabled = true;
         this.autoUpdateLoading = true;
+        // Language related
+        this.availableLanguages = [];
+        this.currentLanguage = 'en';
         this.loadInitialData();
         //////// after_modelStateService ////////
     }
@@ -578,13 +584,30 @@ export class SettingsView extends LitElement {
         this.requestUpdate();
     }
 
+    async handleLanguageChange(languageCode) {
+        if (!window.require) return;
+        
+        const { ipcRenderer } = window.require('electron');
+        try {
+            const result = await ipcRenderer.invoke('settings:set-language', languageCode);
+            if (result.success) {
+                this.currentLanguage = languageCode;
+                console.log(`[SettingsView] Language changed to: ${languageCode}`);
+            } else {
+                console.error('[SettingsView] Failed to save language:', result.error);
+            }
+        } catch (error) {
+            console.error('[SettingsView] Failed to change language:', error);
+        }
+    }
+
     //////// after_modelStateService ////////
     async loadInitialData() {
         if (!window.require) return;
         this.isLoading = true;
         const { ipcRenderer } = window.require('electron');
         try {
-            const [userState, config, storedKeys, availableLlm, availableStt, selectedModels, presets, contentProtection, shortcuts, ollamaStatus, whisperModelsResult] = await Promise.all([
+            const [userState, config, storedKeys, availableLlm, availableStt, selectedModels, presets, contentProtection, shortcuts, ollamaStatus, whisperModelsResult, availableLanguages, currentLanguage] = await Promise.all([
                 ipcRenderer.invoke('get-current-user'),
                 ipcRenderer.invoke('model:get-provider-config'), // Provider 설정 로드
                 ipcRenderer.invoke('model:get-all-keys'),
@@ -595,7 +618,9 @@ export class SettingsView extends LitElement {
                 ipcRenderer.invoke('get-content-protection-status'),
                 ipcRenderer.invoke('get-current-shortcuts'),
                 ipcRenderer.invoke('ollama:get-status'),
-                ipcRenderer.invoke('whisper:get-installed-models')
+                ipcRenderer.invoke('whisper:get-installed-models'),
+                ipcRenderer.invoke('settings:get-available-languages'),
+                ipcRenderer.invoke('settings:get-current-language')
             ]);
             
             if (userState && userState.isLoggedIn) this.firebaseUser = userState;
@@ -608,6 +633,8 @@ export class SettingsView extends LitElement {
             this.presets = presets || [];
             this.isContentProtectionOn = contentProtection;
             this.shortcuts = shortcuts || {};
+            this.availableLanguages = availableLanguages || [];
+            this.currentLanguage = currentLanguage || 'en';
             if (this.presets.length > 0) {
                 const firstUserPreset = this.presets.find(p => p.is_default === 0);
                 if (firstUserPreset) this.selectedPreset = firstUserPreset;
@@ -1562,6 +1589,21 @@ export class SettingsView extends LitElement {
 
                 ${apiKeyManagementHTML}
                 ${modelSelectionHTML}
+
+                <!-- Language Selection Section -->
+                <div class="model-selection-section">
+                    <div class="model-select-group">
+                        <label>Language: <strong>${this.availableLanguages.find(l => l.code === this.currentLanguage)?.name || 'English'}</strong></label>
+                        <select class="model-dropdown" style="width: 100%; padding: 5px 8px; font-size: 11px; margin-top: 4px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px;" 
+                                @change=${(e) => this.handleLanguageChange(e.target.value)}>
+                            ${this.availableLanguages.map(lang => html`
+                                <option value=${lang.code} ?selected=${lang.code === this.currentLanguage}>
+                                    ${lang.nativeName} (${lang.name})
+                                </option>
+                            `)}
+                        </select>
+                    </div>
+                </div>
 
                 <div class="buttons-section" style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 6px; margin-top: 6px;">
                     <button class="settings-button full-width" @click=${this.openShortcutEditor}>

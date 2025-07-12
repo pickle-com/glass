@@ -2,6 +2,7 @@ const { BrowserWindow } = require('electron');
 const { spawn } = require('child_process');
 const { createSTT } = require('../../../common/ai/factory');
 const { getStoredApiKey, getStoredProvider, getCurrentModelInfo } = require('../../../electron/windowManager');
+const { getSettings } = require('../../settings/settingsService');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
 
@@ -117,8 +118,22 @@ class SttService {
         this.theirCompletionTimer = setTimeout(() => this.flushTheirCompletion(), COMPLETION_DEBOUNCE_MS);
     }
 
-    async initializeSttSessions(language = 'en') {
-        const effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG || language || 'en';
+    async initializeSttSessions(language = null) {
+        // Get language from settings if not provided
+        let effectiveLanguage = language;
+        if (!effectiveLanguage) {
+            try {
+                const settings = await getSettings();
+                effectiveLanguage = settings.language || 'en';
+            } catch (error) {
+                console.warn('[SttService] Failed to get language from settings, using default:', error);
+                effectiveLanguage = 'en';
+            }
+        }
+        
+        // Allow environment override
+        effectiveLanguage = process.env.OPENAI_TRANSCRIBE_LANG || effectiveLanguage;
+        console.log(`[SttService] Using language: ${effectiveLanguage}`);
 
         const modelInfo = await getCurrentModelInfo(null, { type: 'stt' });
         if (!modelInfo || !modelInfo.apiKey) {

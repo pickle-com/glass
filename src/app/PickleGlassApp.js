@@ -69,6 +69,23 @@ export class PickleGlassApp extends LitElement {
         this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'medium';
         this._isClickThrough = false;
 
+        // Initialize structured data for Live insights
+        this.structuredData = {
+            summary: [],
+            topic: { header: '', bullets: [] },
+            actions: [],
+            followUps: [],
+        };
+
+        // Set up structured data callback for Live insights
+        if (window.pickleGlass) {
+            window.pickleGlass.setStructuredData = data => {
+                this.updateStructuredData(data);
+            };
+        }
+
+        // Load language from settings on startup
+        this.loadLanguageFromSettings();
     }
 
     connectedCallback() {
@@ -80,6 +97,14 @@ export class PickleGlassApp extends LitElement {
             ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
+            
+            // Language change listener for multi-language support
+            ipcRenderer.on('language-changed', (_, languageCode) => {
+                console.log('Language changed to:', languageCode);
+                this.selectedLanguage = languageCode;
+                localStorage.setItem('selectedLanguage', languageCode);
+            });
+            
             // ipcRenderer.on('start-listening-session', () => {
             //     console.log('Received start-listening-session command, calling handleListenClick.');
             //     this.handleListenClick();
@@ -92,6 +117,7 @@ export class PickleGlassApp extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeAllListeners('click-through-toggled');
+            ipcRenderer.removeAllListeners('language-changed');
             // ipcRenderer.removeAllListeners('start-listening-session');
         }
     }
@@ -159,12 +185,41 @@ export class PickleGlassApp extends LitElement {
     //     this.isMainViewVisible = true;
     // }
 
+    async loadLanguageFromSettings() {
+        if (!window.require) return;
+        
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const currentLanguage = await ipcRenderer.invoke('settings:get-current-language');
+            if (currentLanguage && currentLanguage !== this.selectedLanguage) {
+                this.selectedLanguage = currentLanguage;
+                localStorage.setItem('selectedLanguage', currentLanguage);
+                console.log(`[PickleGlassApp] Language loaded from settings: ${currentLanguage}`);
+            }
+        } catch (error) {
+            console.warn('[PickleGlassApp] Failed to load language from settings:', error);
+        }
+    }
+
+    updateStructuredData(data) {
+        console.log('📝 PickleGlassApp updateStructuredData:', data);
+        this.structuredData = data;
+        this.requestUpdate();
+        
+        const assistantView = this.shadowRoot?.querySelector('assistant-view');
+        if (assistantView) {
+            assistantView.structuredData = data;
+            console.log('✅ Structured data passed to AssistantView');
+        }
+    }
+
     async handleClose() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             await ipcRenderer.invoke('quit-application');
         }
     }
+
 
 
 
