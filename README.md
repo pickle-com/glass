@@ -67,9 +67,15 @@ npm run setup
 <img width="100%" alt="booking-screen" src="./public/assets/02.gif">
 
 **Currently Supporting:**
-- OpenAI API: Get OpenAI API Key [here](https://platform.openai.com/api-keys)
-- Gemini API: Get Gemini API Key [here](https://aistudio.google.com/apikey)
-- Local LLM Ollama & Whisper
+
+- **OpenAI API**: Get your API Key [here](https://platform.openai.com/api-keys).
+- **Gemini API**: Get your API Key [here](https://aistudio.google.com/apikey).
+- **Local LLM (Ollama & Whisper).**
+- **Anthropic API**: Get your API Key [here](https://console.anthropic.com/dashboard).
+- **OpenRouter API (new)**: Supports models like **Grok 4, Claude 4 Sonnet, Gemini 2.5 Flash, GPT-4.1, LLaMA 4 Maverick** using your **OpenRouter API key**.
+  Get your API key [here](https://openrouter.ai/settings/keys).
+
+> Note: OpenRouter does not currently support native STT; use OpenAI or Gemini for speech-to-text.
 
 ### Liquid Glass Design (coming soon)
 

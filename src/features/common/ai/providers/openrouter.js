@@ -4,8 +4,8 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 class OpenRouterProvider {
     static async validateApiKey(key) {
-        if (!key || typeof key !== 'string' || !key.startsWith('sk-')) {
-          return { success: false, error: 'Invalid OpenAI API key format.' };
+        if (!key || typeof key !== 'string' || !key.startsWith('sk-or-')) {
+          return { success: false, error: 'Invalid OpenRouter API key format.' };
         }
 
         try {
@@ -63,16 +63,26 @@ function createLLM({ apiKey, model = 'x-ai/grok-4', temperature = 0.7, maxTokens
   const client = new OpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL });
   
   const callApi = async (messages) => {
-    const response = await client.chat.completions.create({
-      model: model,
-      messages: messages,
-      temperature: temperature,
-      max_tokens: maxTokens
-    });
-    return {
-      content: response.choices[0].message.content.trim(),
-      raw: response
-    };
+    try {
+      const response = await client.chat.completions.create({
+        model: model,
+        messages: messages,
+        temperature: temperature,
+        max_tokens: maxTokens
+      });
+
+      if (!response.choices || response.choices.length === 0) {
+        throw new Error('No response choices returned from OpenRouter API');
+      }
+
+      return {
+        content: response.choices[0].message.content?.trim() || '',
+        raw: response
+      };
+    } catch (error) {
+      console.error('[OpenRouter] API call failed:', error);
+      throw new Error(`OpenRouter API error: ${error.message}`);
+    }
   };
 
   return {
@@ -83,7 +93,13 @@ function createLLM({ apiKey, model = 'x-ai/grok-4', temperature = 0.7, maxTokens
       
       for (const part of parts) {
         if (typeof part === 'string') {
-          if (systemPrompt === '' && part.includes('You are')) {
+          if (
+            systemPrompt === '' &&
+            (
+              part.toLowerCase().startsWith('you are') ||
+              part.toLowerCase().includes('system:')
+            )
+          ) {
             systemPrompt = part;
           } else {
             userContent.push({ type: 'text', text: part });
@@ -120,7 +136,7 @@ function createLLM({ apiKey, model = 'x-ai/grok-4', temperature = 0.7, maxTokens
  * Creates an OpenRouter streaming LLM instance
  * @param {object} opts - Configuration options
  * @param {string} opts.apiKey - OpenRouter API key
- * @param {string} [opts.model='x-ai'] - Model name
+ * @param {string} [opts.model='x-ai/grok-4'] - Model name
  * @param {number} [opts.temperature=0.7] - Temperature
  * @param {number} [opts.maxTokens=2048] - Max tokens
  * @returns {object} Streaming LLM instance
@@ -129,30 +145,40 @@ function createStreamingLLM({ apiKey, model = 'x-ai/grok-4', temperature = 0.7, 
   return {
     streamChat: async (messages) => {
       console.log("[OpenRouter Provider] Starting Streaming request")
+
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        throw new Error('Messages array is required and cannot be empty')
+      }
+
       const fetchUrl = `${OPENROUTER_BASE_URL}/chat/completions`;
-      
       const headers = {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       };
 
-      const response = await fetch(fetchUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: model,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-          stream: true,
-        }),
-      });
+      try {
+        const response = await fetch(fetchUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature,
+            max_tokens: maxTokens,
+            stream: true,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unknown error');
+          throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}. ${errorText}`);
+        }
+
+        return response;
+      } catch (error) {
+        console.error('[OpenRouter] Streaming request failed:', error);
+        throw error;
       }
-
-      return response;
     }
   };
 }
