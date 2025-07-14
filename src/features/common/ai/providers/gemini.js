@@ -4,7 +4,17 @@ const { GoogleGenAI } = require("@google/genai")
 class GeminiProvider {
     static async validateApiKey(key) {
         if (!key || typeof key !== 'string') {
-            return { success: false, error: 'Invalid Gemini API key format.' };
+            return { 
+                success: false, 
+                error: 'API key is required. Please enter your Gemini API key.' 
+            };
+        }
+
+        if (key.length < 20) {
+            return {
+                success: false,
+                error: 'Invalid Gemini API key format. The key should be at least 20 characters long.'
+            };
         }
 
         try {
@@ -12,15 +22,43 @@ class GeminiProvider {
             const response = await fetch(validationUrl);
 
             if (response.ok) {
-                return { success: true };
+                const models = await response.json();
+                const modelCount = models.models?.length || 0;
+                return { 
+                    success: true,
+                    message: `API key is valid! Found ${modelCount} available models.`,
+                    models: models.models 
+                };
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                const message = errorData.error?.message || `Validation failed with status: ${response.status}`;
-                return { success: false, error: message };
+                let message = errorData.error?.message;
+
+                // Enhance common error messages
+                if (response.status === 400) {
+                    message = 'Invalid API key format. Please check your key and try again.';
+                } else if (response.status === 401) {
+                    message = 'Invalid API key. Please ensure your key is correct and has not expired.';
+                } else if (response.status === 403) {
+                    message = 'API key does not have permission to access Gemini. Please check your Google Cloud Console settings.';
+                } else if (response.status === 429) {
+                    message = 'Rate limit exceeded. Please try again in a few moments or check your quota in Google Cloud Console.';
+                } else if (message?.includes('API key not valid')) {
+                    message = 'Invalid API key. You can find or create API keys in your Google Cloud Console.';
+                } else if (message?.includes('quota')) {
+                    message = 'Your Gemini API quota has been exceeded. Please check your usage in Google Cloud Console.';
+                }
+
+                return { 
+                    success: false, 
+                    error: message || `Validation failed (HTTP ${response.status}). Please check your API key.`
+                };
             }
         } catch (error) {
             console.error(`[GeminiProvider] Network error during key validation:`, error);
-            return { success: false, error: 'A network error occurred during validation.' };
+            return { 
+                success: false, 
+                error: 'Unable to validate API key. Please check your internet connection and try again.' 
+            };
         }
     }
 }

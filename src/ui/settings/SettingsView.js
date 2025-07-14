@@ -685,8 +685,49 @@ export class SettingsView extends LitElement {
         
         if (result.success) {
             await this.refreshModelData();
+            
+            // Add success feedback
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.style.cssText = `
+                padding: 8px;
+                background: rgba(0,255,0,0.1);
+                border-radius: 4px;
+                font-size: 11px;
+                color: rgba(0,255,0,0.8);
+                margin-top: 4px;
+            `;
+            feedbackDiv.textContent = `✓ ${provider.toUpperCase()} API key validated successfully!`;
+            
+            // Insert after the input group
+            const inputGroup = input.closest('.provider-key-group');
+            inputGroup.appendChild(feedbackDiv);
+            
+            // Remove the feedback after 5 seconds
+            setTimeout(() => {
+                feedbackDiv.remove();
+            }, 5000);
         } else {
-            alert(`Failed to save ${provider} key: ${result.error}`);
+            // Show error feedback
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.style.cssText = `
+                padding: 8px;
+                background: rgba(255,0,0,0.1);
+                border-radius: 4px;
+                font-size: 11px;
+                color: rgba(255,0,0,0.8);
+                margin-top: 4px;
+            `;
+            feedbackDiv.textContent = `✗ ${result.error}`;
+            
+            // Insert after the input group
+            const inputGroup = input.closest('.provider-key-group');
+            inputGroup.appendChild(feedbackDiv);
+            
+            // Remove the feedback after 5 seconds
+            setTimeout(() => {
+                feedbackDiv.remove();
+            }, 5000);
+            
             input.value = this.apiKeys[provider] || '';
         }
         this.saving = false;

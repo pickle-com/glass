@@ -7,8 +7,15 @@ const { getProviderForModel } = require('../factory.js');
 
 class OpenAIProvider {
     static async validateApiKey(key) {
-        if (!key || typeof key !== 'string' || !key.startsWith('sk-')) {
-            return { success: false, error: 'Invalid OpenAI API key format.' };
+        if (!key || typeof key !== 'string') {
+            return { success: false, error: 'API key is required.' };
+        }
+
+        if (!key.startsWith('sk-')) {
+            return { 
+                success: false, 
+                error: 'Invalid OpenAI API key format. The key should start with "sk-".' 
+            };
         }
 
         try {
@@ -17,15 +24,40 @@ class OpenAIProvider {
             });
 
             if (response.ok) {
-                return { success: true };
+                // Get available models to provide more context in success message
+                const models = await response.json();
+                const modelCount = models.data?.length || 0;
+                return { 
+                    success: true,
+                    message: `API key is valid! Found ${modelCount} available models.`,
+                    models: models.data 
+                };
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                const message = errorData.error?.message || `Validation failed with status: ${response.status}`;
-                return { success: false, error: message };
+                let message = errorData.error?.message;
+                
+                // Enhance common error messages
+                if (message?.includes('Incorrect API key provided')) {
+                    message = 'Invalid API key. Please check your key and try again. You can find or create API keys in your OpenAI account dashboard.';
+                } else if (message?.includes('exceeded your current quota')) {
+                    message = 'Your OpenAI account has exceeded its quota. Please check your usage and billing status in your OpenAI account.';
+                } else if (response.status === 401) {
+                    message = 'Authentication failed. Please ensure your API key is valid and not expired.';
+                } else if (response.status === 429) {
+                    message = 'Rate limit exceeded. Please try again in a few moments.';
+                }
+
+                return { 
+                    success: false, 
+                    error: message || `Validation failed (HTTP ${response.status}). Please check your API key.`
+                };
             }
         } catch (error) {
             console.error(`[OpenAIProvider] Network error during key validation:`, error);
-            return { success: false, error: 'A network error occurred during validation.' };
+            return { 
+                success: false, 
+                error: 'Unable to validate API key. Please check your internet connection and try again.' 
+            };
         }
     }
 }

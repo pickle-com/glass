@@ -2,8 +2,18 @@ const { Anthropic } = require("@anthropic-ai/sdk")
 
 class AnthropicProvider {
     static async validateApiKey(key) {
-        if (!key || typeof key !== 'string' || !key.startsWith('sk-ant-')) {
-            return { success: false, error: 'Invalid Anthropic API key format.' };
+        if (!key || typeof key !== 'string') {
+            return { 
+                success: false, 
+                error: 'API key is required. Please enter your Anthropic API key.' 
+            };
+        }
+
+        if (!key.startsWith('sk-ant-')) {
+            return { 
+                success: false, 
+                error: 'Invalid Anthropic API key format. The key should start with "sk-ant-".' 
+            };
         }
 
         try {
@@ -22,14 +32,40 @@ class AnthropicProvider {
             });
 
             if (response.ok || response.status === 400) { // 400 is a valid response for a bad request, not a bad key
-                return { success: true };
+                return { 
+                    success: true,
+                    message: 'API key is valid! Connected to Anthropic Claude API successfully.'
+                };
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                return { success: false, error: errorData.error?.message || `Validation failed with status: ${response.status}` };
+                let message = errorData.error?.message;
+
+                // Enhance common error messages
+                if (response.status === 401) {
+                    message = 'Invalid API key. Please ensure your key is correct and has not expired. You can find or create API keys in your Anthropic Console.';
+                } else if (response.status === 403) {
+                    message = 'API key does not have permission to access Claude. Please check your Anthropic Console settings.';
+                } else if (response.status === 429) {
+                    message = 'Rate limit exceeded. Please try again in a few moments or check your quota in Anthropic Console.';
+                } else if (message?.includes('invalid_api_key')) {
+                    message = 'Invalid API key. Please check your key and try again.';
+                } else if (message?.includes('quota')) {
+                    message = 'Your Anthropic API quota has been exceeded. Please check your usage in Anthropic Console.';
+                } else if (message?.includes('expired')) {
+                    message = 'Your API key has expired. Please generate a new key in your Anthropic Console.';
+                }
+
+                return { 
+                    success: false, 
+                    error: message || `Validation failed (HTTP ${response.status}). Please check your API key.`
+                };
             }
         } catch (error) {
             console.error(`[AnthropicProvider] Network error during key validation:`, error);
-            return { success: false, error: 'A network error occurred during validation.' };
+            return { 
+                success: false, 
+                error: 'Unable to validate API key. Please check your internet connection and try again.' 
+            };
         }
     }
 }
