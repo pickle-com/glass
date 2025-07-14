@@ -115,6 +115,38 @@ export class AskView extends LitElement {
             white-space: pre !important;
             word-wrap: normal !important;
             word-break: normal !important;
+            position: relative !important;
+        }
+
+        .code-block-copy-button {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 4px;
+            cursor: pointer !important;
+            opacity: 0;
+            transition: opacity 0.2s ease, background-color 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            z-index: 10;
+        }
+
+        .response-container pre:hover .code-block-copy-button {
+            opacity: 1;
+        }
+
+        .code-block-copy-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .code-block-copy-button.copied {
+            background: transparent;
         }
 
         .response-container code {
@@ -373,6 +405,75 @@ export class AskView extends LitElement {
             position: relative;
         }
 
+        .dynamic-copy-button {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 4px;
+            cursor: pointer !important;
+            opacity: 0;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .dynamic-copy-button *, 
+        .code-block-copy-button * {
+            cursor: pointer !important;
+            pointer-events: none;
+        }
+
+        .dynamic-copy-button.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .dynamic-copy-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .dynamic-copy-button.copied {
+            background: transparent;
+        }
+
+        .dynamic-copy-button svg,
+        .code-block-copy-button svg {
+            width: 14px;
+            height: 14px;
+            stroke: rgba(255, 255, 255, 0.9);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+            cursor: pointer !important;
+            pointer-events: none;
+        }
+
+        .dynamic-copy-button .check-icon,
+        .code-block-copy-button .check-icon {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.5);
+        }
+
+        .dynamic-copy-button.copied .copy-icon,
+        .code-block-copy-button.copied .copy-icon {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.5);
+        }
+
+        .dynamic-copy-button.copied .check-icon,
+        .code-block-copy-button.copied .check-icon {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
         .response-container.hidden {
             display: none;
         }
@@ -441,48 +542,21 @@ export class AskView extends LitElement {
             padding: 2px 0;
             margin: 0;
             transition: background-color 0.15s ease;
+            cursor: text;
         }
 
-        .response-line:hover {
-            background: rgba(255, 255, 255, 0.05);
+        .response-text-line {
+            position: relative;
+            padding: 2px 0;
+            margin: 0;
+            cursor: text;
+            min-height: 1.6em;
+            transition: background-color 0.15s ease;
+        }
+
+        .response-text-line.highlighted {
+            background: rgba(255, 255, 255, 0.1) !important;
             border-radius: 4px;
-        }
-
-        .line-copy-button {
-            position: absolute;
-            left: -32px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 3px;
-            padding: 2px;
-            cursor: pointer;
-            opacity: 0;
-            transition: opacity 0.15s ease, background-color 0.15s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 20px;
-            height: 20px;
-        }
-
-        .response-line:hover .line-copy-button {
-            opacity: 1;
-        }
-
-        .line-copy-button:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .line-copy-button.copied {
-            background: rgba(40, 167, 69, 0.3);
-        }
-
-        .line-copy-button svg {
-            width: 12px;
-            height: 12px;
-            stroke: rgba(255, 255, 255, 0.9);
         }
 
         .text-input-container {
@@ -710,6 +784,24 @@ export class AskView extends LitElement {
         }
     `;
 
+    // Constants for positioning
+    static COPY_BUTTON_CONFIG = {
+        LIST_ITEM_OFFSET: 40,
+        NESTED_CONTENT_OFFSET: 36,
+        DEFAULT_OFFSET: 32,
+        MIN_LEFT_POSITION: 4,
+        REGULAR_MIN_LEFT: 8,
+        BUTTON_SIZE: 24,
+        VERTICAL_CENTER_OFFSET: 12,
+        HOVER_DELAY: 100
+    };
+
+    // Cached selectors and elements
+    _cachedElements = {
+        responseContainer: null,
+        textInput: null
+    };
+
     constructor() {
         super();
         this.currentResponse = '';
@@ -730,6 +822,14 @@ export class AskView extends LitElement {
         this.smdParser = null;
         this.smdContainer = null;
         this.lastProcessedLength = 0;
+
+        // copy functionality with Map for better performance
+        this.lineCopyState = {};
+        this.copyTimeouts = new Map(); // Replaces lineCopyTimeouts and codeBlockCopyTimeouts
+        this.dynamicCopyButton = null;
+        this.currentHoveredLine = null;
+        this.dynamicCopyTimeout = null;
+        this.dynamicHoverTimeout = null;
 
         this.handleSendText = this.handleSendText.bind(this);
         this.handleTextKeydown = this.handleTextKeydown.bind(this);
@@ -812,21 +912,16 @@ export class AskView extends LitElement {
 
         console.log('📱 AskView disconnectedCallback - IPC 이벤트 리스너 제거');
 
+        // Optimized cleanup using the Map
+        [this.copyTimeout, this.headerAnimationTimeout, this.streamingTimeout, this.dynamicCopyTimeout, this.dynamicHoverTimeout]
+            .filter(Boolean)
+            .forEach(timeout => clearTimeout(timeout));
+
+        // Clear all copy timeouts
+        this.copyTimeouts.forEach(timeout => clearTimeout(timeout));
+        this.copyTimeouts.clear();
+
         document.removeEventListener('keydown', this.handleEscKey);
-
-        if (this.copyTimeout) {
-            clearTimeout(this.copyTimeout);
-        }
-
-        if (this.headerAnimationTimeout) {
-            clearTimeout(this.headerAnimationTimeout);
-        }
-
-        if (this.streamingTimeout) {
-            clearTimeout(this.streamingTimeout);
-        }
-
-        Object.values(this.lineCopyTimeouts).forEach(timeout => clearTimeout(timeout));
 
         if (window.api) {
             window.api.askView.removeOnAskStateUpdate(this.handleAskStateUpdate);
@@ -928,13 +1023,34 @@ export class AskView extends LitElement {
         this.isInputFocused = true;
     }
 
+    // Optimized element caching
+    getResponseContainer() {
+        if (!this._cachedElements.responseContainer) {
+            this._cachedElements.responseContainer = this.shadowRoot?.getElementById('responseContainer');
+        }
+        return this._cachedElements.responseContainer;
+    }
+
+    getTextInput() {
+        if (!this._cachedElements.textInput) {
+            this._cachedElements.textInput = this.shadowRoot?.getElementById('textInput');
+        }
+        return this._cachedElements.textInput;
+    }
+
     focusTextInput() {
         requestAnimationFrame(() => {
-            const textInput = this.shadowRoot?.getElementById('textInput');
+            const textInput = this.getTextInput();
             if (textInput) {
                 textInput.focus();
             }
         });
+    }
+
+    // Clear cached elements when DOM updates
+    clearElementCache() {
+        this._cachedElements.responseContainer = null;
+        this._cachedElements.textInput = null;
     }
 
 
@@ -1063,6 +1179,12 @@ export class AskView extends LitElement {
                 });
             }
 
+            // Add copy buttons to code blocks
+            this.addCodeBlockCopyButtons(responseContainer);
+
+            // Initialize dynamic copy button
+            this.initializeDynamicCopyButton(responseContainer);
+
             // 스크롤을 맨 아래로
             responseContainer.scrollTop = responseContainer.scrollHeight;
             
@@ -1099,6 +1221,11 @@ export class AskView extends LitElement {
                         this.hljs.highlightElement(block);
                     });
                 }
+                // Add copy buttons to code blocks
+                this.addCodeBlockCopyButtons(responseContainer);
+
+                // Initialize dynamic copy button
+                this.initializeDynamicCopyButton(responseContainer);
             } catch (error) {
                 console.error('Error in fallback rendering:', error);
                 responseContainer.textContent = textToRender;
@@ -1221,19 +1348,26 @@ export class AskView extends LitElement {
             await navigator.clipboard.writeText(textToCopy);
             console.log('Content copied to clipboard');
 
+            // Clear any existing timeout first
+            if (this.copyTimeout) {
+                clearTimeout(this.copyTimeout);
+                this.copyTimeout = null;
+            }
+
             this.copyState = 'copied';
             this.requestUpdate();
 
-            if (this.copyTimeout) {
-                clearTimeout(this.copyTimeout);
-            }
-
+            // Reset after brief visual feedback
             this.copyTimeout = setTimeout(() => {
                 this.copyState = 'idle';
+                this.copyTimeout = null;
                 this.requestUpdate();
-            }, 1500);
+            }, 800);
         } catch (err) {
             console.error('Failed to copy:', err);
+            // Reset state on error
+            this.copyState = 'idle';
+            this.requestUpdate();
         }
     }
 
@@ -1247,24 +1381,352 @@ export class AskView extends LitElement {
             await navigator.clipboard.writeText(lineToCopy);
             console.log('Line copied to clipboard');
 
-            // '복사됨' 상태로 UI 즉시 업데이트
-            this.lineCopyState = { ...this.lineCopyState, [lineIndex]: true };
-            this.requestUpdate(); // LitElement에 UI 업데이트 요청
-
-            // 기존 타임아웃이 있다면 초기화
+            // Clear existing timeout for this line if any
             if (this.lineCopyTimeouts && this.lineCopyTimeouts[lineIndex]) {
                 clearTimeout(this.lineCopyTimeouts[lineIndex]);
+                delete this.lineCopyTimeouts[lineIndex];
             }
 
-            // ✨ 수정된 타임아웃: 1.5초 후 '복사됨' 상태 해제
+            // Update state to show copied
+            this.lineCopyState = { ...this.lineCopyState, [lineIndex]: true };
+            this.requestUpdate();
+
+            // Reset after brief visual feedback
             this.lineCopyTimeouts[lineIndex] = setTimeout(() => {
                 const updatedState = { ...this.lineCopyState };
                 delete updatedState[lineIndex];
                 this.lineCopyState = updatedState;
-                this.requestUpdate(); // UI 업데이트 요청
-            }, 1500);
+                
+                // Clean up timeout reference
+                if (this.lineCopyTimeouts[lineIndex]) {
+                    delete this.lineCopyTimeouts[lineIndex];
+                }
+                
+                this.requestUpdate();
+            }, 800);
         } catch (err) {
             console.error('Failed to copy line:', err);
+            // Reset state on error
+            const updatedState = { ...this.lineCopyState };
+            delete updatedState[lineIndex];
+            this.lineCopyState = updatedState;
+            this.requestUpdate();
+        }
+    }
+
+    async handleCodeBlockCopy(codeBlockElement, codeBlockIndex) {
+        const codeElement = codeBlockElement.querySelector('code');
+        const textToCopy = codeElement ? codeElement.textContent : codeBlockElement.textContent;
+
+        if (!textToCopy) return;
+
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+            console.log('Code block copied to clipboard');
+
+            // Find the copy button in this code block
+            const copyButton = codeBlockElement.querySelector('.code-block-copy-button');
+            if (copyButton) {
+                // Use the Map-based timeout system with a unique key
+                const timeoutKey = `codeBlock-${codeBlockIndex}`;
+                this.clearCopyTimeout(timeoutKey);
+
+                copyButton.classList.add('copied');
+
+                // Reset after brief visual feedback using the optimized timeout system
+                this.setCopyTimeout(timeoutKey, () => {
+                    copyButton.classList.remove('copied');
+                }, 800);
+            }
+        } catch (err) {
+            console.error('Failed to copy code block:', err);
+            // Reset state on error
+            const copyButton = codeBlockElement.querySelector('.code-block-copy-button');
+            if (copyButton) {
+                copyButton.classList.remove('copied');
+            }
+        }
+    }
+
+    addCodeBlockCopyButtons(container) {
+        const codeBlocks = container.querySelectorAll('pre');
+        
+        codeBlocks.forEach((codeBlock, index) => {
+            // Skip if copy button already exists
+            if (codeBlock.querySelector('.code-block-copy-button')) {
+                return;
+            }
+
+            // Create copy button
+            const copyButton = document.createElement('button');
+            copyButton.className = 'code-block-copy-button';
+            copyButton.innerHTML = `
+                <svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+                <svg class="check-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M20 6L9 17l-5-5" />
+                </svg>
+            `;
+
+            // Add click event listener
+            copyButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.handleCodeBlockCopy(codeBlock, index);
+            });
+
+            // Append to code block
+            codeBlock.appendChild(copyButton);
+        });
+    }
+
+    initializeDynamicCopyButton(container) {
+        // Remove existing dynamic button if any
+        if (this.dynamicCopyButton) {
+            this.dynamicCopyButton.remove();
+        }
+
+        // Create the dynamic copy button
+        this.dynamicCopyButton = document.createElement('button');
+        this.dynamicCopyButton.className = 'dynamic-copy-button';
+        this.dynamicCopyButton.innerHTML = `
+            <svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+            </svg>
+            <svg class="check-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M20 6L9 17l-5-5" />
+            </svg>
+        `;
+
+        // Add click event listener
+        this.dynamicCopyButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleDynamicLineCopy();
+        });
+
+        // Append to container
+        container.appendChild(this.dynamicCopyButton);
+
+        // Add hover listeners to all text elements
+        this.addHoverListeners(container);
+
+        // Add hover listeners to the copy button
+        this.dynamicCopyButton.addEventListener('mouseenter', () => {
+            // Highlight the text when hovering over copy button
+            if (this.currentHoveredLine !== null) {
+                const element = this.shadowRoot.querySelector(`[data-line-index="${this.currentHoveredLine}"]`);
+                if (element) {
+                    element.classList.add('highlighted');
+                }
+            }
+            // Keep button visible when hovering over it
+            if (this.dynamicHoverTimeout) {
+                clearTimeout(this.dynamicHoverTimeout);
+            }
+        });
+
+        this.dynamicCopyButton.addEventListener('mouseleave', () => {
+            // Remove highlight when leaving copy button
+            if (this.currentHoveredLine !== null) {
+                const element = this.shadowRoot.querySelector(`[data-line-index="${this.currentHoveredLine}"]`);
+                if (element) {
+                    element.classList.remove('highlighted');
+                }
+            }
+            // Hide button when leaving it
+            this.handleCopyButtonLeave();
+        });
+    }
+
+    // Optimized hover listeners with better event delegation
+    addHoverListeners(container) {
+        const textElements = container.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th');
+        
+        textElements.forEach((element, index) => {
+            // Optimized text content check
+            if (!this.isValidTextElement(element)) return;
+            
+            element.classList.add('response-text-line');
+            element.setAttribute('data-line-index', index);
+            
+            // Use more efficient event handling
+            element.addEventListener('mouseenter', (e) => {
+                if (e.target === element) {
+                    this.handleLineHover(element, index);
+                }
+            }, { passive: true });
+
+            element.addEventListener('mouseleave', (e) => {
+                const relatedTarget = e.relatedTarget;
+                // Don't hide when moving to copy button or staying within element
+                if (relatedTarget?.classList?.contains('dynamic-copy-button') || 
+                    (relatedTarget && element.contains(relatedTarget))) {
+                    return;
+                }
+                this.handleLineLeave(element);
+            }, { passive: true });
+        });
+
+        container.addEventListener('mouseleave', () => {
+            // Only hide button when leaving the entire response container
+            this.hideDynamicCopyButton();
+        }, { passive: true });
+    }
+
+    // Helper method for validating text elements
+    isValidTextElement(element) {
+        const hasText = element.textContent?.trim();
+        if (!hasText) return false;
+        
+        const hasOnlyBlockChildren = element.children.length > 0 && 
+            Array.from(element.children).every(child => 
+                ['DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'BLOCKQUOTE'].includes(child.tagName)
+            );
+        
+        return !hasOnlyBlockChildren;
+    }
+
+    handleLineHover(element, lineIndex) {
+        if (this.currentHoveredLine === lineIndex) return;
+
+        // Remove highlight from previous element
+        if (this.currentHoveredLine !== null) {
+            const prevElement = this.shadowRoot.querySelector(`[data-line-index="${this.currentHoveredLine}"]`);
+            prevElement?.classList.remove('highlighted');
+        }
+
+        this.currentHoveredLine = lineIndex;
+        this.showDynamicCopyButton(element);
+    }
+
+    handleLineLeave(element) {
+        // Only remove highlight, but keep button visible at last position
+        element.classList.remove('highlighted');
+    }
+
+    handleCopyButtonLeave() {
+        // Only remove highlight when leaving the copy button
+        if (this.currentHoveredLine !== null) {
+            const element = this.shadowRoot.querySelector(`[data-line-index="${this.currentHoveredLine}"]`);
+            element?.classList.remove('highlighted');
+        }
+        // Keep button visible at its current position
+    }
+
+    // Optimized positioning calculation
+    calculateCopyButtonPosition(element, container, containerRect) {
+        const rect = element.getBoundingClientRect();
+        const elementTop = rect.top - containerRect.top + container.scrollTop;
+        const elementLeft = rect.left - containerRect.left;
+        
+        const config = AskView.COPY_BUTTON_CONFIG;
+        let leftPosition;
+        
+        if (element.tagName === 'LI') {
+            leftPosition = Math.max(config.MIN_LEFT_POSITION, elementLeft - config.LIST_ITEM_OFFSET);
+        } else if (element.closest('ul, ol')) {
+            leftPosition = Math.max(config.MIN_LEFT_POSITION, elementLeft - config.NESTED_CONTENT_OFFSET);
+        } else {
+            leftPosition = Math.max(config.REGULAR_MIN_LEFT, elementLeft - config.DEFAULT_OFFSET);
+        }
+        
+        // Ensure button doesn't go outside container bounds
+        const maxLeft = containerRect.width - config.BUTTON_SIZE - 8;
+        leftPosition = Math.min(leftPosition, maxLeft);
+        
+        return {
+            top: elementTop + (rect.height / 2) - config.VERTICAL_CENTER_OFFSET,
+            left: leftPosition
+        };
+    }
+
+    showDynamicCopyButton(element) {
+        if (!this.dynamicCopyButton) return;
+
+        const container = element.closest('.response-container');
+        const containerRect = container.getBoundingClientRect();
+        const position = this.calculateCopyButtonPosition(element, container, containerRect);
+        
+        this.dynamicCopyButton.style.top = `${position.top}px`;
+        this.dynamicCopyButton.style.left = `${position.left}px`;
+        this.dynamicCopyButton.classList.add('visible');
+
+        // Keep button visible at this position - no timeout clearing needed
+    }
+
+    // Optimized timeout management
+    clearHoverTimeout() {
+        if (this.dynamicHoverTimeout) {
+            clearTimeout(this.dynamicHoverTimeout);
+            this.dynamicHoverTimeout = null;
+        }
+    }
+
+    clearCopyTimeout(key) {
+        const timeout = this.copyTimeouts.get(key);
+        if (timeout) {
+            clearTimeout(timeout);
+            this.copyTimeouts.delete(key);
+        }
+    }
+
+    setCopyTimeout(key, callback, delay = 800) {
+        this.clearCopyTimeout(key);
+        const timeout = setTimeout(() => {
+            callback();
+            this.copyTimeouts.delete(key);
+        }, delay);
+        this.copyTimeouts.set(key, timeout);
+    }
+
+    hideDynamicCopyButton() {
+        if (!this.dynamicCopyButton) return;
+        
+        // Remove highlight from current element
+        if (this.currentHoveredLine !== null) {
+            const element = this.shadowRoot.querySelector(`[data-line-index="${this.currentHoveredLine}"]`);
+            element?.classList.remove('highlighted');
+        }
+        
+        this.dynamicCopyButton.classList.remove('visible');
+        this.currentHoveredLine = null;
+    }
+
+    async handleDynamicLineCopy() {
+        if (this.currentHoveredLine === null) return;
+
+        const hoveredElement = this.shadowRoot.querySelector(`[data-line-index="${this.currentHoveredLine}"]`);
+        if (!hoveredElement) return;
+
+        const textToCopy = hoveredElement.textContent || hoveredElement.innerText;
+        if (!textToCopy) return;
+
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+            console.log('Dynamic line copied to clipboard');
+
+            // Clear existing timeout if any
+            if (this.dynamicCopyTimeout) {
+                clearTimeout(this.dynamicCopyTimeout);
+                this.dynamicCopyTimeout = null;
+            }
+
+            // Show copied state
+            this.dynamicCopyButton.classList.add('copied');
+
+            // Reset after brief visual feedback
+            this.dynamicCopyTimeout = setTimeout(() => {
+                this.dynamicCopyButton.classList.remove('copied');
+                this.dynamicCopyTimeout = null;
+            }, 800);
+        } catch (err) {
+            console.error('Failed to copy dynamic line:', err);
+            // Reset state on error
+            this.dynamicCopyButton.classList.remove('copied');
         }
     }
 
