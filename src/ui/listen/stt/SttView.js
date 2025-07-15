@@ -49,6 +49,8 @@ export class SttView extends LitElement {
             font-size: 13px;
             margin-bottom: 4px;
             box-sizing: border-box;
+            user-select: text;
+            cursor: text;
         }
 
         .stt-message.them {
