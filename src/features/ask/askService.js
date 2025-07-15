@@ -22,6 +22,7 @@ const util = require('util');
 const execFile = util.promisify(require('child_process').execFile);
 const { desktopCapturer } = require('electron');
 const modelStateService = require('../common/services/modelStateService');
+const sttRepository = require('../listen/stt/repositories');
 
 // Try to load sharp, but don't fail if it's not available
 let sharp;
@@ -211,6 +212,43 @@ class AskService {
     }
 
     /**
+     * Retrieve recent transcript data from listen sessions
+     * @private
+     */
+    async _getRecentTranscripts() {
+        try {
+            // Get current user ID (assuming it's stored somewhere, or use a default)
+            const uid = 'default_user'; // This should be replaced with actual user ID retrieval
+            
+            // Get the active session
+            const activeSessionId = await sessionRepository.getOrCreateActive(uid, 'listen');
+            
+            // Get recent transcripts from the session
+            const transcripts = await sttRepository.getAllTranscriptsBySessionId(activeSessionId);
+            
+            // Filter and format recent transcripts 
+            const recentTranscripts = transcripts
+                .filter(t => t.text && t.text.trim().length > 0) // Filter out empty transcripts
+                .slice(-20) // Get last 20 entries
+                .map(t => {
+                    const timestamp = new Date(t.created_at * 1000).toLocaleTimeString();
+                    return `[${timestamp}] ${t.speaker || 'Speaker'}: ${t.text}`;
+                })
+                .join('\n');
+            
+            if (recentTranscripts.length > 0) {
+                console.log(`[AskService] Retrieved ${transcripts.length} recent transcript entries`);
+                return recentTranscripts;
+            }
+            
+            return '';
+        } catch (error) {
+            console.error('[AskService] Error retrieving recent transcripts:', error);
+            return '';
+        }
+    }
+
+    /**
      * 
      * @param {string} userPrompt
      * @returns {Promise<{success: boolean, response?: string, error?: string}>}
@@ -253,8 +291,18 @@ class AskService {
             const screenshotBase64 = screenshotResult.success ? screenshotResult.base64 : null;
 
             const conversationHistory = this._formatConversationForPrompt(conversationHistoryRaw);
+            
+            // Get recent transcript data from listen sessions
+            const recentTranscripts = await this._getRecentTranscripts();
+            
+            // Combine conversation history with recent transcripts
+            let contextData = conversationHistory;
+            if (recentTranscripts && recentTranscripts.length > 0) {
+                contextData += '\n\n--- Recent Audio Transcripts ---\n' + recentTranscripts;
+                console.log('[AskService] Including recent transcript data in context');
+            }
 
-            const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
+            const systemPrompt = getSystemPrompt('pickle_glass_analysis', contextData, false);
 
             const messages = [
                 { role: 'system', content: systemPrompt },
@@ -266,6 +314,15 @@ class AskService {
                 },
             ];
 
+            // Add transcript data first if available (higher priority)
+            if (recentTranscripts && recentTranscripts.length > 0) {
+                messages[1].content.unshift({
+                    type: 'text', 
+                    text: `PRIORITY: Recent Audio Transcript (ANALYZE THIS FIRST):\n${recentTranscripts}\n\n--- END OF TRANSCRIPT ---\n`
+                });
+            }
+
+            // Add screenshot after transcript data
             if (screenshotBase64) {
                 messages[1].content.push({
                     type: 'image_url',
@@ -311,7 +368,9 @@ class AskService {
                         { role: 'system', content: systemPrompt },
                         {
                             role: 'user',
-                            content: `User Request: ${userPrompt.trim()}`
+                            content: recentTranscripts && recentTranscripts.length > 0 
+                                ? `PRIORITY: Recent Audio Transcript (ANALYZE THIS FIRST):\n${recentTranscripts}\n\n--- END OF TRANSCRIPT ---\n\nUser Request: ${userPrompt.trim()}`
+                                : `User Request: ${userPrompt.trim()}`
                         }
                     ];
 
