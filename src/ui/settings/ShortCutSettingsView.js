@@ -171,6 +171,7 @@ export class ShortcutSettingsView extends LitElement {
 
     async handleSave() {
         if (!window.api) return;
+        this.feedback = {};
         const result = await window.api.shortcutSettingsView.saveShortcuts(this.shortcuts);
         if (!result.success) {
             alert('Failed to save shortcuts: ' + result.error);
@@ -179,6 +180,7 @@ export class ShortcutSettingsView extends LitElement {
 
     handleClose() {
         if (!window.api) return;
+        this.feedback = {};
         window.api.shortcutSettingsView.closeShortcutSettingsWindow();
     }
 

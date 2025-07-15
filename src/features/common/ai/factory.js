@@ -57,6 +57,14 @@ const PROVIDERS = {
       ],
       sttModels: [],
   },
+  'deepgram': {
+    name: 'Deepgram',
+    handler: () => require("./providers/deepgram"),
+    llmModels: [],
+    sttModels: [
+        { id: 'nova-3', name: 'Nova-3 (General)' },
+        ],
+    },
   'ollama': {
       name: 'Ollama (Local)',
       handler: () => require("./providers/ollama"),
@@ -148,6 +156,7 @@ function getProviderClass(providerId) {
         'openai': 'OpenAIProvider',
         'anthropic': 'AnthropicProvider',
         'gemini': 'GeminiProvider',
+        'deepgram': 'DeepgramProvider',
         'ollama': 'OllamaProvider',
         'whisper': 'WhisperProvider'
     };

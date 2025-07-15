@@ -8,13 +8,11 @@ class ShortcutsService {
     constructor() {
         this.lastVisibleWindows = new Set(['header']);
         this.mouseEventsIgnored = false;
-        this.movementManager = null;
         this.windowPool = null;
         this.allWindowVisibility = true;
     }
 
-    initialize(movementManager, windowPool) {
-        this.movementManager = movementManager;
+    initialize(windowPool) {
         this.windowPool = windowPool;
         internalBridge.on('reregister-shortcuts', () => {
             console.log('[ShortcutsService] Reregistering shortcuts due to header state change.');
@@ -138,7 +136,7 @@ class ShortcutsService {
     }
 
     async registerShortcuts(registerOnlyToggleVisibility = false) {
-        if (!this.movementManager || !this.windowPool) {
+        if (!this.windowPool) {
             console.error('[Shortcuts] Service not initialized. Cannot register shortcuts.');
             return;
         }
@@ -179,7 +177,7 @@ class ShortcutsService {
         if (displays.length > 1) {
             displays.forEach((display, index) => {
                 const key = `${modifier}+Shift+${index + 1}`;
-                globalShortcut.register(key, () => this.movementManager.moveToDisplay(display.id));
+                globalShortcut.register(key, () => internalBridge.emit('window:moveToDisplay', { displayId: display.id }));
             });
         }
 
@@ -190,7 +188,7 @@ class ShortcutsService {
         ];
         edgeDirections.forEach(({ key, direction }) => {
             globalShortcut.register(key, () => {
-                if (header && header.isVisible()) this.movementManager.moveToEdge(direction);
+                if (header && header.isVisible()) internalBridge.emit('window:moveToEdge', { direction });
             });
         });
 
@@ -232,16 +230,16 @@ class ShortcutsService {
                     };
                     break;
                 case 'moveUp':
-                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('up'); };
+                    callback = () => { if (header && header.isVisible()) internalBridge.emit('window:moveStep', { direction: 'up' }); };
                     break;
                 case 'moveDown':
-                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('down'); };
+                    callback = () => { if (header && header.isVisible()) internalBridge.emit('window:moveStep', { direction: 'down' }); };
                     break;
                 case 'moveLeft':
-                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('left'); };
+                    callback = () => { if (header && header.isVisible()) internalBridge.emit('window:moveStep', { direction: 'left' }); };
                     break;
                 case 'moveRight':
-                    callback = () => { if (header && header.isVisible()) this.movementManager.moveStep('right'); };
+                    callback = () => { if (header && header.isVisible()) internalBridge.emit('window:moveStep', { direction: 'right' }); };
                     break;
                 case 'toggleClickThrough':
                      callback = () => {

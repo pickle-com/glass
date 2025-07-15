@@ -30,8 +30,6 @@ if (shouldUseLiquidGlass) {
 
 let isContentProtectionOn = true;
 let lastVisibleWindows = new Set(['header']);
-const HEADER_HEIGHT = 47;
-const DEFAULT_WINDOW_WIDTH = 353;
 
 let currentHeaderState = 'apikey';
 const windowPool = new Map();
@@ -47,22 +45,18 @@ function updateLayout() {
 }
 let movementManager = null;
 
-
-const FADE_DURATION = 250;
-const FADE_FPS      = 60;
-
 /**
- * 윈도우 투명도를 서서히 변경한다.
  * @param {BrowserWindow} win
  * @param {number} from
  * @param {number} to
  * @param {number} duration
  * @param {Function=} onComplete 
  */
-function fadeWindow(win, from, to, duration = FADE_DURATION, onComplete) {
+function fadeWindow(win, from, to, duration = 250, onComplete) {
   if (!win || win.isDestroyed()) return;
 
-  const steps       = Math.max(1, Math.round(duration / (1000 / FADE_FPS)));
+  const FPS   = 60;
+  const steps       = Math.max(1, Math.round(duration / (1000 / FPS)));
   let   currentStep = 0;
 
   win.setOpacity(from);
@@ -83,7 +77,7 @@ function fadeWindow(win, from, to, duration = FADE_DURATION, onComplete) {
       win.setOpacity(to);
       onComplete && onComplete();
     }
-  }, 1000 / FADE_FPS);
+  }, 1000 / FPS);
 }
 
 const showSettingsWindow = () => {
@@ -105,6 +99,15 @@ function setupWindowController(windowPool, layoutManager, movementManager) {
     });
     internalBridge.on('window:requestToggleAllWindowsVisibility', ({ targetVisibility }) => {
         changeAllWindowsVisibility(windowPool, targetVisibility);
+    });
+    internalBridge.on('window:moveToDisplay', ({ displayId }) => {
+        movementManager.moveToDisplay(displayId);
+    });
+    internalBridge.on('window:moveToEdge', ({ direction }) => {
+        movementManager.moveToEdge(direction);
+    });
+    internalBridge.on('window:moveStep', ({ direction }) => {
+        movementManager.moveStep(direction);
     });
 }
 
@@ -302,7 +305,7 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
         } else {
             const currentBounds = win.getBounds();
             fadeWindow(
-                win, 1, 0, FADE_DURATION,
+                win, 1, 0, undefined,
                 () => win.hide()
             );
             if (name === 'listen') {
@@ -625,6 +628,9 @@ function getDisplayById(displayId) {
 
 
 function createWindows() {
+    const HEADER_HEIGHT        = 47;
+    const DEFAULT_WINDOW_WIDTH = 353;
+
     const primaryDisplay = screen.getPrimaryDisplay();
     const { y: workAreaY, width: screenWidth } = primaryDisplay.workArea;
 
@@ -685,7 +691,7 @@ function createWindows() {
     layoutManager = new WindowLayoutManager(windowPool);
 
     header.webContents.once('dom-ready', () => {
-        shortcutsService.initialize(movementManager, windowPool);
+        shortcutsService.initialize(windowPool);
         shortcutsService.registerShortcuts();
     });
 

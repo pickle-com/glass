@@ -55,17 +55,6 @@ class SttService {
         }
     }
 
-    async handleSendSystemAudioContent(data, mimeType) {
-        try {
-            await this.sendSystemAudioContent(data, mimeType);
-            this.sendToRenderer('system-audio-data', { data });
-            return { success: true };
-        } catch (error) {
-            console.error('Error sending system audio:', error);
-            return { success: false, error: error.message };
-        }
-    }
-
     flushMyCompletion() {
         const finalText = (this.myCompletionBuffer + this.myCurrentUtterance).trim();
         if (!this.modelInfo || !finalText) return;
@@ -157,7 +146,7 @@ class SttService {
                 console.log('[SttService] Ignoring message - session already closed');
                 return;
             }
-            console.log('[SttService] handleMyMessage', message);
+            // console.log('[SttService] handleMyMessage', message);
             
             if (this.modelInfo.provider === 'whisper') {
                 // Whisper STT emits 'transcription' events with different structure
@@ -177,10 +166,6 @@ class SttService {
                         '(SOUND)',
                         '(NOISE)'
                     ];
-                    
-
-                    
-                    const normalizedText = finalText.toLowerCase().trim();
                     
                     const isNoise = noisePatterns.some(pattern => 
                         finalText.includes(pattern) || finalText === pattern
@@ -232,6 +217,38 @@ class SttService {
                     isFinal: false,
                     timestamp: Date.now(),
                 });
+                
+            // Deepgram 
+            } else if (this.modelInfo.provider === 'deepgram') {
+                const text = message.channel?.alternatives?.[0]?.transcript;
+                if (!text || text.trim().length === 0) return;
+
+                const isFinal = message.is_final;
+                console.log(`[SttService-Me-Deepgram] Received: isFinal=${isFinal}, text="${text}"`);
+
+                if (isFinal) {
+                    // 최종 결과가 도착하면, 현재 진행중인 부분 발화는 비우고
+                    // 최종 텍스트로 debounce를 실행합니다.
+                    this.myCurrentUtterance = ''; 
+                    this.debounceMyCompletion(text); 
+                } else {
+                    // 부분 결과(interim)인 경우, 화면에 실시간으로 업데이트합니다.
+                    if (this.myCompletionTimer) clearTimeout(this.myCompletionTimer);
+                    this.myCompletionTimer = null;
+
+                    this.myCurrentUtterance = text;
+                    
+                    const continuousText = (this.myCompletionBuffer + ' ' + this.myCurrentUtterance).trim();
+
+                    this.sendToRenderer('stt-update', {
+                        speaker: 'Me',
+                        text: continuousText,
+                        isPartial: true,
+                        isFinal: false,
+                        timestamp: Date.now(),
+                    });
+                }
+                
             } else {
                 const type = message.type;
                 const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
@@ -291,9 +308,6 @@ class SttService {
                         '(NOISE)'
                     ];
                     
-                    
-                    const normalizedText = finalText.toLowerCase().trim();
-                    
                     const isNoise = noisePatterns.some(pattern => 
                         finalText.includes(pattern) || finalText === pattern
                     );
@@ -345,6 +359,34 @@ class SttService {
                     isFinal: false,
                     timestamp: Date.now(),
                 });
+
+            // Deepgram
+            } else if (this.modelInfo.provider === 'deepgram') {
+                const text = message.channel?.alternatives?.[0]?.transcript;
+                if (!text || text.trim().length === 0) return;
+
+                const isFinal = message.is_final;
+
+                if (isFinal) {
+                    this.theirCurrentUtterance = ''; 
+                    this.debounceTheirCompletion(text); 
+                } else {
+                    if (this.theirCompletionTimer) clearTimeout(this.theirCompletionTimer);
+                    this.theirCompletionTimer = null;
+
+                    this.theirCurrentUtterance = text;
+                    
+                    const continuousText = (this.theirCompletionBuffer + ' ' + this.theirCurrentUtterance).trim();
+
+                    this.sendToRenderer('stt-update', {
+                        speaker: 'Them',
+                        text: continuousText,
+                        isPartial: true,
+                        isFinal: false,
+                        timestamp: Date.now(),
+                    });
+                }
+
             } else {
                 const type = message.type;
                 const text = message.transcript || message.delta || (message.alternatives && message.alternatives[0]?.transcript) || '';
@@ -431,10 +473,14 @@ class SttService {
             throw new Error('STT model info could not be retrieved.');
         }
 
-        const payload = modelInfo.provider === 'gemini'
-            ? { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } }
-            : data;
-
+        let payload;
+        if (modelInfo.provider === 'gemini') {
+            payload = { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } };
+        } else if (modelInfo.provider === 'deepgram') {
+            payload = Buffer.from(data, 'base64'); 
+        } else {
+            payload = data;
+        }
         await this.mySttSession.sendRealtimeInput(payload);
     }
 
@@ -452,10 +498,15 @@ class SttService {
             throw new Error('STT model info could not be retrieved.');
         }
 
-        const payload = modelInfo.provider === 'gemini'
-            ? { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } }
-            : data;
-        
+        let payload;
+        if (modelInfo.provider === 'gemini') {
+            payload = { audio: { data, mimeType: mimeType || 'audio/pcm;rate=24000' } };
+        } else if (modelInfo.provider === 'deepgram') {
+            payload = Buffer.from(data, 'base64');
+        } else {
+            payload = data;
+        }
+
         await this.theirSttSession.sendRealtimeInput(payload);
     }
 
@@ -547,9 +598,15 @@ class SttService {
 
                 if (this.theirSttSession) {
                     try {
-                        const payload = modelInfo.provider === 'gemini'
-                            ? { audio: { data: base64Data, mimeType: 'audio/pcm;rate=24000' } }
-                            : base64Data;
+                        let payload;
+                        if (modelInfo.provider === 'gemini') {
+                            payload = { audio: { data: base64Data, mimeType: 'audio/pcm;rate=24000' } };
+                        } else if (modelInfo.provider === 'deepgram') {
+                            payload = Buffer.from(base64Data, 'base64');
+                        } else {
+                            payload = base64Data;
+                        }
+
                         await this.theirSttSession.sendRealtimeInput(payload);
                     } catch (err) {
                         console.error('Error sending system audio:', err.message);
