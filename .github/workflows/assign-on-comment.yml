@@ -1,0 +1,62 @@
+name: Assign on Comment
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  # Job 1: Any contributor can self-assign
+  self-assign:
+    # Only run if the comment is exactly '/assign'
+    if: startsWith(github.event.comment.body, '/assign') && !contains(github.event.comment.body, '@')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Assign commenter to the issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Assign the commenter as the assignee
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              assignees: [context.actor]
+            });
+            // Add a rocket (🚀) reaction to indicate success
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+  # Job 2: Admin can assign others
+  assign-others:
+    # Only run if the comment starts with '/assign @' and the commenter is in the admin group
+    if: startsWith(github.event.comment.body, '/assign @') && contains(fromJson('["OWNER", "COLLABORATOR", "MEMBER"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Assign mentioned user
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mention = context.payload.comment.body.split(' ')[1];
+            const assignee = mention.substring(1); // Remove '@'
+            // Assign the mentioned user as the assignee
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              assignees: [assignee]
+            });
+            // Add a thumbs up (+1) reaction to indicate success
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: '+1'
+            });

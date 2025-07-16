@@ -46,9 +46,10 @@ export default function LoginPage() {
 
                         window.location.href = deepLinkUrl;
 
-                        setTimeout(() => {
-                            alert('Login completed. Please return to Pickle Glass app.');
-                        }, 1000);
+                          // Maybe we don't need this
+            // setTimeout(() => {
+            //   alert('Login completed. Please return to Pickle Glass app.')
+            // }, 1000)
                     } catch (error) {
                         console.error('❌ Deep link processing failed:', error);
                         alert('Login was successful but failed to return to app. Please check the app.');

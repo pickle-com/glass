@@ -62,11 +62,14 @@ npm run setup
 
 <img width="100%" alt="booking-screen" src="./public/assets/01.gif">
 
-### Use your own OpenAI API key, or sign up to use ours (free)
+### Use your own API key, or sign up to use ours (free)
 
 <img width="100%" alt="booking-screen" src="./public/assets/02.gif">
 
-You can visit [here](https://platform.openai.com/api-keys) to get your OpenAI API Key.
+**Currently Supporting:**
+- OpenAI API: Get OpenAI API Key [here](https://platform.openai.com/api-keys)
+- Gemini API: Get Gemini API Key [here](https://aistudio.google.com/apikey)
+- Local LLM Ollama & Whisper
 
 ### Liquid Glass Design (coming soon)
 
@@ -88,21 +91,39 @@ You can visit [here](https://platform.openai.com/api-keys) to get your OpenAI AP
 
 `Ctrl/Cmd + Arrows` : move main window position
 
+## Repo Activity
+
+![Alt](https://repobeats.axiom.co/api/embed/a23e342faafa84fa8797fa57762885d82fac1180.svg "Repobeats analytics image")
+
 ## Contributing
 
-We love contributions! Feel free to open issues for bugs or feature requests.
+We love contributions! Feel free to open issues for bugs or feature requests. For detailed guide, please see our [contributing guide](/CONTRIBUTING.md).
+> Currently, we're working on a full code refactor and modularization. Once that's completed, we'll jump into addressing the major issues.
 
-## 🛠 Current Issues & Improvements
+### Contributors
+
+<a href="https://github.com/pickle-com/glass/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=pickle-com/glass" />
+</a>
+
+### Help Wanted Issues
+
+We have a list of [help wanted](https://github.com/pickle-com/glass/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22%F0%9F%99%8B%E2%80%8D%E2%99%82%EF%B8%8Fhelp%20wanted%22) that contain small features and bugs which have a relatively limited scope. This is a great place to get started, gain experience, and get familiar with our contribution process.
+
+
+### 🛠 Current Issues & Improvements
 
 | Status | Issue                          | Description                                       |
 |--------|--------------------------------|---------------------------------------------------|
-| 🚧 WIP     | AEC Improvement                | Transcription is not working occasionally |
-| 🚧 WIP     | Code Refactoring               | Refactoring the entire codebase for better maintainability. |
-| 🚧 WIP      | Firebase Data Storage Issue    | Session & ask should be saved in firebase for signup users |
-| 🚧 WIP      | Login Issue                    | Currently breaking when switching between local and sign-in mode |
 | 🚧 WIP      | Liquid Glass                    | Liquid Glass UI for MacOS 26 |
-| 🚧 WIP      | Permission Issue           | Mic & system audio & display capture permission sometimes not working|
 
+### Changelog
+
+- Jul 5: Now support Gemini, Intel Mac supported
+- Jul 6: Full code refactoring has done.
+- Jul 7: Now support Claude, LLM/STT model selection
+- Jul 8: Now support Windows(beta), Improved AEC by Rust(to seperate mic/system audio), shortcut editing(beta)
+- Jul 8: Now support Local LLM & STT, Firebase Data Storage 
 
 
 ## About Pickle

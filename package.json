@@ -1,19 +1,22 @@
 {
     "name": "pickle-glass",
     "productName": "Glass",
-    "version": "0.1.2",
+    "version": "0.2.4",
     "description": "Cl*ely for Free",
     "main": "src/index.js",
     "scripts": {
         "setup": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
-        "start": "npm run build:renderer && electron-forge start",
-        "package": "npm run build:renderer && electron-forge package",
+        "start": "npm run build:renderer && electron .",
+        "package": "npm run build:all && electron-builder --dir",
         "make": "npm run build:renderer && electron-forge make",
-        "build": "npm run build:renderer && electron-builder --config electron-builder.yml --publish never",
-        "publish": "npm run build:renderer && electron-builder --config electron-builder.yml --publish always",
+        "build": "npm run build:all && electron-builder --config electron-builder.yml --publish never",
+        "build:win": "npm run build:all && electron-builder --win --x64 --publish never",
+        "publish": "npm run build:all && electron-builder --config electron-builder.yml --publish always",
         "lint": "eslint --ext .ts,.tsx,.js .",
         "postinstall": "electron-builder install-app-deps",
         "build:renderer": "node build.js",
+        "build:web": "cd pickleglass_web && npm run build && cd ..",
+        "build:all": "npm run build:renderer && npm run build:web",
         "watch:renderer": "node build.js --watch"
     },
     "keywords": [
@@ -29,13 +32,14 @@
     },
     "license": "GPL-3.0",
     "dependencies": {
+        "@anthropic-ai/sdk": "^0.56.0",
+        "@deepgram/sdk": "^4.9.1",
         "@google/genai": "^1.8.0",
         "@google/generative-ai": "^0.24.1",
         "axios": "^1.10.0",
-        "better-sqlite3": "^9.4.3",
+        "better-sqlite3": "^9.6.0",
         "cors": "^2.8.5",
         "dotenv": "^17.0.0",
-        "electron-deeplink": "^1.0.10",
         "electron-squirrel-startup": "^1.0.1",
         "electron-store": "^8.2.0",
         "electron-updater": "^6.6.2",
@@ -43,33 +47,26 @@
         "firebase": "^11.10.0",
         "firebase-admin": "^13.4.0",
         "jsonwebtoken": "^9.0.2",
+        "keytar": "^7.9.0",
         "node-fetch": "^2.7.0",
         "openai": "^4.70.0",
+        "portkey-ai": "^1.10.1",
         "react-hot-toast": "^2.5.2",
         "sharp": "^0.34.2",
-        "sqlite3": "^5.1.7",
         "validator": "^13.11.0",
         "wait-on": "^8.0.3",
         "ws": "^8.18.0"
     },
     "devDependencies": {
-        "@electron-forge/cli": "^7.8.1",
-        "@electron-forge/maker-deb": "^7.8.1",
-        "@electron-forge/maker-dmg": "^7.8.1",
-        "@electron-forge/maker-rpm": "^7.8.1",
-        "@electron-forge/maker-squirrel": "^7.8.1",
-        "@electron-forge/maker-zip": "^7.8.1",
-        "@electron-forge/plugin-auto-unpack-natives": "^7.8.1",
-        "@electron-forge/plugin-fuses": "^7.8.1",
         "@electron/fuses": "^1.8.0",
         "@electron/notarize": "^2.5.0",
         "electron": "^30.5.1",
         "electron-builder": "^26.0.12",
         "electron-reloader": "^1.2.3",
-        "esbuild": "^0.25.5"
+        "esbuild": "^0.25.5",
+        "prettier": "^3.6.2"
     },
     "optionalDependencies": {
-        "@img/sharp-darwin-x64": "^0.34.2",
-        "@img/sharp-libvips-darwin-x64": "^1.1.0"
+        "electron-liquid-glass": "^1.0.1"
     }
 }

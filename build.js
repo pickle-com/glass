@@ -14,8 +14,8 @@ const baseConfig = {
 };
 
 const entryPoints = [
-    { in: 'src/app/HeaderController.js', out: 'public/build/header' },
-    { in: 'src/app/PickleGlassApp.js', out: 'public/build/content' },
+    { in: 'src/ui/app/HeaderController.js', out: 'public/build/header' },
+    { in: 'src/ui/app/PickleGlassApp.js', out: 'public/build/content' },
 ];
 
 async function build() {

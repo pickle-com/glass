@@ -1,9 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const db = require('./db');
+// const db = require('./db'); // No longer needed
 const { identifyUser } = require('./middleware/auth');
 
-function createApp() {
+function createApp(eventBridge) {
     const app = express();
 
     const webUrl = process.env.pickleglass_WEB_URL || 'http://localhost:3000';
@@ -18,6 +18,11 @@ function createApp() {
 
     app.get('/', (req, res) => {
         res.json({ message: "pickleglass API is running" });
+    });
+
+    app.use((req, res, next) => {
+        req.bridge = eventBridge;
+        next();
     });
 
     app.use('/api', identifyUser);

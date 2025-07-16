@@ -1,0 +1,12 @@
+/*
+  이 파일은 body.has-glass 클래스가 적용되었을 때 모든 애니메이션, 트랜지션,
+  배경, 테두리 등을 비활성화하여 깨끗한 투명 효과(Glass)를 보장합니다.
+*/
+body.has-glass * {
+    animation: none !important;
+    transition: none !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}

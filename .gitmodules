@@ -1,0 +1,3 @@
+[submodule "aec"]
+	path = aec
+	url = https://github.com/samtiz/aec.git

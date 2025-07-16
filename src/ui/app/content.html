@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="content-security-policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval'" />
+        <title>Pickle Glass Content</title>
+        <style>
+            :root {
+                --background-transparent: transparent;
+                --text-color: #e5e5e7;
+                --border-color: rgba(255, 255, 255, 0.2);
+                --header-background: rgba(0, 0, 0, 0.8);
+                --header-actions-color: rgba(255, 255, 255, 0.6);
+                --main-content-background: rgba(0, 0, 0, 0.8);
+                --button-background: rgba(0, 0, 0, 0.5);
+                --button-border: rgba(255, 255, 255, 0.1);
+                --icon-button-color: rgb(229, 229, 231);
+                --hover-background: rgba(255, 255, 255, 0.1);
+                --input-background: rgba(0, 0, 0, 0.3);
+                --placeholder-color: rgba(255, 255, 255, 0.4);
+                --focus-border-color: #007aff;
+                --focus-box-shadow: rgba(0, 122, 255, 0.2);
+                --input-focus-background: rgba(0, 0, 0, 0.5);
+                --scrollbar-track: rgba(0, 0, 0, 0.2);
+                --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+                --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+                --preview-video-background: rgba(0, 0, 0, 0.9);
+                --preview-video-border: rgba(255, 255, 255, 0.15);
+                --option-label-color: rgba(255, 255, 255, 0.8);
+                --screen-option-background: rgba(0, 0, 0, 0.4);
+                --screen-option-hover-background: rgba(0, 0, 0, 0.6);
+                --screen-option-selected-background: rgba(0, 122, 255, 0.15);
+                --screen-option-text: rgba(255, 255, 255, 0.7);
+                --description-color: rgba(255, 255, 255, 0.6);
+                --start-button-background: white;
+                --start-button-color: black;
+                --start-button-border: white;
+                --start-button-hover-background: rgba(255, 255, 255, 0.8);
+                --start-button-hover-border: rgba(0, 0, 0, 0.2);
+                --text-input-button-background: #007aff;
+                --text-input-button-hover: #0056b3;
+                --link-color: #007aff;
+                --key-background: rgba(255, 255, 255, 0.1);
+                --scrollbar-background: rgba(0, 0, 0, 0.4);
+
+                /* Layout-specific variables */
+                --header-padding: 10px 20px;
+                --header-font-size: 16px;
+                --header-gap: 12px;
+                --header-button-padding: 8px 16px;
+                --header-icon-padding: 8px;
+                --header-font-size-small: 13px;
+                --main-content-padding: 20px;
+                --main-content-margin-top: 10px;
+                --icon-size: 24px;
+                --border-radius: 7px;
+                --content-border-radius: 7px;
+            }
+
+            /* Compact layout styles */
+            :root.compact-layout {
+                --header-padding: 6px 12px;
+                --header-font-size: 13px;
+                --header-gap: 6px;
+                --header-button-padding: 4px 8px;
+                --header-icon-padding: 4px;
+                --header-font-size-small: 10px;
+                --main-content-padding: 10px;
+                --main-content-margin-top: 2px;
+                --icon-size: 16px;
+                --border-radius: 4px;
+                --content-border-radius: 4px;
+            }
+
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                min-height: 100%;
+                overflow: hidden;
+                background: transparent;
+            }
+
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            pickle-glass-app {
+                display: block;
+                width: 100%;
+                transform: translate3d(0, 0, 0);
+                backface-visibility: hidden;
+                perspective: 1000px;
+                transform-origin: center center;
+                contain: layout style paint;
+                transition: transform 0.25s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.25s ease-out;
+            }
+        </style>
+    </head>
+    <body>
+        <script src="../assets/marked-4.3.0.min.js"></script>
+        
+        <script type="module" src="../../../public/build/content.js"></script>
+
+        <pickle-glass-app id="pickle-glass"></pickle-glass-app>
+        
+        <script>
+            window.addEventListener('DOMContentLoaded', () => {
+                const app = document.getElementById('pickle-glass');
+
+            });
+        </script>
+        <script>
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('glass') === 'true') {
+                document.body.classList.add('has-glass');
+            }
+        </script>
+    </body>
+</html>
