@@ -256,8 +256,52 @@ export class AskView extends LitElement {
             padding-left: 20px;
         }
 
+        .message-bubble ol {
+            list-style-type: decimal;
+        }
+
+        .message-bubble ul {
+            list-style-type: disc;
+        }
+
         .message-bubble li {
-            margin: 2px 0;
+            margin: 1px 0;
+            line-height: 1.3;
+        }
+
+        /* Numbered list styling */
+        .message-bubble ol li {
+            padding-left: 4px;
+        }
+
+        /* Bullet list styling */
+        .message-bubble ul li {
+            padding-left: 4px;
+        }
+
+        /* Nested lists */
+        .message-bubble ol ol,
+        .message-bubble ul ul,
+        .message-bubble ol ul,
+        .message-bubble ul ol {
+            margin: 4px 0;
+            padding-left: 20px;
+        }
+
+        /* Better spacing for list items */
+        .message-bubble li + li {
+            margin-top: 6px;
+        }
+
+        /* Style for numbered steps */
+        .message-bubble ol li::marker {
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Style for bullet points */
+        .message-bubble ul li::marker {
+            color: rgba(255, 255, 255, 0.7);
         }
 
         .message-bubble code {
@@ -517,6 +561,17 @@ export class AskView extends LitElement {
         :host-context(body.has-glass) .conversation-container::-webkit-scrollbar-thumb {
             background: transparent !important;
         }
+
+        /* Simple list styling */
+        .message-bubble div {
+            line-height: 1.5;
+        }
+
+        /* Make numbered items stand out */
+        .message-bubble div:first-letter {
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+        }
     `;
 
     constructor() {
@@ -565,17 +620,102 @@ export class AskView extends LitElement {
         }
     }
 
-    // Simple markdown parser that returns clean text (no HTML)
-    parseMarkdown(text) {
+    async parseMarkdown(text) {
         if (!text) return '';
+        return this.fallbackParse(text);
+    }
+
+    async loadMarkedLibrary() {
+        if (window.marked) return;
         
-        return text
-            // Remove markdown bold syntax **text** -> text (keep the text bold styling will be done via CSS)
+        try {
+            const script = document.createElement('script');
+            script.src = '../../assets/marked-4.3.0.min.js';
+            script.onload = () => {
+                console.log('Marked library loaded successfully');
+            };
+            script.onerror = () => {
+                console.error('Failed to load marked library');
+            };
+            document.head.appendChild(script);
+            
+            // Wait for the script to load
+            await new Promise((resolve, reject) => {
+                script.onload = resolve;
+                script.onerror = reject;
+            });
+        } catch (error) {
+            console.error('Error loading marked library:', error);
+        }
+    }
+
+    fallbackParse(text) {
+        // Fallback parsing for when marked library isn't available
+        let result = text;
+        
+        // Handle numbered lists by grouping consecutive numbered items
+        const lines = result.split('\n');
+        let inNumberedList = false;
+        let numberedListItems = [];
+        let processedLines = [];
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const numberedMatch = line.match(/^(\d+\.\s+)(.+)$/);
+            
+            if (numberedMatch) {
+                // Start or continue numbered list
+                if (!inNumberedList) {
+                    inNumberedList = true;
+                    numberedListItems = [];
+                }
+                numberedListItems.push(`<li style="margin: 1px 0; line-height: 1.3;">${numberedMatch[2]}</li>`);
+            } else {
+                // End numbered list if we were in one
+                if (inNumberedList) {
+                    processedLines.push(`<ol style="margin: 2px 0; padding-left: 20px;">${numberedListItems.join('')}</ol>`);
+                    inNumberedList = false;
+                    numberedListItems = [];
+                }
+                processedLines.push(line);
+            }
+        }
+        
+        // Handle case where numbered list ends the text
+        if (inNumberedList) {
+            processedLines.push(`<ol style="margin: 2px 0; padding-left: 20px;">${numberedListItems.join('')}</ol>`);
+        }
+        
+        result = processedLines.join('\n');
+        
+        return result
+            // Convert bullet lists: - Item or * Item -> <ul><li>Item</li></ul>
+            .replace(/^[-*]\s+(.+)$/gm, '<ul style="margin: 2px 0; padding-left: 20px;"><li style="margin: 1px 0; line-height: 1.3;">$1</li></ul>')
+            // Convert line breaks
+            .replace(/\n/g, '<br>')
+            // Remove markdown bold syntax but keep text
             .replace(/\*\*(.*?)\*\*/g, '$1')
-            // Remove markdown headers ### Text -> Text
-            .replace(/^### (.*$)/gm, '$1')
-            // Keep line breaks as they are
-            .replace(/\n/g, '\n');
+            // Remove markdown headers
+            .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+            .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+            .replace(/^# (.*$)/gm, '<h1>$1</h1>');
+    }
+
+    async renderMarkdownContent() {
+        const markdownElements = this.shadowRoot.querySelectorAll('.markdown-content');
+        
+        for (const element of markdownElements) {
+            const originalText = element.getAttribute('data-original-text');
+            if (originalText) {
+                try {
+                    const parsedHTML = await this.parseMarkdown(originalText);
+                    element.innerHTML = parsedHTML;
+                } catch (error) {
+                    console.error('Error rendering markdown:', error);
+                    element.textContent = originalText;
+                }
+            }
+        }
     }
 
     connectedCallback() {
@@ -899,6 +1039,18 @@ export class AskView extends LitElement {
                 this.updateScrollButton();
             });
         }
+        
+        // Initial markdown rendering
+        this.renderMarkdownContent();
+    }
+
+    updated(changedProperties) {
+        super.updated(changedProperties);
+        
+        // Render markdown content after DOM updates
+        if (changedProperties.has('conversationHistory') || changedProperties.has('currentStreamingMessage')) {
+            this.renderMarkdownContent();
+        }
     }
 
     updateScrollButton() {
@@ -936,9 +1088,15 @@ export class AskView extends LitElement {
                             </div>
                         `
                         : html`
-                            ${this.conversationHistory.map(msg => html`
+                            ${this.conversationHistory.map((msg, index) => html`
                                 <div class="message-bubble ${msg.role}">
-                                    ${this.parseMarkdown(msg.content)}
+                                    <div 
+                                        class="markdown-content" 
+                                        data-original-text="${msg.content}"
+                                        data-message-index="${index}"
+                                    >
+                                        ${msg.content}
+                                    </div>
                                 </div>
                             `)}
                             
@@ -955,7 +1113,13 @@ export class AskView extends LitElement {
                             
                             ${this.isStreaming && this.currentStreamingMessage ? html`
                                 <div class="message-bubble assistant streaming">
-                                    ${this.parseMarkdown(this.currentStreamingMessage)}
+                                    <div 
+                                        class="markdown-content" 
+                                        data-original-text="${this.currentStreamingMessage}"
+                                        data-message-index="streaming"
+                                    >
+                                        ${this.currentStreamingMessage}
+                                    </div>
                                 </div>
                             ` : ''}
                         `
