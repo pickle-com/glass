@@ -12,6 +12,21 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.get('/search', async (req, res) => {
+    try {
+        const query = req.query.q;
+        if (!query || query.trim().length === 0) {
+            return res.json([]);
+        }
+
+        const result = await ipcRequest(req, 'search-content', { query: query.trim() });
+        res.json(result);
+    } catch (error) {
+        console.error('Failed to search content via IPC:', error);
+        res.status(500).json({ error: 'Failed to search content' });
+    }
+});
+
 router.post('/', async (req, res) => {
     try {
         const result = await ipcRequest(req, 'create-session', req.body);
