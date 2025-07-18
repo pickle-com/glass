@@ -66,7 +66,6 @@ function setupProtocolHandling() {
     app.on('second-instance', (event, commandLine, workingDirectory) => {
         console.log('[Protocol] Second instance command line:', commandLine);
         
-        focusMainWindow();
         
         let protocolUrl = null;
         
@@ -118,30 +117,6 @@ function setupProtocolHandling() {
     });
 }
 
-function focusMainWindow() {
-    const { windowPool } = require('./window/windowManager.js');
-    if (windowPool) {
-        const header = windowPool.get('header');
-        if (header && !header.isDestroyed()) {
-            if (header.isMinimized()) header.restore();
-            header.focus();
-            return true;
-        }
-    }
-    
-    // Fallback: focus any available window
-    const windows = BrowserWindow.getAllWindows();
-    if (windows.length > 0) {
-        const mainWindow = windows[0];
-        if (!mainWindow.isDestroyed()) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.focus();
-            return true;
-        }
-    }
-    
-    return false;
-}
 
 if (process.platform === 'win32') {
     for (const arg of process.argv) {
@@ -482,7 +457,6 @@ async function handleCustomUrl(url) {
                 const header = windowPool.get('header');
                 if (header) {
                     if (header.isMinimized()) header.restore();
-                    header.focus();
                     
                     const targetUrl = `http://localhost:${WEB_PORT}/${action}`;
                     console.log(`[Custom URL] Navigating webview to: ${targetUrl}`);
@@ -544,7 +518,6 @@ async function handleFirebaseAuthCallback(params) {
         const header = windowPool.get('header');
         if (header) {
             if (header.isMinimized()) header.restore();
-            header.focus();
         } else {
             console.error('[Auth] Header window not found after auth callback.');
         }
@@ -569,7 +542,6 @@ function handlePersonalizeFromUrl(params) {
     
     if (header) {
         if (header.isMinimized()) header.restore();
-        header.focus();
         
         const personalizeUrl = `http://localhost:${WEB_PORT}/settings`;
         console.log(`[Custom URL] Navigating to personalize page: ${personalizeUrl}`);

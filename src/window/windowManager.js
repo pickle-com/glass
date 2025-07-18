@@ -656,11 +656,11 @@ function createWindows() {
         transparent: true,
         vibrancy: false,
         hasShadow: false,
-        alwaysOnTop: true,
+        alwaysOnTop: false,
         skipTaskbar: true,
         hiddenInMissionControl: true,
         resizable: false,
-        focusable: true,
+        focusable: false,
         acceptFirstMouse: true,
         webPreferences: {
             nodeIntegration: false,
@@ -727,22 +727,6 @@ function createWindows() {
         header.webContents.openDevTools({ mode: 'detach' });
     }
 
-    header.on('focus', () => {
-        console.log('[WindowManager] Header gained focus');
-    });
-
-    header.on('blur', () => {
-        console.log('[WindowManager] Header lost focus');
-    });
-
-    header.webContents.on('before-input-event', (event, input) => {
-        if (input.type === 'mouseDown') {
-            const target = input.target;
-            if (target && (target.includes('input') || target.includes('apikey'))) {
-                header.focus();
-            }
-        }
-    });
 
     header.on('resize', () => updateChildWindowLayouts(false));
 
