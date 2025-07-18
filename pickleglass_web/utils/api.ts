@@ -78,6 +78,28 @@ export interface PromptPreset {
   sync_state: 'clean' | 'dirty';
 }
 
+export interface SearchResult {
+  id: string;
+  title: string;
+  session_type: string;
+  started_at: number;
+  ended_at?: number;
+  updated_at: number;
+  message_matches: number;
+  transcript_matches: number;
+  total_matches: number;
+  match_type: 'title' | 'content';
+  previews: SearchPreview[];
+}
+
+export interface SearchPreview {
+  content: string;
+  role: string;
+  timestamp: number;
+  type: 'ai_message' | 'transcript';
+  snippet: string;
+}
+
 export interface SessionDetails {
     session: Session;
     transcripts: Transcript[];
@@ -299,7 +321,7 @@ export const apiCall = async (path: string, options: RequestInit = {}) => {
 };
 
 
-export const searchConversations = async (query: string): Promise<Session[]> => {
+export const searchConversations = async (query: string): Promise<SearchResult[]> => {
   if (!query.trim()) {
     return [];
   }
@@ -308,7 +330,19 @@ export const searchConversations = async (query: string): Promise<Session[]> => 
     const sessions = await getSessions();
     return sessions.filter(session => 
       session.title.toLowerCase().includes(query.toLowerCase())
-    );
+    ).map(session => ({
+      id: session.id,
+      title: session.title,
+      session_type: session.session_type,
+      started_at: session.started_at,
+      ended_at: session.ended_at,
+      updated_at: session.updated_at,
+      message_matches: 0,
+      transcript_matches: 0,
+      total_matches: 1,
+      match_type: 'title' as const,
+      previews: []
+    }));
   } else {
     const response = await apiCall(`/api/conversations/search?q=${encodeURIComponent(query)}`, {
       method: 'GET',

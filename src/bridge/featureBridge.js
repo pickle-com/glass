@@ -12,6 +12,7 @@ const askService = require('../features/ask/askService');
 const listenService = require('../features/listen/listenService');
 const permissionService = require('../features/common/services/permissionService');
 const encryptionService = require('../features/common/services/encryptionService');
+const searchService = require('../features/search/searchService');
 
 module.exports = {
   // Renderer로부터의 요청을 수신하고 서비스로 전달
@@ -106,6 +107,16 @@ module.exports = {
         console.error('[FeatureBridge] listen:changeSession failed', error.message);
         return { success: false, error: error.message };
       }
+    });
+
+    // Search
+    ipcMain.handle('search-content', async (event, { query }) => {
+        const authService = require('../features/common/services/authService');
+        const uid = authService.getCurrentUserId();
+        if (!uid) {
+            throw new Error('User not authenticated');
+        }
+        return await searchService.searchSessions(query, uid);
     });
 
     // ModelStateService

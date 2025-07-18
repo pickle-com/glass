@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, X } from 'lucide-react'
-import { searchConversations, Session } from '@/utils/api'
-import { MessageSquare } from 'lucide-react'
+import { searchConversations, SearchResult } from '@/utils/api'
+import { MessageSquare, FileText, Mic } from 'lucide-react'
 
 interface SearchPopupProps {
   isOpen: boolean
@@ -13,7 +13,7 @@ interface SearchPopupProps {
 
 export default function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Session[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -65,6 +65,13 @@ export default function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
     }
   }
 
+  const highlightSearchTerm = (text: string, searchTerm: string): string => {
+    if (!text || !searchTerm) return text
+    
+    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+    return text.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>')
+  }
+
   if (!isOpen) return null
 
   return (
@@ -112,25 +119,93 @@ export default function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
               <div className="divide-y divide-gray-100">
                 {searchResults.map((result) => {
                   const timestamp = new Date(result.started_at * 1000).toLocaleString()
+                  const sessionTypeIcon = result.session_type === 'listen' ? Mic : MessageSquare
+                  const SessionIcon = sessionTypeIcon
 
                   return (
                     <div
                       key={result.id}
-                      className="p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
                       onClick={() => {
-                        router.push(`/activity/${result.id}`)
+                        router.push(`/activity/details?sessionId=${result.id}`)
                         onClose()
                       }}
                     >
                       <div className="flex items-start gap-3">
-                        <MessageSquare className="h-5 w-5 text-gray-400 mt-0.5 shrink-0" />
+                        <SessionIcon className="h-5 w-5 text-gray-400 mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-gray-900 mb-1 truncate">
-                            {result.title || 'Untitled Conversation'}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className="text-xs text-gray-500">{timestamp}</span>
+                          <div className="flex items-start justify-between mb-2">
+                            <h3 className="text-sm font-medium text-gray-900 truncate flex-1">
+                              {result.title || 'Untitled Conversation'}
+                            </h3>
+                            <div className="flex items-center gap-2 ml-2 shrink-0">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                result.session_type === 'listen' 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : 'bg-green-100 text-green-800'
+                              }`}>
+                                {result.session_type}
+                              </span>
+                            </div>
                           </div>
+
+                          {/* Match information */}
+                          <div className="flex items-center gap-4 mb-2 text-xs text-gray-500">
+                            <span>{timestamp}</span>
+                            {result.total_matches > 0 && (
+                              <div className="flex items-center gap-3">
+                                {result.message_matches > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <MessageSquare className="h-3 w-3" />
+                                    {result.message_matches} message{result.message_matches !== 1 ? 's' : ''}
+                                  </span>
+                                )}
+                                {result.transcript_matches > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <FileText className="h-3 w-3" />
+                                    {result.transcript_matches} transcript{result.transcript_matches !== 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Content previews */}
+                          {result.previews && result.previews.length > 0 && (
+                            <div className="space-y-2">
+                              {result.previews.slice(0, 2).map((preview, index) => (
+                                <div key={index} className="bg-gray-50 rounded p-2 text-xs">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    {preview.type === 'ai_message' ? (
+                                      <MessageSquare className="h-3 w-3 text-gray-400" />
+                                    ) : (
+                                      <Mic className="h-3 w-3 text-gray-400" />
+                                    )}
+                                    <span className="text-gray-600 font-medium">
+                                      {preview.type === 'ai_message' 
+                                        ? (preview.role === 'user' ? 'You' : 'AI') 
+                                        : (preview.role || 'Speaker')
+                                      }
+                                    </span>
+                                  </div>
+                                  <p className="text-gray-700 text-ellipsis overflow-hidden" style={{ 
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical'
+                                  }}
+                                  dangerouslySetInnerHTML={{
+                                    __html: highlightSearchTerm(preview.snippet, searchQuery)
+                                  }}>
+                                  </p>
+                                </div>
+                              ))}
+                              {result.previews.length > 2 && (
+                                <p className="text-xs text-gray-500 italic">
+                                  +{result.previews.length - 2} more match{result.previews.length - 2 !== 1 ? 'es' : ''}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -148,4 +223,4 @@ export default function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
       </div>
     </div>
   )
-} 
+}
