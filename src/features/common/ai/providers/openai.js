@@ -88,7 +88,19 @@ async function createSTT({ apiKey, language = 'en', callbacks = {}, usePortkey =
       };
       
       ws.send(JSON.stringify(sessionConfig));
-      
+
+      // Helper to periodically keep the websocket alive
+      const keepAlive = () => {
+        try {
+          if (ws.readyState === WebSocket.OPEN) {
+            // The ws library supports native ping frames which are ideal for heart-beats
+            ws.ping();
+          }
+        } catch (err) {
+          console.error('[OpenAI STT] keepAlive error:', err.message);
+        }
+      };
+
       resolve({
         sendRealtimeInput: (audioData) => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -99,6 +111,8 @@ async function createSTT({ apiKey, language = 'en', callbacks = {}, usePortkey =
             ws.send(JSON.stringify(message));
           }
         },
+        // Expose keepAlive so higher-level services can schedule heart-beats
+        keepAlive,
         close: () => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'session.close' }));
