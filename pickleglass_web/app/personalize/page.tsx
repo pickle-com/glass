@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, Plus, Copy } from 'lucide-react'
 import { getPresets, updatePreset, createPreset, PromptPreset } from '@/utils/api'
+import ModalTest from '@/components/ModalTest'
+import PresetModalTest from '@/components/PresetModalTest'
 
 export default function PersonalizePage() {
   const [allPresets, setAllPresets] = useState<PromptPreset[]>([]);
@@ -12,6 +14,12 @@ export default function PersonalizePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Modal state management
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalPreset, setModalPreset] = useState<PromptPreset | null>(null);
+  const [modalContent, setModalContent] = useState('');
+  const [modalIsDirty, setModalIsDirty] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -147,6 +155,70 @@ export default function PersonalizePage() {
     }
   };
 
+  // Modal helper functions
+  const openModalWithPreset = (preset: PromptPreset) => {
+    setModalPreset(preset);
+    setModalContent(preset.prompt);
+    setModalIsDirty(false);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    if (modalIsDirty) {
+      // Show confirmation dialog for unsaved changes
+      const shouldClose = window.confirm(
+        'You have unsaved changes in the modal editor. Are you sure you want to close without saving?'
+      );
+      if (!shouldClose) {
+        return;
+      }
+    }
+    setIsModalOpen(false);
+    setModalPreset(null);
+    setModalContent('');
+    setModalIsDirty(false);
+  };
+
+  const handleModalContentChange = (newContent: string) => {
+    setModalContent(newContent);
+    setModalIsDirty(newContent !== modalPreset?.prompt);
+  };
+
+  const saveModalChanges = async () => {
+    if (!modalPreset || !modalIsDirty) return;
+    
+    if (modalPreset.is_default === 1) {
+      alert('Default presets cannot be modified.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await updatePreset(modalPreset.id, {
+        title: modalPreset.title,
+        prompt: modalContent,
+      });
+
+      // Update the preset in the main list
+      setAllPresets(prev => prev.map(p => (p.id === modalPreset.id ? { ...p, prompt: modalContent } : p)));
+      
+      // Update selected preset if it's the same one
+      if (selectedPreset?.id === modalPreset.id) {
+        setSelectedPreset({ ...modalPreset, prompt: modalContent });
+        setEditorContent(modalContent);
+        setIsDirty(false);
+      }
+      
+      setModalIsDirty(false);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error('Failed to save modal changes:', error);
+      alert('Failed to save preset. See console for details.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -270,6 +342,8 @@ export default function PersonalizePage() {
           />
         </div>
       </div>
+      
+     
     </div>
   );
 } 
