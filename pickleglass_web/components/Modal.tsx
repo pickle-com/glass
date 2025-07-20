@@ -143,9 +143,9 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
                     /* Full screen on mobile */
                     w-full h-full
                     /* Modal style on larger screens */
-                    sm:w-[90%] sm:h-auto sm:max-h-[90vh] sm:rounded-lg sm:shadow-xl
-                    md:w-[85%] md:max-h-[85vh]
-                    lg:w-[80%] lg:max-h-[80vh]
+                    sm:w-[95%] sm:h-auto sm:max-h-[90vh] sm:rounded-lg sm:shadow-xl
+                    md:w-[90%] md:max-h-[90vh]
+                    lg:w-[85%] lg:max-h-[85vh]
                     /* Allow custom sizing via className prop */
                     ${className}`}
                 tabIndex={-1}

@@ -416,17 +416,16 @@ export default function PersonalizePage() {
           <textarea
             value={modalContent}
             onChange={(e) => handleModalContentChange(e.target.value)}
-            className="w-full h-48 sm:h-56 md:h-64 lg:h-72 p-3 sm:p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm leading-relaxed"
+            className="w-full h-64 sm:h-72 md:h-80 lg:h-96 p-3 sm:p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm leading-relaxed"
             placeholder="Enter your prompt content here..."
             readOnly={modalPreset?.is_default === 1}
           />
           
-          <div className="flex flex-col sm:flex-row sm:justify-between gap-2 text-xs text-gray-500">
-            <span>Character count: {modalContent.length}</span>
-            {modalPreset?.is_default === 1 && (
-              <span className="text-yellow-600">Default presets cannot be modified</span>
-            )}
-          </div>
+          {modalPreset?.is_default === 1 && (
+            <div className="text-xs text-yellow-600">
+              Default presets cannot be modified
+            </div>
+          )}
         </div>
       </Modal>
      
