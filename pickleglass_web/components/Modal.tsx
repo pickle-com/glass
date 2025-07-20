@@ -68,7 +68,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
             document.removeEventListener('keydown', handleKeyDown);
             document.body.style.overflow = 'unset';
         };
-    }, [isOpen, onClose]);
+    }, [isOpen, onClose, handleTabKey]);
 
     // Handle click outside modal
     const handleOverlayClick = (event: React.MouseEvent<HTMLDivElement>) => {

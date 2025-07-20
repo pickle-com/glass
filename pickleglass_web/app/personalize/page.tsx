@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, Plus, Copy } from 'lucide-react'
 import { getPresets, updatePreset, createPreset, PromptPreset } from '@/utils/api'
-import ModalTest from '@/components/ModalTest'
-import PresetModalTest from '@/components/PresetModalTest'
+import Modal from '@/components/Modal'
 
 export default function PersonalizePage() {
   const [allPresets, setAllPresets] = useState<PromptPreset[]>([]);
@@ -155,7 +154,6 @@ export default function PersonalizePage() {
     }
   };
 
-  // Modal helper functions
   const openModalWithPreset = (preset: PromptPreset) => {
     setModalPreset(preset);
     setModalContent(preset.prompt);
@@ -293,6 +291,7 @@ export default function PersonalizePage() {
                 <div
                   key={preset.id}
                   onClick={() => handlePresetClick(preset)}
+                  onDoubleClick={() => openModalWithPreset(preset)}
                   className={`
                     p-4 rounded-lg cursor-pointer transition-all duration-200 bg-white
                     h-48 flex flex-col shadow-sm hover:shadow-md relative
@@ -343,6 +342,64 @@ export default function PersonalizePage() {
         </div>
       </div>
       
+      {/* Preset Editor Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={`Preset: ${modalPreset?.title || ''}`}
+        footer={
+          <>
+            <button 
+              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              onClick={closeModal}
+            >
+              Cancel
+            </button>
+            <button 
+              className={`px-4 py-2 rounded-md transition-colors ${
+                modalIsDirty 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-gray-400 text-white cursor-not-allowed'
+              }`}
+              onClick={saveModalChanges}
+              disabled={!modalIsDirty || saving}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </>
+        }
+        className="max-w-4xl"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            {modalIsDirty && (
+              <span className="text-sm text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                Unsaved changes
+              </span>
+            )}
+            {modalPreset?.is_default === 1 && (
+              <span className="text-sm text-yellow-600 bg-yellow-100 px-2 py-1 rounded">
+                Read-only (Default preset)
+              </span>
+            )}
+          </div>
+          
+          <textarea
+            value={modalContent}
+            onChange={(e) => handleModalContentChange(e.target.value)}
+            className="w-full h-64 p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+            placeholder="Enter your prompt content here..."
+            readOnly={modalPreset?.is_default === 1}
+          />
+          
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>Character count: {modalContent.length}</span>
+            {modalPreset?.is_default === 1 && (
+              <span className="text-yellow-600">Default presets cannot be modified</span>
+            )}
+          </div>
+        </div>
+      </Modal>
      
     </div>
   );
