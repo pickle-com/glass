@@ -168,7 +168,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
                 </div>
 
                 {/* Modal Content */}
-                <div className="flex-1 p-4 sm:p-6 overflow-y-auto">{children}</div>
+                <div className="flex-1 px-4 pb-4 sm:px-6 sm:pb-6 overflow-y-auto">{children}</div>
 
                 {/* Modal Footer */}
                 {footer && (

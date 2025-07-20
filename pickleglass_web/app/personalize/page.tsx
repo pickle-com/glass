@@ -366,28 +366,7 @@ export default function PersonalizePage() {
         </div>
       </div>
 
-      <div className="flex-1 bg-white">
-        <div className="h-full px-8 py-6 flex flex-col">
-          {selectedPreset?.is_default === 1 && (
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-yellow-400 rounded-full"></div>
-                <p className="text-sm text-yellow-800">
-                  <strong>This is a default preset and cannot be edited.</strong> 
-                  Use the "Duplicate" button above to create an editable copy, or create a new preset.
-                </p>
-              </div>
-            </div>
-          )}
-          <textarea
-            value={editorContent}
-            onChange={handleEditorChange}
-            className="w-full flex-1 text-sm text-gray-900 border-0 resize-none focus:outline-none bg-transparent font-mono leading-relaxed"
-            placeholder="Select a preset or type directly..."
-            readOnly={selectedPreset?.is_default === 1}
-          />
-        </div>
-      </div>
+      
       
       {/* Preset Editor Modal */}
       <Modal
