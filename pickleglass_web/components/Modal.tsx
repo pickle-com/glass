@@ -70,9 +70,13 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
         };
     }, [isOpen, onClose, handleTabKey]);
 
-    // Handle click outside modal
+    // Handle click outside modal (only on larger screens where modal doesn't fill screen)
     const handleOverlayClick = (event: React.MouseEvent<HTMLDivElement>) => {
-        if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        // Check if we're on a small screen (mobile) by checking window width
+        const isSmallScreen = window.innerWidth < 640; // 640px is Tailwind's 'sm' breakpoint
+        
+        // Only close on outside click if not on mobile (where modal is full-screen)
+        if (!isSmallScreen && modalRef.current && !modalRef.current.contains(event.target as Node)) {
             onClose();
         }
     };
@@ -121,38 +125,57 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
 
     return (
         <div 
-            className={`fixed inset-0 bg-black flex justify-center items-center z-50 transition-opacity duration-200 ${
+            className={`fixed inset-0 bg-black z-50 transition-opacity duration-200 ${
                 isAnimating ? 'bg-opacity-70' : 'bg-opacity-0'
-            }`} 
+            } 
+                /* Full screen on mobile, centered on larger screens */
+                flex sm:justify-center sm:items-center
+            `} 
             onClick={handleOverlayClick}
         >
             <div
                 ref={modalRef}
-                className={`bg-white rounded-lg shadow-xl w-[90%] max-w-2xl max-h-[90vh] flex flex-col overflow-hidden transition-all duration-200 transform ${
+                className={`bg-white flex flex-col overflow-hidden transition-all duration-200 transform ${
                     isAnimating 
                         ? 'scale-100 opacity-100 translate-y-0' 
                         : 'scale-95 opacity-0 translate-y-4'
-                } ${className}`}
+                } 
+                    /* Full screen on mobile */
+                    w-full h-full
+                    /* Modal style on larger screens */
+                    sm:w-[90%] sm:h-auto sm:max-h-[90vh] sm:rounded-lg sm:shadow-xl
+                    md:w-[85%] md:max-h-[85vh]
+                    lg:w-[80%] lg:max-h-[80vh]
+                    /* Allow custom sizing via className prop */
+                    ${className}`}
                 tabIndex={-1}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="modal-title"
             >
                 {/* Modal Header */}
-                <div className="flex justify-between items-center p-6 border-b border-gray-200">
-                    <h2 id="modal-title" className="text-xl font-semibold text-gray-900">
+                <div className="flex justify-between items-center p-4 sm:p-6 border-b border-gray-200">
+                    <h2 id="modal-title" className="text-lg sm:text-xl font-semibold text-gray-900 truncate pr-4">
                         {title}
                     </h2>
-                    <button className="text-gray-400 hover:text-gray-600 text-2xl leading-none p-2 -m-2" onClick={onClose} aria-label="Close modal">
+                    <button 
+                        className="text-gray-400 hover:text-gray-600 text-2xl leading-none p-2 -m-2 flex-shrink-0" 
+                        onClick={onClose} 
+                        aria-label="Close modal"
+                    >
                         ×
                     </button>
                 </div>
 
                 {/* Modal Content */}
-                <div className="flex-1 p-6 overflow-y-auto">{children}</div>
+                <div className="flex-1 p-4 sm:p-6 overflow-y-auto">{children}</div>
 
                 {/* Modal Footer */}
-                {footer && <div className="flex justify-end gap-3 p-6 border-t border-gray-200">{footer}</div>}
+                {footer && (
+                    <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 p-4 sm:p-6 border-t border-gray-200">
+                        {footer}
+                    </div>
+                )}
             </div>
         </div>
     );

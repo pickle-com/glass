@@ -220,7 +220,27 @@ export default function PersonalizePage() {
       setIsModalOpen(false);
     } catch (error) {
       console.error('Failed to save modal changes:', error);
-      alert('Failed to save preset. See console for details.');
+      
+      // Enhanced error handling with specific error types
+      let errorMessage = 'Failed to save preset. Please try again.';
+      
+      if (error instanceof Error) {
+        // Check for specific error types
+        if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message.includes('401') || error.message.includes('unauthorized')) {
+          errorMessage = 'Authentication error. Please log in again.';
+        } else if (error.message.includes('403') || error.message.includes('forbidden')) {
+          errorMessage = 'You do not have permission to edit this preset.';
+        } else if (error.message.includes('404')) {
+          errorMessage = 'Preset not found. It may have been deleted.';
+        } else if (error.message.includes('500')) {
+          errorMessage = 'Server error. Please try again later.';
+        }
+      }
+      
+      alert(errorMessage);
+      
     } finally {
       setSaving(false);
     }
@@ -359,13 +379,13 @@ export default function PersonalizePage() {
         footer={
           <>
             <button 
-              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors w-full sm:w-auto"
               onClick={closeModal}
             >
               Cancel
             </button>
             <button 
-              className={`px-4 py-2 rounded-md transition-colors ${
+              className={`px-4 py-2 rounded-md transition-colors w-full sm:w-auto ${
                 modalIsDirty 
                   ? 'bg-blue-600 text-white hover:bg-blue-700' 
                   : 'bg-gray-400 text-white cursor-not-allowed'
@@ -377,17 +397,17 @@ export default function PersonalizePage() {
             </button>
           </>
         }
-        className="max-w-4xl"
+        className="w-[95%] sm:w-[90%] md:w-[85%] lg:w-[80%] max-w-4xl"
       >
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             {modalIsDirty && (
-              <span className="text-sm text-orange-600 bg-orange-100 px-2 py-1 rounded">
+              <span className="text-sm text-orange-600 bg-orange-100 px-2 py-1 rounded inline-block">
                 Unsaved changes
               </span>
             )}
             {modalPreset?.is_default === 1 && (
-              <span className="text-sm text-yellow-600 bg-yellow-100 px-2 py-1 rounded">
+              <span className="text-sm text-yellow-600 bg-yellow-100 px-2 py-1 rounded inline-block">
                 Read-only (Default preset)
               </span>
             )}
@@ -396,12 +416,12 @@ export default function PersonalizePage() {
           <textarea
             value={modalContent}
             onChange={(e) => handleModalContentChange(e.target.value)}
-            className="w-full h-64 p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+            className="w-full h-48 sm:h-56 md:h-64 lg:h-72 p-3 sm:p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm leading-relaxed"
             placeholder="Enter your prompt content here..."
             readOnly={modalPreset?.is_default === 1}
           />
           
-          <div className="flex justify-between text-xs text-gray-500">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2 text-xs text-gray-500">
             <span>Character count: {modalContent.length}</span>
             {modalPreset?.is_default === 1 && (
               <span className="text-yellow-600">Default presets cannot be modified</span>
