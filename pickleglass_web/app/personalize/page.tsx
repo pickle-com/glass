@@ -165,7 +165,6 @@ export default function PersonalizePage() {
 
   const closeModal = () => {
     if (modalIsDirty) {
-      // Show confirmation dialog for unsaved changes
       const shouldClose = window.confirm(
         'You have unsaved changes in the modal editor. Are you sure you want to close without saving?'
       );
@@ -202,7 +201,6 @@ export default function PersonalizePage() {
       return;
     }
 
-    // Validate title is not empty
     if (!modalTitle.trim()) {
       alert('Preset title cannot be empty.');
       return;
@@ -333,36 +331,34 @@ export default function PersonalizePage() {
           </div>
           
           {showPresets && (
-            <div className="flex-1 overflow-auto">
-              <div className="grid grid-cols-5 gap-4 auto-rows-max">
-                {allPresets.map((preset) => (
-                  <div
-                    key={preset.id}
-                    onClick={() => handlePresetClick(preset)}
-                    onDoubleClick={() => openModalWithPreset(preset)}
-                    className={`
-                      p-4 rounded-lg cursor-pointer transition-all duration-200 bg-white
-                      h-48 flex flex-col shadow-sm hover:shadow-md relative
-                      ${selectedPreset?.id === preset.id
-                        ? 'border-2 border-blue-500 shadow-md'
-                        : 'border border-gray-200 hover:border-gray-300'
-                      }
-                    `}
-                  >
-                    {preset.is_default === 1 && (
-                      <div className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
-                        Default
-                      </div>
-                    )}
-                    <h3 className="font-semibold text-gray-900 mb-3 text-center text-sm">
-                      {preset.title}
-                    </h3>
-                    <p className="text-xs text-gray-600 leading-relaxed flex-1 overflow-hidden">
-                      {preset.prompt.substring(0, 100) + (preset.prompt.length > 100 ? '...' : '')}
-                    </p>
-                  </div>
-                ))}
-              </div>
+            <div className="grid grid-cols-5 gap-4 mb-6">
+              {allPresets.map((preset) => (
+                <div
+                  key={preset.id}
+                  onClick={() => handlePresetClick(preset)}
+                  onDoubleClick={() => openModalWithPreset(preset)}
+                  className={`
+                    p-4 rounded-lg cursor-pointer transition-all duration-200 bg-white
+                    h-48 flex flex-col shadow-sm hover:shadow-md relative
+                    ${selectedPreset?.id === preset.id
+                      ? 'border-2 border-blue-500 shadow-md'
+                      : 'border border-gray-200 hover:border-gray-300'
+                    }
+                  `}
+                >
+                  {preset.is_default === 1 && (
+                    <div className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+                      Default
+                    </div>
+                  )}
+                  <h3 className="font-semibold text-gray-900 mb-3 text-center text-sm">
+                    {preset.title}
+                  </h3>
+                  <p className="text-xs text-gray-600 leading-relaxed flex-1 overflow-hidden">
+                    {preset.prompt.substring(0, 100) + (preset.prompt.length > 100 ? '...' : '')}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </div>
