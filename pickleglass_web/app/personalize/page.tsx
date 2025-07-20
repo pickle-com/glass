@@ -197,16 +197,25 @@ export default function PersonalizePage() {
         prompt: modalContent,
       });
 
+      // Create the updated preset object
+      const updatedPreset = { ...modalPreset, prompt: modalContent };
+      
       // Update the preset in the main list
-      setAllPresets(prev => prev.map(p => (p.id === modalPreset.id ? { ...p, prompt: modalContent } : p)));
+      setAllPresets(prev => prev.map(p => 
+        p.id === modalPreset.id ? updatedPreset : p
+      ));
       
       // Update selected preset if it's the same one
       if (selectedPreset?.id === modalPreset.id) {
-        setSelectedPreset({ ...modalPreset, prompt: modalContent });
+        setSelectedPreset(updatedPreset);
         setEditorContent(modalContent);
         setIsDirty(false);
       }
       
+      // Update modal preset state to reflect the saved changes
+      setModalPreset(updatedPreset);
+      
+      // Reset modal states and close
       setModalIsDirty(false);
       setIsModalOpen(false);
     } catch (error) {
