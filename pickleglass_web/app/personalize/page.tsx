@@ -18,6 +18,7 @@ export default function PersonalizePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalPreset, setModalPreset] = useState<PromptPreset | null>(null);
   const [modalContent, setModalContent] = useState('');
+  const [modalTitle, setModalTitle] = useState('');
   const [modalIsDirty, setModalIsDirty] = useState(false);
 
   useEffect(() => {
@@ -157,6 +158,7 @@ export default function PersonalizePage() {
   const openModalWithPreset = (preset: PromptPreset) => {
     setModalPreset(preset);
     setModalContent(preset.prompt);
+    setModalTitle(preset.title);
     setModalIsDirty(false);
     setIsModalOpen(true);
   };
@@ -174,12 +176,22 @@ export default function PersonalizePage() {
     setIsModalOpen(false);
     setModalPreset(null);
     setModalContent('');
+    setModalTitle('');
     setModalIsDirty(false);
   };
 
   const handleModalContentChange = (newContent: string) => {
     setModalContent(newContent);
-    setModalIsDirty(newContent !== modalPreset?.prompt);
+    setModalIsDirty(
+      newContent !== modalPreset?.prompt || modalTitle !== modalPreset?.title
+    );
+  };
+
+  const handleModalTitleChange = (newTitle: string) => {
+    setModalTitle(newTitle);
+    setModalIsDirty(
+      newTitle !== modalPreset?.title || modalContent !== modalPreset?.prompt
+    );
   };
 
   const saveModalChanges = async () => {
@@ -190,15 +202,21 @@ export default function PersonalizePage() {
       return;
     }
 
+    // Validate title is not empty
+    if (!modalTitle.trim()) {
+      alert('Preset title cannot be empty.');
+      return;
+    }
+
     try {
       setSaving(true);
       await updatePreset(modalPreset.id, {
-        title: modalPreset.title,
+        title: modalTitle.trim(),
         prompt: modalContent,
       });
 
       // Create the updated preset object
-      const updatedPreset = { ...modalPreset, prompt: modalContent };
+      const updatedPreset = { ...modalPreset, title: modalTitle.trim(), prompt: modalContent };
       
       // Update the preset in the main list
       setAllPresets(prev => prev.map(p => 
@@ -375,7 +393,7 @@ export default function PersonalizePage() {
       <Modal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={`Preset: ${modalPreset?.title || ''}`}
+        title={`Edit Preset${modalPreset?.is_default === 1 ? ' (Read-only)' : ''}`}
         footer={
           <>
             <button 
@@ -413,13 +431,28 @@ export default function PersonalizePage() {
             )}
           </div>
           
-          <textarea
-            value={modalContent}
-            onChange={(e) => handleModalContentChange(e.target.value)}
-            className="w-full h-64 sm:h-72 md:h-80 lg:h-96 p-3 sm:p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm leading-relaxed"
-            placeholder="Enter your prompt content here..."
-            readOnly={modalPreset?.is_default === 1}
-          />
+          <div className="space-y-3">
+            <div>
+              <input
+                type="text"
+                value={modalTitle}
+                onChange={(e) => handleModalTitleChange(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                placeholder="Enter preset title..."
+                readOnly={modalPreset?.is_default === 1}
+              />
+            </div>
+            
+            <div>
+              <textarea
+                value={modalContent}
+                onChange={(e) => handleModalContentChange(e.target.value)}
+                className="w-full h-64 sm:h-72 md:h-80 lg:h-96 p-3 sm:p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm leading-relaxed"
+                placeholder="Enter your prompt content here..."
+                readOnly={modalPreset?.is_default === 1}
+              />
+            </div>
+          </div>
           
           {modalPreset?.is_default === 1 && (
             <div className="text-xs text-yellow-600">
