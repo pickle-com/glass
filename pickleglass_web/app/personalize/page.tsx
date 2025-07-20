@@ -318,8 +318,8 @@ export default function PersonalizePage() {
         </div>
       </div>
 
-      <div className={`transition-colors duration-300 ${showPresets ? 'bg-gray-50' : 'bg-white'}`}>
-        <div className="px-8 py-6">
+      <div className={`flex-1 transition-colors duration-300 ${showPresets ? 'bg-gray-50' : 'bg-white'}`}>
+        <div className="h-full flex flex-col px-8 py-6">
           <div className="mb-6">
             <button
               onClick={() => setShowPresets(!showPresets)}
@@ -333,34 +333,36 @@ export default function PersonalizePage() {
           </div>
           
           {showPresets && (
-            <div className="grid grid-cols-5 gap-4 mb-6">
-              {allPresets.map((preset) => (
-                <div
-                  key={preset.id}
-                  onClick={() => handlePresetClick(preset)}
-                  onDoubleClick={() => openModalWithPreset(preset)}
-                  className={`
-                    p-4 rounded-lg cursor-pointer transition-all duration-200 bg-white
-                    h-48 flex flex-col shadow-sm hover:shadow-md relative
-                    ${selectedPreset?.id === preset.id
-                      ? 'border-2 border-blue-500 shadow-md'
-                      : 'border border-gray-200 hover:border-gray-300'
-                    }
-                  `}
-                >
-                  {preset.is_default === 1 && (
-                    <div className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
-                      Default
-                    </div>
-                  )}
-                  <h3 className="font-semibold text-gray-900 mb-3 text-center text-sm">
-                    {preset.title}
-                  </h3>
-                  <p className="text-xs text-gray-600 leading-relaxed flex-1 overflow-hidden">
-                    {preset.prompt.substring(0, 100) + (preset.prompt.length > 100 ? '...' : '')}
-                  </p>
-                </div>
-              ))}
+            <div className="flex-1 overflow-auto">
+              <div className="grid grid-cols-5 gap-4 auto-rows-max">
+                {allPresets.map((preset) => (
+                  <div
+                    key={preset.id}
+                    onClick={() => handlePresetClick(preset)}
+                    onDoubleClick={() => openModalWithPreset(preset)}
+                    className={`
+                      p-4 rounded-lg cursor-pointer transition-all duration-200 bg-white
+                      h-48 flex flex-col shadow-sm hover:shadow-md relative
+                      ${selectedPreset?.id === preset.id
+                        ? 'border-2 border-blue-500 shadow-md'
+                        : 'border border-gray-200 hover:border-gray-300'
+                      }
+                    `}
+                  >
+                    {preset.is_default === 1 && (
+                      <div className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+                        Default
+                      </div>
+                    )}
+                    <h3 className="font-semibold text-gray-900 mb-3 text-center text-sm">
+                      {preset.title}
+                    </h3>
+                    <p className="text-xs text-gray-600 leading-relaxed flex-1 overflow-hidden">
+                      {preset.prompt.substring(0, 100) + (preset.prompt.length > 100 ? '...' : '')}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
