@@ -513,7 +513,7 @@ export class SettingsView extends LitElement {
         //////// after_modelStateService ////////
         this.shortcuts = {};
         this.firebaseUser = null;
-        this.apiKeys = { openai: '', gemini: '', anthropic: '', whisper: '' };
+        this.apiKeys = { openai: '', gemini: '', anthropic: '', whisper: '', zhipuai: '' };
         this.providerConfig = {};
         this.isLoading = true;
         this.isContentProtectionOn = true;

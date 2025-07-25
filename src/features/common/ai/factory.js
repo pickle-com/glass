@@ -65,6 +65,14 @@ const PROVIDERS = {
         { id: 'nova-3', name: 'Nova-3 (General)' },
         ],
     },
+  'zhipuai': {
+      name: 'ZhipuAI',
+      handler: () => require("./providers/zhipuai"),
+      llmModels: [
+          { id: 'glm-4v-flash', name: 'GLM 4V FLASH' },
+      ],
+      sttModels: [],
+  },
   'ollama': {
       name: 'Ollama (Local)',
       handler: () => require("./providers/ollama"),
@@ -157,6 +165,7 @@ function getProviderClass(providerId) {
         'anthropic': 'AnthropicProvider',
         'gemini': 'GeminiProvider',
         'deepgram': 'DeepgramProvider',
+        'zhipuai': 'ZhipuAIProvider',
         'ollama': 'OllamaProvider',
         'whisper': 'WhisperProvider'
     };
