@@ -1950,19 +1950,14 @@ export class ApiKeyHeader extends LitElement {
                 <div class="section">
                     <div class="row">
                         <div class="label">1. Select LLM Provider</div>
-                        <div class="provider-selector">
-                            ${this.providers.llm.map(
-                                p => html`
-                                    <button
-                                        class="provider-button"
-                                        data-status=${this.llmProvider === p.id ? 'active' : 'default'}
-                                        @click=${e => this.handleLlmProviderChange(e, p.id)}
-                                    >
-                                        ${p.name}
-                                    </button>
-                                `
-                            )}
-                        </div>
+                        <select
+                            class="api-input"
+                            .value=${this.llmProvider}
+                            @change=${this.handleLlmProviderChange}
+                            ?disabled=${this.isLoading}
+                        >
+                            ${this.providers.llm.map(p => html`<option value=${p.id}>${p.name}</option>`)}
+                        </select>
                     </div>
                     <div class="row">
                         <div class="label">2. Enter API Key</div>
@@ -1991,19 +1986,14 @@ export class ApiKeyHeader extends LitElement {
                 <div class="section">
                     <div class="row">
                         <div class="label">3. Select STT Provider</div>
-                        <div class="provider-selector">
-                            ${this.providers.stt.map(
-                                p => html`
-                                    <button
-                                        class="provider-button"
-                                        data-status=${this.sttProvider === p.id ? 'active' : 'default'}
-                                        @click=${e => this.handleSttProviderChange(e, p.id)}
-                                    >
-                                        ${p.name}
-                                    </button>
-                                `
-                            )}
-                        </div>
+                        <select
+                            class="api-input"
+                            .value=${this.sttProvider}
+                            @change=${this.handleSttProviderChange}
+                            ?disabled=${this.isLoading}
+                        >
+                            ${this.providers.stt.map(p => html`<option value=${p.id}>${p.name}</option>`)}
+                        </select>
                     </div>
                     <div class="row">
                         <div class="label">4. Enter STT API Key</div>
