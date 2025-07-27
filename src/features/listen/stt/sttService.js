@@ -5,6 +5,21 @@ const modelStateService = require('../../common/services/modelStateService');
 
 const COMPLETION_DEBOUNCE_MS = 2000;
 
+// ── New heartbeat / renewal constants ────────────────────────────────────────────
+// Interval to send low-cost keep-alive messages so the remote service does not
+// treat the connection as idle. One minute is safely below the typical 2-5 min
+// idle timeout window seen on provider websockets.
+const KEEP_ALIVE_INTERVAL_MS = 60 * 1000;         // 1 minute
+
+// Interval after which we pro-actively tear down and recreate the STT sessions
+// to dodge the 30-minute hard timeout enforced by some providers. 20 minutes
+// gives a 10-minute safety buffer.
+const SESSION_RENEW_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
+
+// Duration to allow the old and new sockets to run in parallel so we don't
+// miss any packets at the exact swap moment.
+const SOCKET_OVERLAP_MS = 2 * 1000; // 2 seconds
+
 class SttService {
     constructor() {
         this.mySttSession = null;
@@ -20,7 +35,11 @@ class SttService {
         
         // System audio capture
         this.systemAudioProc = null;
-        
+
+        // Keep-alive / renewal timers
+        this.keepAliveInterval = null;
+        this.sessionRenewTimeout = null;
+
         // Callbacks
         this.onTranscriptionComplete = null;
         this.onStatusUpdate = null;
@@ -452,7 +471,76 @@ class SttService {
         ]);
 
         console.log('✅ Both STT sessions initialized successfully.');
+
+        // ── Setup keep-alive heart-beats ────────────────────────────────────────
+        if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+        this.keepAliveInterval = setInterval(() => {
+            this._sendKeepAlive();
+        }, KEEP_ALIVE_INTERVAL_MS);
+
+        // ── Schedule session auto-renewal ───────────────────────────────────────
+        if (this.sessionRenewTimeout) clearTimeout(this.sessionRenewTimeout);
+        this.sessionRenewTimeout = setTimeout(async () => {
+            try {
+                console.log('[SttService] Auto-renewing STT sessions…');
+                await this.renewSessions(language);
+            } catch (err) {
+                console.error('[SttService] Failed to renew STT sessions:', err);
+            }
+        }, SESSION_RENEW_INTERVAL_MS);
+
         return true;
+    }
+
+    /**
+     * Send a lightweight keep-alive to prevent idle disconnects.
+     * Currently only implemented for OpenAI provider because Gemini's SDK
+     * already performs its own heart-beats.
+     */
+    _sendKeepAlive() {
+        if (!this.isSessionActive()) return;
+
+        if (this.modelInfo?.provider === 'openai') {
+            try {
+                this.mySttSession?.keepAlive?.();
+                this.theirSttSession?.keepAlive?.();
+            } catch (err) {
+                console.error('[SttService] keepAlive error:', err.message);
+            }
+        }
+    }
+
+    /**
+     * Gracefully tears down then recreates the STT sessions. Should be invoked
+     * on a timer to avoid provider-side hard timeouts.
+     */
+    async renewSessions(language = 'en') {
+        if (!this.isSessionActive()) {
+            console.warn('[SttService] renewSessions called but no active session.');
+            return;
+        }
+
+        const oldMySession = this.mySttSession;
+        const oldTheirSession = this.theirSttSession;
+
+        console.log('[SttService] Spawning fresh STT sessions in the background…');
+
+        // We reuse initializeSttSessions to create fresh sessions with the same
+        // language and handlers. The method will update the session pointers
+        // and timers, but crucially it does NOT touch the system audio capture
+        // pipeline, so audio continues flowing uninterrupted.
+        await this.initializeSttSessions(language);
+
+        // Close the old sessions after a short overlap window.
+        setTimeout(() => {
+            try {
+                oldMySession?.close?.();
+                oldTheirSession?.close?.();
+                console.log('[SttService] Old STT sessions closed after hand-off.');
+            } catch (err) {
+                console.error('[SttService] Error closing old STT sessions:', err.message);
+            }
+        }, SOCKET_OVERLAP_MS);
     }
 
     async sendMicAudioContent(data, mimeType) {
@@ -657,6 +745,16 @@ class SttService {
 
     async closeSessions() {
         this.stopMacOSAudioCapture();
+
+        // Clear heartbeat / renewal timers
+        if (this.keepAliveInterval) {
+            clearInterval(this.keepAliveInterval);
+            this.keepAliveInterval = null;
+        }
+        if (this.sessionRenewTimeout) {
+            clearTimeout(this.sessionRenewTimeout);
+            this.sessionRenewTimeout = null;
+        }
 
         // Clear timers
         if (this.myCompletionTimer) {
