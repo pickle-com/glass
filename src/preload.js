@@ -113,7 +113,7 @@ contextBridge.exposeInMainWorld('api', {
     hideSettingsWindow: () => ipcRenderer.send('hide-settings-window'),
     
     // Generic invoke (for dynamic channel names)
-    // invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
     sendListenButtonClick: (listenButtonText) => ipcRenderer.invoke('listen:changeSession', listenButtonText),
     sendAskButtonClick: () => ipcRenderer.invoke('ask:toggleAskButton'),
     sendToggleAllWindowsVisibility: () => ipcRenderer.invoke('shortcut:toggleAllWindowsVisibility'),
@@ -177,7 +177,17 @@ contextBridge.exposeInMainWorld('api', {
     
     // Listeners
     onSessionStateChanged: (callback) => ipcRenderer.on('session-state-changed', callback),
-    removeOnSessionStateChanged: (callback) => ipcRenderer.removeListener('session-state-changed', callback)
+    removeOnSessionStateChanged: (callback) => ipcRenderer.removeListener('session-state-changed', callback),
+    
+    // Video Learning Listeners
+    onVideoSessionStarted: (callback) => ipcRenderer.on('video-session-started', callback),
+    onVideoSessionStopped: (callback) => ipcRenderer.on('video-session-stopped', callback),
+    onVideoLearningUpdate: (callback) => ipcRenderer.on('video-learning-update', callback),
+    onVideoError: (callback) => ipcRenderer.on('video-error', callback),
+    removeOnVideoSessionStarted: (callback) => ipcRenderer.removeListener('video-session-started', callback),
+    removeOnVideoSessionStopped: (callback) => ipcRenderer.removeListener('video-session-stopped', callback),
+    removeOnVideoLearningUpdate: (callback) => ipcRenderer.removeListener('video-learning-update', callback),
+    removeOnVideoError: (callback) => ipcRenderer.removeListener('video-error', callback)
   },
 
   // src/ui/listen/stt/SttView.js

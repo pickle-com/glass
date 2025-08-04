@@ -5,13 +5,16 @@ const authService = require('../common/services/authService');
 const sessionRepository = require('../common/repositories/session');
 const sttRepository = require('./stt/repositories');
 const internalBridge = require('../../bridge/internalBridge');
+const EnhancedService = require('../enhanced/enhancedService');
 
 class ListenService {
     constructor() {
         this.sttService = new SttService();
         this.summaryService = new SummaryService();
+        this.enhancedService = new EnhancedService();
         this.currentSessionId = null;
         this.isInitializingSession = false;
+        this.enhancedFeaturesEnabled = true; // 可通过配置控制
 
         this.setupServiceCallbacks();
         console.log('[ListenService] Service instance created.');
@@ -36,6 +39,64 @@ class ListenService {
             onStatusUpdate: (status) => {
                 this.sendToRenderer('update-status', status);
             }
+        });
+
+        // Enhanced service callbacks
+        this.setupEnhancedServiceCallbacks();
+    }
+
+    setupEnhancedServiceCallbacks() {
+        // 监听增强功能事件
+        this.enhancedService.on('enhanced:processed', (data) => {
+            console.log('🚀 Enhanced processing completed:', data.results);
+            this.sendToRenderer('enhanced-update', data);
+        });
+
+        this.enhancedService.on('enhanced:translation', (data) => {
+            this.sendToRenderer('translation-update', data);
+        });
+
+        this.enhancedService.on('enhanced:keywords', (data) => {
+            this.sendToRenderer('keywords-update', data);
+        });
+
+        this.enhancedService.on('enhanced:definitions', (data) => {
+            this.sendToRenderer('definitions-update', data);
+        });
+
+        this.enhancedService.on('enhanced:mindmap', (data) => {
+            this.sendToRenderer('mindmap-update', data);
+        });
+
+        this.enhancedService.on('enhanced:highlight', (data) => {
+            // 发送给浏览器扩展或其他需要的地方
+            this.sendToRenderer('highlight-update', data);
+        });
+
+        this.enhancedService.on('enhanced:error', (error) => {
+            console.error('Enhanced service error:', error);
+            this.sendToRenderer('enhanced-error', error);
+        });
+
+        // Video learning specific events
+        this.enhancedService.on('enhanced:video_session_started', (data) => {
+            console.log('🎥 Video learning session started:', data);
+            this.sendToRenderer('video-session-started', data);
+        });
+
+        this.enhancedService.on('enhanced:video_session_stopped', (data) => {
+            console.log('⏹️ Video learning session stopped:', data);
+            this.sendToRenderer('video-session-stopped', data);
+        });
+
+        this.enhancedService.on('enhanced:video_learning', (data) => {
+            console.log('📚 Video learning data processed:', data);
+            this.sendToRenderer('video-learning-update', data);
+        });
+
+        this.enhancedService.on('enhanced:video_error', (error) => {
+            console.error('Video learning error:', error);
+            this.sendToRenderer('video-error', error);
         });
     }
 
@@ -104,6 +165,22 @@ class ListenService {
         
         // Add to summary service for analysis
         this.summaryService.addConversationTurn(speaker, text);
+
+        // 新增：触发增强功能处理
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            try {
+                const transcriptionData = {
+                    speaker: speaker,
+                    text: text,
+                    timestamp: Date.now(),
+                    sessionId: this.currentSessionId
+                };
+                
+                await this.enhancedService.processTranscription(transcriptionData);
+            } catch (error) {
+                console.error('[ListenService] Enhanced processing failed:', error);
+            }
+        }
     }
 
     async saveConversationTurn(speaker, transcription) {
@@ -192,6 +269,24 @@ class ListenService {
             }
             if (!sttReady) throw new Error('STT init failed after retries');
             /* ------------------------------------------- */
+
+            // 新增：初始化增强服务
+            if (this.enhancedFeaturesEnabled && this.enhancedService) {
+                try {
+                    console.log('[ListenService] Initializing enhanced services...');
+                    const enhancedInitialized = await this.enhancedService.initialize();
+                    if (enhancedInitialized) {
+                        console.log('✅ Enhanced services initialized successfully.');
+                        this.sendToRenderer('enhanced-status', 'Enhanced features ready');
+                    } else {
+                        console.warn('⚠️ Enhanced services initialization failed, continuing without enhanced features');
+                        this.enhancedFeaturesEnabled = false;
+                    }
+                } catch (error) {
+                    console.error('❌ Enhanced services initialization error:', error);
+                    this.enhancedFeaturesEnabled = false;
+                }
+            }
 
             console.log('✅ Listen service initialized successfully.');
             
@@ -318,6 +413,108 @@ class ListenService {
         null,
         'Error updating Google Search setting:'
     );
+
+    // 新增：增强功能辅助方法
+    /**
+     * 处理网页内容（从浏览器扩展接收）
+     * @param {object} webData - 网页数据
+     */
+    async handleWebContent(webData) {
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            try {
+                await this.enhancedService.processWebContent(webData);
+            } catch (error) {
+                console.error('[ListenService] Web content processing failed:', error);
+            }
+        }
+    }
+
+    /**
+     * 获取术语定义
+     * @param {string} term - 术语
+     * @returns {Promise<object|null>} 定义
+     */
+    async getTermDefinition(term) {
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            try {
+                return await this.enhancedService.getTermDefinition(term, {
+                    sessionId: this.currentSessionId,
+                    timestamp: Date.now()
+                });
+            } catch (error) {
+                console.error('[ListenService] Failed to get term definition:', error);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 获取当前思维导图
+     * @returns {object|null} 思维导图数据
+     */
+    getCurrentMindMap() {
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            return this.enhancedService.getCurrentMindMap();
+        }
+        return null;
+    }
+
+    /**
+     * 设置翻译语言对
+     * @param {string} source - 源语言
+     * @param {string} target - 目标语言
+     */
+    setTranslationLanguages(source, target) {
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            this.enhancedService.setLanguagePair(source, target);
+        }
+    }
+
+    /**
+     * 启用/禁用增强功能
+     * @param {boolean} enabled - 是否启用
+     */
+    setEnhancedFeaturesEnabled(enabled) {
+        this.enhancedFeaturesEnabled = enabled;
+        if (this.enhancedService) {
+            this.enhancedService.setEnabled(enabled);
+        }
+        console.log(`[ListenService] Enhanced features ${enabled ? 'enabled' : 'disabled'}`);
+        this.sendToRenderer('enhanced-features-toggle', { enabled });
+    }
+
+    /**
+     * 启用/禁用特定增强服务
+     * @param {string} serviceName - 服务名称
+     * @param {boolean} enabled - 是否启用
+     */
+    setEnhancedServiceEnabled(serviceName, enabled) {
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            this.enhancedService.setServiceEnabled(serviceName, enabled);
+        }
+    }
+
+    /**
+     * 获取增强服务状态
+     * @returns {object} 服务状态
+     */
+    getEnhancedServicesStatus() {
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            return this.enhancedService.getServicesStatus();
+        }
+        return { enhanced: { isEnabled: false } };
+    }
+
+    /**
+     * 清除所有增强数据
+     */
+    clearEnhancedData() {
+        if (this.enhancedFeaturesEnabled && this.enhancedService) {
+            this.enhancedService.clearAll();
+            this.sendToRenderer('enhanced-data-cleared', { timestamp: Date.now() });
+        }
+    }
 }
 
 const listenService = new ListenService();

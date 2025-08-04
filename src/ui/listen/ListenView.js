@@ -416,6 +416,98 @@ export class ListenView extends LitElement {
             background: transparent !important;
             width: 0 !important;
         }
+
+        /* Video Learning Controls */
+        .video-controls-container {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: rgba(30, 30, 30, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 0 0 10px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: none;
+            padding: 8px 12px;
+            transform: translateY(-1px);
+            z-index: 1000;
+        }
+
+        .video-controls-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: space-between;
+            font-size: 11px;
+        }
+
+        .video-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .video-status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4444;
+        }
+
+        .video-status-indicator.active {
+            background: #44ff44;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .video-controls-buttons {
+            display: flex;
+            gap: 4px;
+        }
+
+        .video-control-btn {
+            background: transparent;
+            color: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 4px 6px;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .video-control-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .video-toggle-btn {
+            background: transparent;
+            color: rgba(255, 255, 255, 0.7);
+            border: none;
+            border-radius: 3px;
+            padding: 2px 4px;
+            font-size: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.15s ease;
+        }
+
+        .video-toggle-btn:hover {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .video-toggle-btn svg {
+            width: 10px;
+            height: 10px;
+        }
     `;
 
     static properties = {
@@ -427,6 +519,9 @@ export class ListenView extends LitElement {
         captureStartTime: { type: Number },
         isSessionActive: { type: Boolean },
         hasCompletedRecording: { type: Boolean },
+        videoLearningActive: { type: Boolean },
+        videoLearningStatus: { type: String },
+        showVideoControls: { type: Boolean },
     };
 
     constructor() {
@@ -445,6 +540,11 @@ export class ListenView extends LitElement {
         this.copyTimeout = null;
 
         this.adjustWindowHeight = this.adjustWindowHeight.bind(this);
+        
+        // Video learning properties
+        this.videoLearningActive = false;
+        this.videoLearningStatus = 'stopped';
+        this.showVideoControls = false;
     }
 
     connectedCallback() {
@@ -475,6 +575,32 @@ export class ListenView extends LitElement {
                     this.stopTimer();
                     this.requestUpdate();
                 }
+            });
+
+            // Video learning event listeners
+            window.api.listenView.onVideoSessionStarted && window.api.listenView.onVideoSessionStarted((event, data) => {
+                this.videoLearningActive = true;
+                this.videoLearningStatus = 'active';
+                this.requestUpdate();
+                console.log('Video learning session started', data);
+            });
+
+            window.api.listenView.onVideoSessionStopped && window.api.listenView.onVideoSessionStopped((event, data) => {
+                this.videoLearningActive = false;
+                this.videoLearningStatus = 'stopped';
+                this.requestUpdate();
+                console.log('Video learning session stopped', data);
+            });
+
+            window.api.listenView.onVideoLearningUpdate && window.api.listenView.onVideoLearningUpdate((event, data) => {
+                console.log('Video learning data received:', data);
+                // Handle video learning updates - could show in UI
+            });
+
+            window.api.listenView.onVideoError && window.api.listenView.onVideoError((event, error) => {
+                console.error('Video learning error:', error);
+                this.videoLearningStatus = 'error';
+                this.requestUpdate();
             });
         }
     }
@@ -546,6 +672,36 @@ export class ListenView extends LitElement {
     toggleViewMode() {
         this.viewMode = this.viewMode === 'insights' ? 'transcript' : 'insights';
         this.requestUpdate();
+    }
+
+    async toggleVideoLearning() {
+        try {
+            const result = await window.api.invoke('video:toggle-learning');
+            if (result.success) {
+                this.videoLearningActive = result.isActive;
+                this.videoLearningStatus = result.isActive ? 'active' : 'stopped';
+                this.requestUpdate();
+            }
+        } catch (error) {
+            console.error('Failed to toggle video learning:', error);
+        }
+    }
+
+    toggleVideoControls() {
+        this.showVideoControls = !this.showVideoControls;
+        this.requestUpdate();
+    }
+
+    async captureFrame() {
+        try {
+            const result = await window.api.invoke('video:capture-frame');
+            if (result.success && result.text) {
+                console.log('Frame captured and OCR processed:', result.text);
+                // Could show a notification or update UI
+            }
+        } catch (error) {
+            console.error('Failed to capture frame:', error);
+        }
     }
 
     handleCopyHover(isHovering) {
@@ -656,6 +812,13 @@ export class ListenView extends LitElement {
                                       <span>Show Insights</span>
                                   `}
                         </button>
+                        <button class="video-toggle-btn" @click=${this.toggleVideoControls} title="Toggle Video Learning">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                            </svg>
+                            ${this.showVideoControls ? '▲' : '▼'}
+                        </button>
                         <button
                             class="copy-button ${this.copyState === 'copied' ? 'copied' : ''}"
                             @click=${this.handleCopy}
@@ -682,6 +845,25 @@ export class ListenView extends LitElement {
                     .isVisible=${this.viewMode === 'insights'}
                     .hasCompletedRecording=${this.hasCompletedRecording}
                 ></summary-view>
+                
+                ${this.showVideoControls ? html`
+                    <div class="video-controls-container">
+                        <div class="video-controls-row">
+                            <div class="video-status">
+                                <div class="video-status-indicator ${this.videoLearningActive ? 'active' : ''}"></div>
+                                <span>Video Learning: ${this.videoLearningStatus}</span>
+                            </div>
+                            <div class="video-controls-buttons">
+                                <button class="video-control-btn" @click=${this.toggleVideoLearning}>
+                                    ${this.videoLearningActive ? 'Stop' : 'Start'}
+                                </button>
+                                <button class="video-control-btn" @click=${this.captureFrame} ?disabled=${!this.videoLearningActive}>
+                                    Capture
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
             </div>
         `;
     }
