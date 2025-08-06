@@ -171,14 +171,7 @@ class WindowLayoutManager {
             let askXRel = headerCenterXRel - (askB.width / 2);
             let listenXRel = askXRel - listenB.width - PAD;
     
-            if (listenXRel < PAD) {
-                listenXRel = PAD;
-                askXRel = listenXRel + listenB.width + PAD;
-            }
-            if (askXRel + askB.width > screenWidth - PAD) {
-                askXRel = screenWidth - PAD - askB.width;
-                listenXRel = askXRel - listenB.width - PAD;
-            }
+            // Remove clamping to support multi-monitor setups and off-screen positioning
             
             if (strategy.primary === 'above') {
                 const windowBottomAbs = headerBounds.y - PAD;
@@ -195,7 +188,7 @@ class WindowLayoutManager {
             if (!winB) return {};
     
             let xRel = headerCenterXRel - winB.width / 2;
-            xRel = Math.max(PAD, Math.min(screenWidth - winB.width - PAD, xRel));
+            // Remove clamping to support multi-monitor setups and off-screen positioning
     
             let yPos;
             if (strategy.primary === 'above') {
