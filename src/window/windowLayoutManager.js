@@ -78,19 +78,15 @@ class WindowLayoutManager {
 
         const headerBounds = header.getBounds();
         const settingsBounds = settings.getBounds();
-        const display = getCurrentDisplay(header);
-        const { x: workAreaX, y: workAreaY, width: screenWidth, height: screenHeight } = display.workArea;
-
+        
         const PAD = 5;
         const buttonPadding = 170;
 
         const x = headerBounds.x + headerBounds.width - settingsBounds.width + buttonPadding;
         const y = headerBounds.y + headerBounds.height + PAD;
 
-        const clampedX = Math.max(workAreaX + 10, Math.min(workAreaX + screenWidth - settingsBounds.width - 10, x));
-        const clampedY = Math.max(workAreaY + 10, Math.min(workAreaY + screenHeight - settingsBounds.height - 10, y));
-
-        return { x: Math.round(clampedX), y: Math.round(clampedY) };
+        // Remove clamping to allow positioning outside screen bounds
+        return { x: Math.round(x), y: Math.round(y) };
     }
 
 
@@ -99,20 +95,14 @@ class WindowLayoutManager {
         const currentBounds = header.getBounds();
         const centerX = currentBounds.x + currentBounds.width / 2;
         const newX = Math.round(centerX - width / 2);
-        const display = getCurrentDisplay(header);
-        const { x: workAreaX, width: workAreaWidth } = display.workArea;
-        const clampedX = Math.max(workAreaX, Math.min(workAreaX + workAreaWidth - width, newX));
-        return { x: clampedX, y: currentBounds.y, width, height };
+        // Remove clamping to allow resizing outside screen bounds
+        return { x: newX, y: currentBounds.y, width, height };
     }
     
     calculateClampedPosition(header, { x: newX, y: newY }) {
         if (!header) return null;
-        const targetDisplay = screen.getDisplayNearestPoint({ x: newX, y: newY });
-        const { x: workAreaX, y: workAreaY, width, height } = targetDisplay.workArea;
-        const headerBounds = header.getBounds();
-        const clampedX = Math.max(workAreaX, Math.min(newX, workAreaX + width - headerBounds.width));
-        const clampedY = Math.max(workAreaY, Math.min(newY, workAreaY + height - headerBounds.height));
-        return { x: clampedX, y: clampedY };
+        // Remove clamping to allow free movement outside screen bounds for multi-monitor support
+        return { x: newX, y: newY };
     }
     
     calculateWindowHeightAdjustment(senderWindow, targetHeight) {
@@ -181,14 +171,7 @@ class WindowLayoutManager {
             let askXRel = headerCenterXRel - (askB.width / 2);
             let listenXRel = askXRel - listenB.width - PAD;
     
-            if (listenXRel < PAD) {
-                listenXRel = PAD;
-                askXRel = listenXRel + listenB.width + PAD;
-            }
-            if (askXRel + askB.width > screenWidth - PAD) {
-                askXRel = screenWidth - PAD - askB.width;
-                listenXRel = askXRel - listenB.width - PAD;
-            }
+            // Remove clamping to support multi-monitor setups and off-screen positioning
             
             if (strategy.primary === 'above') {
                 const windowBottomAbs = headerBounds.y - PAD;
@@ -205,7 +188,7 @@ class WindowLayoutManager {
             if (!winB) return {};
     
             let xRel = headerCenterXRel - winB.width / 2;
-            xRel = Math.max(PAD, Math.min(screenWidth - winB.width - PAD, xRel));
+            // Remove clamping to support multi-monitor setups and off-screen positioning
     
             let yPos;
             if (strategy.primary === 'above') {
@@ -226,14 +209,11 @@ class WindowLayoutManager {
     
         const headerBounds = header.getBounds();
         const shortcutBounds = shortcutSettings.getBounds();
-        const { workArea } = getCurrentDisplay(header);
     
         let newX = Math.round(headerBounds.x + (headerBounds.width / 2) - (shortcutBounds.width / 2));
         let newY = Math.round(headerBounds.y);
     
-        newX = Math.max(workArea.x, Math.min(newX, workArea.x + workArea.width - shortcutBounds.width));
-        newY = Math.max(workArea.y, Math.min(newY, workArea.y + workArea.height - shortcutBounds.height));
-    
+        // Remove clamping to allow positioning outside screen bounds
         return { x: newX, y: newY, width: shortcutBounds.width, height: shortcutBounds.height };
     }
 
@@ -251,7 +231,8 @@ class WindowLayoutManager {
             case 'down': targetY += stepSize; break;
         }
     
-        return this.calculateClampedPosition(header, { x: targetX, y: targetY });
+        // Remove clamping - now returns raw position for free movement
+        return { x: targetX, y: targetY };
     }
     
     calculateEdgePosition(header, direction) {
@@ -289,10 +270,8 @@ class WindowLayoutManager {
         const targetX = targetDisplay.workArea.x + targetDisplay.workArea.width * relativeX;
         const targetY = targetDisplay.workArea.y + targetDisplay.workArea.height * relativeY;
     
-        const clampedX = Math.max(targetDisplay.workArea.x, Math.min(targetX, targetDisplay.workArea.x + targetDisplay.workArea.width - currentBounds.width));
-        const clampedY = Math.max(targetDisplay.workArea.y, Math.min(targetY, targetDisplay.workArea.y + targetDisplay.workArea.height - currentBounds.height));
-    
-        return { x: Math.round(clampedX), y: Math.round(clampedY) };
+        // Remove clamping to allow positioning outside screen bounds for multi-monitor support
+        return { x: Math.round(targetX), y: Math.round(targetY) };
     }
     
     /**
