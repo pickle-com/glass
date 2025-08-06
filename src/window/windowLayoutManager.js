@@ -91,7 +91,7 @@ class WindowLayoutManager {
 
 
     calculateHeaderResize(header, { width, height }) {
-        if (!header) return null;
+        if (!header || header.isDestroyed()) return null;
         const currentBounds = header.getBounds();
         const centerX = currentBounds.x + currentBounds.width / 2;
         const newX = Math.round(centerX - width / 2);
@@ -100,13 +100,13 @@ class WindowLayoutManager {
     }
     
     calculateClampedPosition(header, { x: newX, y: newY }) {
-        if (!header) return null;
+        if (!header || header.isDestroyed()) return null;
         // Remove clamping to allow free movement outside screen bounds for multi-monitor support
         return { x: newX, y: newY };
     }
     
     calculateWindowHeightAdjustment(senderWindow, targetHeight) {
-        if (!senderWindow) return null;
+        if (!senderWindow || senderWindow.isDestroyed()) return null;
         const currentBounds = senderWindow.getBounds();
         const minHeight = senderWindow.getMinimumSize()[1];
         const maxHeight = senderWindow.getMaximumSize()[1];
@@ -218,7 +218,7 @@ class WindowLayoutManager {
     }
 
     calculateStepMovePosition(header, direction) {
-        if (!header) return null;
+        if (!header || header.isDestroyed()) return null;
         const currentBounds = header.getBounds();
         const stepSize = 80; // 이동 간격
         let targetX = currentBounds.x;
@@ -236,7 +236,7 @@ class WindowLayoutManager {
     }
     
     calculateEdgePosition(header, direction) {
-        if (!header) return null;
+        if (!header || header.isDestroyed()) return null;
         const display = getCurrentDisplay(header);
         const { workArea } = display;
         const currentBounds = header.getBounds();
@@ -254,7 +254,7 @@ class WindowLayoutManager {
     }
     
     calculateNewPositionForDisplay(window, targetDisplayId) {
-        if (!window) return null;
+        if (!window || window.isDestroyed()) return null;
     
         const targetDisplay = screen.getAllDisplays().find(d => d.id === targetDisplayId);
         if (!targetDisplay) return null;

@@ -111,60 +111,64 @@ function setupWindowController(windowPool, layoutManager, movementManager) {
     internalBridge.on('window:moveToDisplay', ({ displayId }) => {
         // movementManager.moveToDisplay(displayId);
         const header = windowPool.get('header');
-        if (header) {
-            const newPosition = layoutManager.calculateNewPositionForDisplay(header, displayId);
-            if (newPosition) {
-                movementManager.animateWindowPosition(header, newPosition, {
-                    onComplete: () => updateChildWindowLayouts(true)
-                });
-            }
+        if (!header || header.isDestroyed()) return;
+        
+        const newPosition = layoutManager.calculateNewPositionForDisplay(header, displayId);
+        if (newPosition) {
+            movementManager.animateWindowPosition(header, newPosition, {
+                onComplete: () => updateChildWindowLayouts(true)
+            });
         }
     });
     internalBridge.on('window:moveToEdge', ({ direction }) => {
         const header = windowPool.get('header');
-        if (header) {
-            const newPosition = layoutManager.calculateEdgePosition(header, direction);
-            movementManager.animateWindowPosition(header, newPosition, { 
-                onComplete: () => updateChildWindowLayouts(true) 
-            });
-        }
+        if (!header || header.isDestroyed()) return;
+        
+        const newPosition = layoutManager.calculateEdgePosition(header, direction);
+        if (!newPosition) return;
+        
+        movementManager.animateWindowPosition(header, newPosition, { 
+            onComplete: () => updateChildWindowLayouts(true) 
+        });
     });
 
     internalBridge.on('window:moveStep', ({ direction }) => {
         const header = windowPool.get('header');
-        if (header) { 
-            const newHeaderPosition = layoutManager.calculateStepMovePosition(header, direction);
-            if (!newHeaderPosition) return;
-    
-            const futureHeaderBounds = { ...header.getBounds(), ...newHeaderPosition };
-            const visibleWindows = {};
-            const listenWin = windowPool.get('listen');
-            const askWin = windowPool.get('ask');
-            if (listenWin && !listenWin.isDestroyed() && listenWin.isVisible()) {
-                visibleWindows.listen = true;
-            }
-            if (askWin && !askWin.isDestroyed() && askWin.isVisible()) {
-                visibleWindows.ask = true;
-            }
+        if (!header || header.isDestroyed()) return;
+        
+        const newHeaderPosition = layoutManager.calculateStepMovePosition(header, direction);
+        if (!newHeaderPosition) return;
 
-            const newChildLayout = layoutManager.calculateFeatureWindowLayout(visibleWindows, futureHeaderBounds);
-    
-            movementManager.animateWindowPosition(header, newHeaderPosition);
-            movementManager.animateLayout(newChildLayout);
+        const futureHeaderBounds = { ...header.getBounds(), ...newHeaderPosition };
+        const visibleWindows = {};
+        const listenWin = windowPool.get('listen');
+        const askWin = windowPool.get('ask');
+        if (listenWin && !listenWin.isDestroyed() && listenWin.isVisible()) {
+            visibleWindows.listen = true;
         }
+        if (askWin && !askWin.isDestroyed() && askWin.isVisible()) {
+            visibleWindows.ask = true;
+        }
+
+        const newChildLayout = layoutManager.calculateFeatureWindowLayout(visibleWindows, futureHeaderBounds);
+
+        movementManager.animateWindowPosition(header, newHeaderPosition);
+        movementManager.animateLayout(newChildLayout);
     });
 
     internalBridge.on('window:resizeHeaderWindow', ({ width, height }) => {
         const header = windowPool.get('header');
-        if (!header || movementManager.isAnimating) return;
+        if (!header || header.isDestroyed() || movementManager.isAnimating) return;
 
         const newHeaderBounds = layoutManager.calculateHeaderResize(header, { width, height });
+        if (!newHeaderBounds) return;
         
         const wasResizable = header.isResizable();
         if (!wasResizable) header.setResizable(true);
 
         movementManager.animateWindowBounds(header, newHeaderBounds, {
             onComplete: () => {
+                if (!header || header.isDestroyed()) return;
                 if (!wasResizable) header.setResizable(false);
                 updateChildWindowLayouts(true);
             }
@@ -190,27 +194,31 @@ function setupWindowController(windowPool, layoutManager, movementManager) {
     });
     internalBridge.on('window:moveHeaderTo', ({ newX, newY }) => {
         const header = windowPool.get('header');
-        if (header) {
-            const newPosition = layoutManager.calculateClampedPosition(header, { x: newX, y: newY });
+        if (!header || header.isDestroyed()) return;
+        
+        const newPosition = layoutManager.calculateClampedPosition(header, { x: newX, y: newY });
+        if (newPosition) {
             header.setPosition(newPosition.x, newPosition.y);
         }
     });
     internalBridge.on('window:adjustWindowHeight', ({ winName, targetHeight }) => {
         console.log(`[Layout Debug] adjustWindowHeight: targetHeight=${targetHeight}`);
         const senderWindow = windowPool.get(winName);
-        if (senderWindow) {
-            const newBounds = layoutManager.calculateWindowHeightAdjustment(senderWindow, targetHeight);
-            
-            const wasResizable = senderWindow.isResizable();
-            if (!wasResizable) senderWindow.setResizable(true);
+        if (!senderWindow || senderWindow.isDestroyed()) return;
+        
+        const newBounds = layoutManager.calculateWindowHeightAdjustment(senderWindow, targetHeight);
+        if (!newBounds) return;
+        
+        const wasResizable = senderWindow.isResizable();
+        if (!wasResizable) senderWindow.setResizable(true);
 
-            movementManager.animateWindowBounds(senderWindow, newBounds, {
-                onComplete: () => {
-                    if (!wasResizable) senderWindow.setResizable(false);
-                    updateChildWindowLayouts(true);
-                }
-            });
-        }
+        movementManager.animateWindowBounds(senderWindow, newBounds, {
+            onComplete: () => {
+                if (!senderWindow || senderWindow.isDestroyed()) return;
+                if (!wasResizable) senderWindow.setResizable(false);
+                updateChildWindowLayouts(true);
+            }
+        });
     });
 }
 
@@ -296,7 +304,7 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
                 settingsHideTimer = null;
             }
             const position = layoutManager.calculateSettingsWindowPosition();
-            if (position) {
+            if (position && !win.isDestroyed()) {
                 win.setBounds(position);
                 win.__lockedByButton = true;
                 win.showInactive();
@@ -328,24 +336,30 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
         if (shouldBeVisible) {
             // layoutManager.positionShortcutSettingsWindow();
             const newBounds = layoutManager.calculateShortcutSettingsWindowPosition();
-            if (newBounds) win.setBounds(newBounds);
+            if (newBounds && !win.isDestroyed()) {
+                win.setBounds(newBounds);
+            }
             
-            if (process.platform === 'darwin') {
-                win.setAlwaysOnTop(true, 'screen-saver');
-            } else {
-                win.setAlwaysOnTop(true);
+            if (!win.isDestroyed()) {
+                if (process.platform === 'darwin') {
+                    win.setAlwaysOnTop(true, 'screen-saver');
+                } else {
+                    win.setAlwaysOnTop(true);
+                }
+                // globalShortcut.unregisterAll();
+                disableClicks(win);
+                win.showInactive();
             }
-            // globalShortcut.unregisterAll();
-            disableClicks(win);
-            win.showInactive();
         } else {
-            if (process.platform === 'darwin') {
-                win.setAlwaysOnTop(false, 'screen-saver');
-            } else {
-                win.setAlwaysOnTop(false);
+            if (!win.isDestroyed()) {
+                if (process.platform === 'darwin') {
+                    win.setAlwaysOnTop(false, 'screen-saver');
+                } else {
+                    win.setAlwaysOnTop(false);
+                }
+                restoreClicks();
+                win.hide();
             }
-            restoreClicks();
-            win.hide();
         }
         return;
     }
@@ -378,9 +392,11 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
             if (name === 'listen') startPos.x -= ANIM_OFFSET_X;
             else if (name === 'ask') startPos.y -= ANIM_OFFSET_Y;
 
-            win.setOpacity(0);
-            win.setBounds(startPos);
-            win.showInactive();
+            if (!win.isDestroyed()) {
+                win.setOpacity(0);
+                win.setBounds(startPos);
+                win.showInactive();
+            }
 
             movementManager.fade(win, { to: 1 });
             movementManager.animateLayout(targetLayout);
@@ -393,7 +409,10 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
             if (name === 'listen') targetPos.x -= ANIM_OFFSET_X;
             else if (name === 'ask') targetPos.y -= ANIM_OFFSET_Y;
 
-            movementManager.fade(win, { to: 0, onComplete: () => win.hide() });
+            movementManager.fade(win, { to: 0, onComplete: () => {
+                if (!win || win.isDestroyed()) return;
+                win.hide();
+            } });
             movementManager.animateWindowPosition(win, targetPos);
             
             // 다른 창들도 새 레이아웃으로 애니메이션
