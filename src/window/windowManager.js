@@ -245,7 +245,7 @@ function changeAllWindowsVisibility(windowPool, targetVisibility) {
     lastVisibleWindows.forEach(name => {
       const win = windowPool.get(name);
       if (win && !win.isDestroyed())
-        win.show();
+        win.showInactive();
     });
   }
 
@@ -299,8 +299,8 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
             if (position) {
                 win.setBounds(position);
                 win.__lockedByButton = true;
-                win.show();
-                win.moveTop();
+                win.showInactive();
+                // Remove win.moveTop() to avoid stealing focus
                 win.setAlwaysOnTop(true);
             } else {
                 console.warn('[WindowManager] Could not calculate settings window position.');
@@ -337,7 +337,7 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
             }
             // globalShortcut.unregisterAll();
             disableClicks(win);
-            win.show();
+            win.showInactive();
         } else {
             if (process.platform === 'darwin') {
                 win.setAlwaysOnTop(false, 'screen-saver');
@@ -380,7 +380,7 @@ async function handleWindowVisibilityRequest(windowPool, layoutManager, movement
 
             win.setOpacity(0);
             win.setBounds(startPos);
-            win.show();
+            win.showInactive();
 
             movementManager.fade(win, { to: 1 });
             movementManager.animateLayout(targetLayout);
