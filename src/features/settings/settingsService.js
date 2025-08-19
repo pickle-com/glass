@@ -362,7 +362,7 @@ async function removeApiKey() {
         }
         
         // Remove all API keys for all providers
-        const providers = ['openai', 'anthropic', 'gemini', 'ollama', 'whisper'];
+        const providers = ['openai', 'anthropic', 'gemini', 'ollama', 'whisper', 'cerebras'];
         for (const provider of providers) {
             await modelStateService.removeApiKey(provider);
         }

@@ -57,6 +57,14 @@ const PROVIDERS = {
       ],
       sttModels: [],
   },
+  'cerebras': {
+      name: 'Cerebras',
+      handler: () => require("./providers/cerebras"),
+      llmModels: [
+          { id: 'llama-3.1-8b-instruct', name: 'Llama 3.1 8B Instruct (Cerebras)' },
+      ],
+      sttModels: [],
+  },
   'deepgram': {
     name: 'Deepgram',
     handler: () => require("./providers/deepgram"),
@@ -158,6 +166,7 @@ function getProviderClass(providerId) {
         'gemini': 'GeminiProvider',
         'deepgram': 'DeepgramProvider',
         'ollama': 'OllamaProvider',
+        'cerebras': 'CerebrasProvider',
         'whisper': 'WhisperProvider'
     };
     
