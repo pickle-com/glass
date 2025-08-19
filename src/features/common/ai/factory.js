@@ -62,6 +62,9 @@ const PROVIDERS = {
       handler: () => require("./providers/cerebras"),
       llmModels: [
           { id: 'llama-3.1-8b-instruct', name: 'Llama 3.1 8B Instruct (Cerebras)' },
+          { id: 'llama-3.1-70b-instruct', name: 'Llama 3.1 70B Instruct (Cerebras)' },
+          { id: 'qwen3-7b-instruct', name: 'Qwen3 7B Instruct (Cerebras)' },
+          { id: 'qwen3-32b-instruct', name: 'Qwen3 32B Instruct (Cerebras)' },
       ],
       sttModels: [],
   },

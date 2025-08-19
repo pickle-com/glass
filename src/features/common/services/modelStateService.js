@@ -345,6 +345,28 @@ class ModelStateService extends EventEmitter {
             if (providerId === 'ollama' && type === 'llm') {
                 const installed = ollamaModelRepository.getInstalledModels();
                 available.push(...installed.map(m => ({ id: m.name, name: m.name })));
+            } else if (providerId === 'cerebras' && type === 'llm') {
+                try {
+                    const resp = await fetch('https://api.cerebras.ai/v1/models', {
+                        headers: { 'Authorization': `Bearer ${setting.api_key}` }
+                    });
+                    if (resp.ok) {
+                        const json = await resp.json().catch(() => ({ data: [] }));
+                        const list = Array.isArray(json.data) ? json.data : [];
+                        for (const m of list) {
+                            if (!m || !m.id) continue;
+                            // Prefer instruct/chat-capable models
+                            if (/instruct|chat/i.test(m.id)) {
+                                available.push({ id: m.id, name: `${m.id}` });
+                            }
+                        }
+                    } else {
+                        // Fallback to static list from PROVIDERS
+                        available.push(...(PROVIDERS[providerId]?.[modelListKey] || []));
+                    }
+                } catch {
+                    available.push(...(PROVIDERS[providerId]?.[modelListKey] || []));
+                }
             } else if (PROVIDERS[providerId]?.[modelListKey]) {
                 available.push(...PROVIDERS[providerId][modelListKey]);
             }
