@@ -28,8 +28,12 @@ function getAll() {
 
 function upsert(provider, settings) {
     // Validate: prevent direct setting of active status
-    if (settings.is_active_llm || settings.is_active_stt) {
-        console.warn('[ProviderSettings] Warning: is_active_llm/is_active_stt should not be set directly. Use setActiveProvider() instead.');
+    if (settings.hasOwnProperty('is_active_llm') || settings.hasOwnProperty('is_active_stt')) {
+        // This should not happen if called from modelStateService, which strips these properties.
+        // This is a safeguard against other parts of the app calling it incorrectly.
+        console.warn('[ProviderSettings] Deprecated: is_active_llm/is_active_stt should not be set directly. Use setActiveProvider() instead.');
+        delete settings.is_active_llm;
+        delete settings.is_active_stt;
     }
     
     const db = sqliteClient.getDb();

@@ -221,7 +221,8 @@ class ModelStateService extends EventEmitter {
 
         const finalKey = (provider === 'ollama' || provider === 'whisper') ? 'local' : key;
         const existingSettings = await providerSettingsRepository.getByProvider(provider) || {};
-        await providerSettingsRepository.upsert(provider, { ...existingSettings, api_key: finalKey });
+        const { is_active_llm, is_active_stt, ...otherSettings } = existingSettings;
+        await providerSettingsRepository.upsert(provider, { ...otherSettings, api_key: finalKey });
         
         // 키가 추가/변경되었으므로, 해당 provider의 모델을 자동 선택할 수 있는지 확인
         await this._autoSelectAvailableModels([]);
@@ -245,7 +246,8 @@ class ModelStateService extends EventEmitter {
     async removeApiKey(provider) {
         const setting = await providerSettingsRepository.getByProvider(provider);
         if (setting && setting.api_key) {
-            await providerSettingsRepository.upsert(provider, { ...setting, api_key: null });
+            const { is_active_llm, is_active_stt, ...otherSettings } = setting;
+            await providerSettingsRepository.upsert(provider, { ...otherSettings, api_key: null });
             await this._autoSelectAvailableModels(['llm', 'stt']);
             this.emit('state-updated', await this.getLiveState());
             this.emit('settings-updated');
@@ -311,7 +313,8 @@ class ModelStateService extends EventEmitter {
         }
 
         const existingSettings = await providerSettingsRepository.getByProvider(provider) || {};
-        const newSettings = { ...existingSettings };
+        const { is_active_llm, is_active_stt, ...otherSettings } = existingSettings;
+        const newSettings = { ...otherSettings };
 
         if (type === 'llm') {
             newSettings.selected_llm_model = modelId;
@@ -421,6 +424,9 @@ class ModelStateService extends EventEmitter {
         const hasLlmKey = Object.entries(apiKeyMap).some(([provider, key]) => {
             if (!key) return false;
             if (provider === 'whisper') return false; // whisper는 LLM 없음
+            if (provider === 'ollama') {
+                return ollamaModelRepository.getInstalledModels().length > 0;
+            }
             return PROVIDERS[provider]?.llmModels?.length > 0;
         });
         // STT
