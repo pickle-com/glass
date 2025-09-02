@@ -1,4 +1,5 @@
 # Logs
+.idea
 src/data
 logs
 *.log
