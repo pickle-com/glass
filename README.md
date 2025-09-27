@@ -51,6 +51,17 @@ node --version
 npm run setup
 ```
 
+### Running on Windows 11
+
+After completing the prerequisites and installation steps:
+
+1.  **Ensure Build Tools are correctly installed**: When installing "Build Tools for Visual Studio", make sure you have selected the "Desktop development with C++" workload.
+2.  **Run the application**: Open your terminal or command prompt, navigate to the project directory, and run the following command:
+
+    ```bash
+    npm start
+    ```
+
 ## Highlights
 
 

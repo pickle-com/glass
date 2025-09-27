@@ -170,6 +170,20 @@ if (!gotTheLock) {
 setupProtocolHandling();
 
 app.whenReady().then(async () => {
+    // Add Content-Security-Policy to mitigate "unsafe-eval" warning
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Content-Security-Policy': [
+                    "default-src 'self'",
+                    "script-src 'self' 'unsafe-inline'",
+                    "style-src 'self' 'unsafe-inline'",
+                    "img-src 'self' data:",
+                ]
+            }
+        });
+    });
 
     // Setup native loopback audio capture for Windows
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
