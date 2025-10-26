@@ -5,7 +5,7 @@
     "description": "Cl*ely for Free",
     "main": "src/index.js",
     "scripts": {
-        "setup": "npm install && cd pickleglass_web && npm install && npm run build && cd .. && npm start",
+        "setup": "pnpm install && cd pickleglass_web && pnpm install && pnpm run build && cd .. && pnpm start",
         "start": "npm run build:renderer && electron .",
         "package": "npm run build:all && electron-builder --dir",
         "make": "npm run build:renderer && electron-forge make",
@@ -68,5 +68,8 @@
     },
     "optionalDependencies": {
         "electron-liquid-glass": "^1.0.1"
-    }
+    },
+    "pnpm": {
+    "onlyBuiltDependenciesFile": "./trusted-dependencies-scripts.json"
+  }
 }
