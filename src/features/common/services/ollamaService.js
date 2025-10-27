@@ -4,6 +4,7 @@ const { promisify } = require('util');
 const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs').promises;
+const { constants: fsConstants } = require('fs');
 const os = require('os');
 const https = require('https');
 const crypto = require('crypto');
@@ -55,6 +56,9 @@ class OllamaService extends EventEmitter {
         
         // 서비스 종료 상태 추적
         this.isShuttingDown = false;
+
+        // Resolve ollama CLI location lazily
+        this.cliPath = null;
     }
 
 
@@ -117,11 +121,112 @@ class OllamaService extends EventEmitter {
         }
     }
 
-    getOllamaCliPath() {
-        if (this.getPlatform() === 'darwin') {
+    getDefaultCliPath() {
+        const platform = this.getPlatform();
+        if (platform === 'darwin') {
             return '/Applications/Ollama.app/Contents/Resources/ollama';
         }
+        if (platform === 'win32') {
+            return 'ollama.exe';
+        }
         return 'ollama';
+    }
+
+    getOllamaCliPath() {
+        return this.cliPath || this.getDefaultCliPath();
+    }
+
+    async pathExists(target, mode = fsConstants.F_OK) {
+        try {
+            await fs.access(target, mode);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async isExecutable(target) {
+        if (!target) {
+            return false;
+        }
+
+        try {
+            await fs.access(target, fsConstants.X_OK);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async ensureCliPath(options = {}) {
+        const { force = false } = options;
+
+        if (!force && this.cliPath) {
+            return this.cliPath;
+        }
+
+        this.cliPath = null;
+
+        const platform = this.getPlatform();
+
+        if (platform === 'darwin') {
+            const defaultCli = this.getDefaultCliPath();
+            if (await this.isExecutable(defaultCli)) {
+                this.cliPath = defaultCli;
+                return this.cliPath;
+            }
+        }
+
+        const whichCli = await this.checkCommand('ollama');
+        if (whichCli) {
+            const trimmed = whichCli.trim();
+            if (await this.isExecutable(trimmed)) {
+                this.cliPath = trimmed;
+                return this.cliPath;
+            }
+        }
+
+        const fallbackPaths = platform === 'darwin'
+            ? ['/opt/homebrew/bin/ollama', '/usr/local/bin/ollama']
+            : platform === 'linux'
+                ? ['/usr/local/bin/ollama', '/usr/bin/ollama']
+                : [];
+
+        for (const candidate of fallbackPaths) {
+            if (await this.isExecutable(candidate)) {
+                this.cliPath = candidate;
+                return this.cliPath;
+            }
+        }
+
+        if (platform === 'win32') {
+            const windowsCli = await this.checkCommand('ollama.exe');
+            if (windowsCli) {
+                const trimmed = windowsCli.trim();
+                if (await this.isExecutable(trimmed)) {
+                    this.cliPath = trimmed;
+                    return this.cliPath;
+                }
+            }
+        }
+
+        return this.cliPath;
+    }
+
+    async resolveHomebrewPath() {
+        const fromPath = await this.checkCommand('brew');
+        if (fromPath) {
+            return fromPath.trim();
+        }
+
+        const candidates = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'];
+        for (const candidate of candidates) {
+            if (await this.isExecutable(candidate)) {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     // === 런타임 관리 (단순화) ===
@@ -153,19 +258,17 @@ class OllamaService extends EventEmitter {
     async isInstalled() {
         try {
             const platform = this.getPlatform();
-            
-            if (platform === 'darwin') {
-                try {
-                    await fs.access('/Applications/Ollama.app');
-                    return true;
-                } catch {
-                    const ollamaPath = await this.checkCommand(this.getOllamaCliPath());
-                    return !!ollamaPath;
-                }
-            } else {
-                const ollamaPath = await this.checkCommand(this.getOllamaCliPath());
-                return !!ollamaPath;
+            const cliPath = await this.ensureCliPath();
+
+            if (cliPath) {
+                return true;
             }
+
+            if (platform === 'darwin') {
+                return await this.pathExists('/Applications/Ollama.app');
+            }
+
+            return false;
         } catch (error) {
             console.log('[OllamaService] Ollama not found:', error.message);
             return false;
@@ -195,20 +298,36 @@ class OllamaService extends EventEmitter {
         
         try {
             if (platform === 'darwin') {
-                try {
-                    await spawnAsync('open', ['-a', 'Ollama']);
-                    await this.waitForService(() => this.isServiceRunning());
-                    return true;
-                } catch {
-                    spawn(this.getOllamaCliPath(), ['serve'], {
-                        detached: true,
-                        stdio: 'ignore'
-                    }).unref();
-                    await this.waitForService(() => this.isServiceRunning());
-                    return true;
+                const cliPath = await this.ensureCliPath();
+                const hasAppBundle = await this.pathExists('/Applications/Ollama.app');
+
+                if (hasAppBundle) {
+                    try {
+                        await spawnAsync('open', ['-a', 'Ollama']);
+                        await this.waitForService(() => this.isServiceRunning());
+                        return true;
+                    } catch (openError) {
+                        console.log('[OllamaService] Failed to launch Ollama.app via open:', openError.message);
+                    }
                 }
+
+                if (!cliPath) {
+                    throw new Error('Ollama CLI not found. Please install Ollama before starting the service.');
+                }
+
+                spawn(cliPath, ['serve'], {
+                    detached: true,
+                    stdio: 'ignore'
+                }).unref();
+                await this.waitForService(() => this.isServiceRunning());
+                return true;
             } else {
-                spawn(this.getOllamaCliPath(), ['serve'], {
+                const cliPath = await this.ensureCliPath();
+                if (!cliPath) {
+                    throw new Error('Ollama CLI not found. Please install Ollama before starting the service.');
+                }
+
+                spawn(cliPath, ['serve'], {
                     detached: true,
                     stdio: 'ignore',
                     shell: platform === 'win32'
@@ -353,7 +472,12 @@ class OllamaService extends EventEmitter {
 
     async getInstalledModelsList() {
         try {
-            const { stdout } = await spawnAsync(this.getOllamaCliPath(), ['list']);
+            const cliPath = await this.ensureCliPath();
+            if (!cliPath) {
+                throw new Error('Ollama CLI not found');
+            }
+
+            const { stdout } = await spawnAsync(cliPath, ['list']);
             const lines = stdout.split('\n').filter(line => line.trim());
             
             // Skip header line (NAME, ID, SIZE, MODIFIED)
@@ -377,7 +501,7 @@ class OllamaService extends EventEmitter {
             
             return models;
         } catch (error) {
-            console.log('[OllamaService] Failed to get installed models via CLI, falling back to API');
+            console.log(`[OllamaService] Failed to get installed models via CLI, falling back to API: ${error.message}`);
             // Fallback to API if CLI fails
             const apiModels = await this.getInstalledModels();
             return apiModels.map(model => ({
@@ -697,14 +821,47 @@ class OllamaService extends EventEmitter {
         }
     }
 
+    async installViaHomebrew(brewPath, onProgress) {
+        console.log(`[OllamaService] Installing Ollama via Homebrew using ${brewPath}...`);
+        onProgress?.({ stage: 'homebrew', message: 'Installing Ollama via Homebrew...', progress: 0 });
+
+        await spawnAsync(brewPath, ['install', 'ollama']);
+
+        onProgress?.({ stage: 'homebrew', message: 'Homebrew installation complete.', progress: 100 });
+        const resolvedCli = await this.ensureCliPath({ force: true });
+        if (!resolvedCli) {
+            throw new Error('Failed to locate Ollama CLI after Homebrew installation.');
+        }
+        console.log('[OllamaService] Ollama installed successfully via Homebrew');
+
+        return true;
+    }
+
     async installMacOS(onProgress) {
+        console.log('[OllamaService] Installing Ollama on macOS...');
+
+        const brewPath = await this.resolveHomebrewPath();
+        if (brewPath) {
+            try {
+                return await this.installViaHomebrew(brewPath, onProgress);
+            } catch (error) {
+                console.error('[OllamaService] Homebrew installation failed:', error);
+                onProgress?.({ stage: 'homebrew', message: 'Homebrew installation failed, falling back to DMG installer...', progress: 0 });
+            }
+        } else {
+            console.log('[OllamaService] Homebrew not detected. Falling back to DMG installer.');
+        }
+
         console.log('[OllamaService] Installing Ollama on macOS using DMG...');
-        
+
+        let dmgPath = null;
+        let mountPoint = null;
+        const tempDir = app.getPath('temp');
+
         try {
             const dmgUrl = 'https://ollama.com/download/Ollama.dmg';
-            const tempDir = app.getPath('temp');
-            const dmgPath = path.join(tempDir, 'Ollama.dmg');
-            const mountPoint = path.join(tempDir, 'OllamaMount');
+            dmgPath = path.join(tempDir, 'Ollama.dmg');
+            mountPoint = path.join(tempDir, 'OllamaMount');
 
             // 체크포인트 저장
             await this.saveCheckpoint('pre-install');
@@ -736,14 +893,21 @@ class OllamaService extends EventEmitter {
             
             console.log('[OllamaService] Step 4: Setting up CLI path...');
             onProgress?.({ stage: 'linking', message: 'Creating command-line shortcut...', progress: 0 });
+            const macCliPath = this.getDefaultCliPath();
             try {
-                const script = `do shell script "mkdir -p /usr/local/bin && ln -sf '${this.getOllamaCliPath()}' '/usr/local/bin/ollama'" with administrator privileges`;
+                const script = `do shell script "mkdir -p /usr/local/bin && ln -sf '${macCliPath}' '/usr/local/bin/ollama'" with administrator privileges`;
                 await spawnAsync('osascript', ['-e', script]);
                 onProgress?.({ stage: 'linking', message: 'Shortcut created.', progress: 100 });
             } catch (linkError) {
                 console.error('[OllamaService] CLI symlink creation failed:', linkError.message);
                 onProgress?.({ stage: 'linking', message: 'Shortcut creation failed (permissions?).', progress: 100 });
                 // Not throwing an error, as the app might still work
+            }
+
+            // Ensure we pick up the newly installed CLI path
+            const resolvedCli = await this.ensureCliPath({ force: true });
+            if (!resolvedCli) {
+                console.log('[OllamaService] Warning: Unable to resolve Ollama CLI after DMG installation, continuing with default path.');
             }
             
             console.log('[OllamaService] Step 5: Cleanup...');
@@ -761,7 +925,13 @@ class OllamaService extends EventEmitter {
         } catch (error) {
             console.error('[OllamaService] macOS installation failed:', error);
             // 설치 실패 시 정리
-            await fs.unlink(dmgPath).catch(() => {});
+            if (dmgPath) {
+                await fs.unlink(dmgPath).catch(() => {});
+            }
+            if (mountPoint) {
+                await spawnAsync('hdiutil', ['detach', mountPoint]).catch(() => {});
+                await fs.rmdir(mountPoint).catch(() => {});
+            }
             throw new Error(`Failed to install Ollama on macOS: ${error.message}`);
         }
     }
@@ -1238,13 +1408,15 @@ class OllamaService extends EventEmitter {
     }
 
     async shutdownLinux(force) {
+        const cliTarget = (await this.ensureCliPath()) || this.getDefaultCliPath();
+
         try {
-            await spawnAsync('pkill', ['-f', this.getOllamaCliPath()]);
+            await spawnAsync('pkill', ['-f', cliTarget]);
             console.log('[OllamaService] Ollama process terminated on Linux');
             return true;
         } catch (error) {
             if (force) {
-                await spawnAsync('pkill', ['-9', '-f', this.getOllamaCliPath()]).catch(() => {});
+                await spawnAsync('pkill', ['-9', '-f', cliTarget]).catch(() => {});
             }
             console.error('[OllamaService] Failed to shutdown Ollama on Linux:', error);
             return false;
@@ -1501,7 +1673,9 @@ class OllamaService extends EventEmitter {
             
             // 2. CLI 명령 테스트
             try {
-                const { stdout } = await spawnAsync(this.getOllamaCliPath(), ['--version']);
+                const cliPath = await this.ensureCliPath();
+                const command = cliPath || this.getDefaultCliPath();
+                const { stdout } = await spawnAsync(command, ['--version']);
                 console.log('[OllamaService] Ollama version:', stdout.trim());
             } catch (error) {
                 return { success: false, error: 'Ollama CLI not responding' };
