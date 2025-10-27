@@ -321,6 +321,7 @@ function setupWebDataHandlers() {
     const askRepository = require('./features/ask/repositories');
     const userRepository = require('./features/common/repositories/user');
     const presetRepository = require('./features/common/repositories/preset');
+    const searchService = require('./features/search/searchService');
 
     const handleRequest = async (channel, responseChannel, payload) => {
         let result;
@@ -404,6 +405,15 @@ function setupWebDataHandlers() {
                     settingsService.notifyPresetUpdate('deleted', payload);
                     break;
                 
+                // SEARCH
+                case 'search-content':
+                    const currentUserId = authService.getCurrentUserId();
+                    if (!currentUserId) {
+                        throw new Error('User not authenticated');
+                    }
+                    result = await searchService.searchSessions(payload.query, currentUserId);
+                    break;
+
                 // BATCH
                 case 'get-batch-data':
                     const includes = payload ? payload.split(',').map(item => item.trim()) : ['profile', 'presets', 'sessions'];
