@@ -1,0 +1,249 @@
+/**
+ * Glass Web Assistant - Highlight Styles
+ * 网页高亮和弹出窗口样式
+ */
+
+/* 基础高亮样式 */
+.glass-highlight {
+    background-color: rgba(255, 235, 59, 0.3) !important;
+    border-radius: 2px !important;
+    padding: 1px 2px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    position: relative !important;
+    font-weight: inherit !important;
+    font-size: inherit !important;
+    font-family: inherit !important;
+    color: inherit !important;
+    text-decoration: none !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* 高亮重要性级别 */
+.glass-highlight.glass-high {
+    background-color: rgba(244, 67, 54, 0.25) !important;
+    border-left: 3px solid #f44336 !important;
+    font-weight: 600 !important;
+}
+
+.glass-highlight.glass-medium {
+    background-color: rgba(255, 152, 0, 0.25) !important;
+    border-left: 2px solid #ff9800 !important;
+}
+
+.glass-highlight.glass-low {
+    background-color: rgba(76, 175, 80, 0.2) !important;
+    border-left: 1px solid #4caf50 !important;
+}
+
+/* 悬停效果 */
+.glass-highlight:hover {
+    background-color: rgba(33, 150, 243, 0.3) !important;
+    transform: scale(1.02) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+}
+
+.glass-highlight:active {
+    transform: scale(0.98) !important;
+}
+
+/* 定义弹出窗口 */
+.glass-definition-popup {
+    position: fixed !important;
+    background: white !important;
+    border: 1px solid #e0e0e0 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+    max-width: 400px !important;
+    min-width: 250px !important;
+    z-index: 10000 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    color: #333 !important;
+    animation: glassPopupSlideIn 0.2s ease-out !important;
+}
+
+/* 弹出窗口头部 */
+.glass-popup-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 12px 16px !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+    background: #f8f9fa !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+
+.glass-popup-header strong {
+    font-weight: 600 !important;
+    color: #1976d2 !important;
+    font-size: 15px !important;
+}
+
+.glass-popup-close {
+    background: none !important;
+    border: none !important;
+    font-size: 18px !important;
+    cursor: pointer !important;
+    color: #666 !important;
+    padding: 4px !important;
+    border-radius: 4px !important;
+    transition: background-color 0.2s ease !important;
+    width: 24px !important;
+    height: 24px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.glass-popup-close:hover {
+    background-color: #e0e0e0 !important;
+    color: #333 !important;
+}
+
+/* 弹出窗口内容 */
+.glass-popup-content {
+    padding: 16px !important;
+    max-height: 200px !important;
+    overflow-y: auto !important;
+    word-wrap: break-word !important;
+}
+
+/* 弹出动画 */
+@keyframes glassPopupSlideIn {
+    from {
+        opacity: 0 !important;
+        transform: translateY(-10px) scale(0.95) !important;
+    }
+    to {
+        opacity: 1 !important;
+        transform: translateY(0) scale(1) !important;
+    }
+}
+
+/* Glass 状态指示器 */
+.glass-status-indicator {
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    background: rgba(0, 0, 0, 0.8) !important;
+    color: white !important;
+    padding: 8px 16px !important;
+    border-radius: 20px !important;
+    font-size: 12px !important;
+    z-index: 9999 !important;
+    transition: all 0.3s ease !important;
+    pointer-events: none !important;
+}
+
+.glass-status-indicator.glass-connected {
+    background: rgba(76, 175, 80, 0.9) !important;
+}
+
+.glass-status-indicator.glass-disconnected {
+    background: rgba(244, 67, 54, 0.9) !important;
+}
+
+/* 工具提示 */
+.glass-highlight::after {
+    content: attr(title) !important;
+    position: absolute !important;
+    bottom: 100% !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    background: rgba(0, 0, 0, 0.9) !important;
+    color: white !important;
+    padding: 4px 8px !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.2s ease !important;
+    z-index: 1000 !important;
+}
+
+.glass-highlight:hover::after {
+    opacity: 1 !important;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .glass-definition-popup {
+        max-width: 90vw !important;
+        min-width: 280px !important;
+        left: 5vw !important;
+        right: 5vw !important;
+    }
+    
+    .glass-popup-content {
+        max-height: 150px !important;
+    }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+    .glass-highlight {
+        background-color: yellow !important;
+        color: black !important;
+        border: 2px solid black !important;
+    }
+    
+    .glass-definition-popup {
+        border: 2px solid black !important;
+        background: white !important;
+        color: black !important;
+    }
+}
+
+/* 减少动画模式支持 */
+@media (prefers-reduced-motion: reduce) {
+    .glass-highlight,
+    .glass-definition-popup,
+    .glass-status-indicator,
+    .glass-popup-close {
+        transition: none !important;
+        animation: none !important;
+    }
+    
+    .glass-highlight:hover {
+        transform: none !important;
+    }
+    
+    @keyframes glassPopupSlideIn {
+        from, to {
+            opacity: 1 !important;
+            transform: none !important;
+        }
+    }
+}
+
+/* 暗色主题支持 */
+@media (prefers-color-scheme: dark) {
+    .glass-definition-popup {
+        background: #2d2d2d !important;
+        border-color: #555 !important;
+        color: #e0e0e0 !important;
+    }
+    
+    .glass-popup-header {
+        background: #3d3d3d !important;
+        border-bottom-color: #555 !important;
+    }
+    
+    .glass-popup-header strong {
+        color: #64b5f6 !important;
+    }
+    
+    .glass-popup-close {
+        color: #bbb !important;
+    }
+    
+    .glass-popup-close:hover {
+        background-color: #555 !important;
+        color: #fff !important;
+    }
+}

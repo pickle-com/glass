@@ -108,6 +108,77 @@ module.exports = {
       }
     });
 
+    // Video Learning Service
+    ipcMain.handle('video:start-learning', async (event, options) => {
+      try {
+        const result = await listenService.enhancedService.startVideoLearning(options);
+        return { success: result };
+      } catch (error) {
+        console.error('[FeatureBridge] video:start-learning failed:', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('video:stop-learning', async () => {
+      try {
+        await listenService.enhancedService.stopVideoLearning();
+        return { success: true };
+      } catch (error) {
+        console.error('[FeatureBridge] video:stop-learning failed:', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('video:toggle-learning', async () => {
+      try {
+        const isActive = await listenService.enhancedService.toggleVideoLearning();
+        return { success: true, isActive };
+      } catch (error) {
+        console.error('[FeatureBridge] video:toggle-learning failed:', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('video:capture-frame', async () => {
+      try {
+        const result = await listenService.enhancedService.captureCurrentFrame();
+        return result;
+      } catch (error) {
+        console.error('[FeatureBridge] video:capture-frame failed:', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('video:get-status', async () => {
+      try {
+        const status = await listenService.enhancedService.getServicesStatus();
+        return { success: true, status: status.video };
+      } catch (error) {
+        console.error('[FeatureBridge] video:get-status failed:', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('video:get-stats', async () => {
+      try {
+        const stats = await listenService.enhancedService.getVideoLearningStats();
+        return { success: true, stats };
+      } catch (error) {
+        console.error('[FeatureBridge] video:get-stats failed:', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('video:get-screens', async () => {
+      try {
+        const screens = await listenService.enhancedService.getAvailableScreens();
+        return { success: true, screens };
+      } catch (error) {
+        console.error('[FeatureBridge] video:get-screens failed:', error.message);
+        return { success: false, error: error.message };
+      }
+    });
+
     // ModelStateService
     ipcMain.handle('model:validate-key', async (e, { provider, key }) => await modelStateService.handleValidateKey(provider, key));
     ipcMain.handle('model:get-all-keys', async () => await modelStateService.getAllApiKeys());

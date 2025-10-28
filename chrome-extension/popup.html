@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glass Web Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 320px;
+            min-height: 400px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .header p {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        .status-section {
+            margin-bottom: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .status-value {
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-connected {
+            color: #28a745;
+        }
+
+        .status-disconnected {
+            color: #dc3545;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .indicator-green {
+            background: #28a745;
+        }
+
+        .indicator-red {
+            background: #dc3545;
+        }
+
+        .indicator-yellow {
+            background: #ffc107;
+        }
+
+        .controls-section {
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-label {
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            display: block;
+            color: #495057;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #667eea;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .button:hover {
+            background: #5a6fd8;
+        }
+
+        .button.secondary {
+            background: #6c757d;
+        }
+
+        .button.secondary:hover {
+            background: #5a6268;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #e9ecef;
+        }
+
+        .stat-number {
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .footer {
+            padding: 15px 20px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+            text-align: center;
+        }
+
+        .footer-text {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .footer-link {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Loading state */
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Glass Web Assistant</h1>
+        <p>Enhanced web learning companion</p>
+    </div>
+
+    <div class="content">
+        <!-- Status Section -->
+        <div class="status-section">
+            <div class="status-item">
+                <span class="status-label">Connection Status</span>
+                <span class="status-value" id="connection-status">
+                    <span class="status-indicator indicator-yellow"></span>
+                    <span class="loading"></span> Connecting...
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Current Page</span>
+                <span class="status-value" id="current-page">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Highlights</span>
+                <span class="status-value" id="highlight-count">0</span>
+            </div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="controls-section">
+            <div class="control-group">
+                <label class="control-label">Auto-highlight Keywords</label>
+                <label class="switch">
+                    <input type="checkbox" id="auto-highlight" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="control-group">
+                <label class="control-label">Show Definitions</label>
+                <label class="switch">
+                    <input type="checkbox" id="show-definitions" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Content Analysis</label>
+                <label class="switch">
+                    <input type="checkbox" id="content-analysis" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <button class="button" id="extract-content">Extract Content</button>
+        <button class="button secondary" id="clear-highlights">Clear Highlights</button>
+
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number" id="words-processed">0</div>
+                <div class="stat-label">Words Processed</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="definitions-shown">0</div>
+                <div class="stat-label">Definitions</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p class="footer-text">
+            Glass Enhanced v1.0.0 | 
+            <a href="#" class="footer-link" id="help-link">Help</a>
+        </p>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
