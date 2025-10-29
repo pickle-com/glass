@@ -426,7 +426,7 @@ class ModelStateService extends EventEmitter {
         // STT
         const hasSttKey = Object.entries(apiKeyMap).some(([provider, key]) => {
             if (!key) return false;
-            if (provider === 'ollama') return false; // ollama는 STT 없음
+            if (provider === 'ollama' || provider === 'zhipuai') return false; // ollama는 STT 없음
             return PROVIDERS[provider]?.sttModels?.length > 0 || provider === 'whisper';
         });
         return hasLlmKey && hasSttKey;
