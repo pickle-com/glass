@@ -49,6 +49,18 @@ const PROVIDERS = {
           { id: 'gemini-live-2.5-flash-preview', name: 'Gemini Live 2.5 Flash' }
       ],
   },
+  'openrouter': {
+      name: 'OpenRouter',
+      handler: () => require("./providers/openrouter"),
+      llmModels: [
+          { id: 'x-ai/grok-4', name: 'xAI Grok 4'},
+          { id: 'anthropic/claude-sonnet-4', name: 'Anthropic Claude Sonnet(OpenRouter)' },
+          { id: 'google/gemini-2.5-flash', name: 'Google Gemini 2.5 Flash(OpenRouter)' },
+          { id: 'openai/gpt-4.1', name: 'OpenAI GPT-4.1(OpenRouter)' },
+          { id: 'meta-llama/llama-4-maverick', name: 'Meta Llama 4 Maverick(OpenRouter)' },
+      ],
+      sttModels: [],
+  },
   'anthropic': {
       name: 'Anthropic',
       handler: () => require("./providers/anthropic"),
@@ -158,7 +170,8 @@ function getProviderClass(providerId) {
         'gemini': 'GeminiProvider',
         'deepgram': 'DeepgramProvider',
         'ollama': 'OllamaProvider',
-        'whisper': 'WhisperProvider'
+        'whisper': 'WhisperProvider',
+        'openrouter': 'OpenRouterProvider'
     };
     
     const className = classNameMap[actualProviderId];
