@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, Plus, Copy } from 'lucide-react'
 import { getPresets, updatePreset, createPreset, PromptPreset } from '@/utils/api'
+import Modal from '@/components/Modal'
 
 export default function PersonalizePage() {
   const [allPresets, setAllPresets] = useState<PromptPreset[]>([]);
@@ -12,6 +13,13 @@ export default function PersonalizePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Modal state management
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalPreset, setModalPreset] = useState<PromptPreset | null>(null);
+  const [modalContent, setModalContent] = useState('');
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalIsDirty, setModalIsDirty] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -147,6 +155,113 @@ export default function PersonalizePage() {
     }
   };
 
+  const openModalWithPreset = (preset: PromptPreset) => {
+    setModalPreset(preset);
+    setModalContent(preset.prompt);
+    setModalTitle(preset.title);
+    setModalIsDirty(false);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    if (modalIsDirty) {
+      const shouldClose = window.confirm(
+        'You have unsaved changes in the modal editor. Are you sure you want to close without saving?'
+      );
+      if (!shouldClose) {
+        return;
+      }
+    }
+    setIsModalOpen(false);
+    setModalPreset(null);
+    setModalContent('');
+    setModalTitle('');
+    setModalIsDirty(false);
+  };
+
+  const handleModalContentChange = (newContent: string) => {
+    setModalContent(newContent);
+    setModalIsDirty(
+      newContent !== modalPreset?.prompt || modalTitle !== modalPreset?.title
+    );
+  };
+
+  const handleModalTitleChange = (newTitle: string) => {
+    setModalTitle(newTitle);
+    setModalIsDirty(
+      newTitle !== modalPreset?.title || modalContent !== modalPreset?.prompt
+    );
+  };
+
+  const saveModalChanges = async () => {
+    if (!modalPreset || !modalIsDirty) return;
+    
+    if (modalPreset.is_default === 1) {
+      alert('Default presets cannot be modified.');
+      return;
+    }
+
+    if (!modalTitle.trim()) {
+      alert('Preset title cannot be empty.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await updatePreset(modalPreset.id, {
+        title: modalTitle.trim(),
+        prompt: modalContent,
+      });
+
+      // Create the updated preset object
+      const updatedPreset = { ...modalPreset, title: modalTitle.trim(), prompt: modalContent };
+      
+      // Update the preset in the main list
+      setAllPresets(prev => prev.map(p => 
+        p.id === modalPreset.id ? updatedPreset : p
+      ));
+      
+      // Update selected preset if it's the same one
+      if (selectedPreset?.id === modalPreset.id) {
+        setSelectedPreset(updatedPreset);
+        setEditorContent(modalContent);
+        setIsDirty(false);
+      }
+      
+      // Update modal preset state to reflect the saved changes
+      setModalPreset(updatedPreset);
+      
+      // Reset modal states and close
+      setModalIsDirty(false);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error('Failed to save modal changes:', error);
+      
+      // Enhanced error handling with specific error types
+      let errorMessage = 'Failed to save preset. Please try again.';
+      
+      if (error instanceof Error) {
+        // Check for specific error types
+        if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message.includes('401') || error.message.includes('unauthorized')) {
+          errorMessage = 'Authentication error. Please log in again.';
+        } else if (error.message.includes('403') || error.message.includes('forbidden')) {
+          errorMessage = 'You do not have permission to edit this preset.';
+        } else if (error.message.includes('404')) {
+          errorMessage = 'Preset not found. It may have been deleted.';
+        } else if (error.message.includes('500')) {
+          errorMessage = 'Server error. Please try again later.';
+        }
+      }
+      
+      alert(errorMessage);
+      
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -201,8 +316,8 @@ export default function PersonalizePage() {
         </div>
       </div>
 
-      <div className={`transition-colors duration-300 ${showPresets ? 'bg-gray-50' : 'bg-white'}`}>
-        <div className="px-8 py-6">
+      <div className={`flex-1 transition-colors duration-300 ${showPresets ? 'bg-gray-50' : 'bg-white'}`}>
+        <div className="h-full flex flex-col px-8 py-6">
           <div className="mb-6">
             <button
               onClick={() => setShowPresets(!showPresets)}
@@ -221,6 +336,7 @@ export default function PersonalizePage() {
                 <div
                   key={preset.id}
                   onClick={() => handlePresetClick(preset)}
+                  onDoubleClick={() => openModalWithPreset(preset)}
                   className={`
                     p-4 rounded-lg cursor-pointer transition-all duration-200 bg-white
                     h-48 flex flex-col shadow-sm hover:shadow-md relative
@@ -248,28 +364,81 @@ export default function PersonalizePage() {
         </div>
       </div>
 
-      <div className="flex-1 bg-white">
-        <div className="h-full px-8 py-6 flex flex-col">
-          {selectedPreset?.is_default === 1 && (
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-yellow-400 rounded-full"></div>
-                <p className="text-sm text-yellow-800">
-                  <strong>This is a default preset and cannot be edited.</strong> 
-                  Use the "Duplicate" button above to create an editable copy, or create a new preset.
-                </p>
-              </div>
+      
+      
+      {/* Preset Editor Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={`Edit Preset${modalPreset?.is_default === 1 ? ' (Read-only)' : ''}`}
+        footer={
+          <>
+            <button 
+              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors w-full sm:w-auto"
+              onClick={closeModal}
+            >
+              Cancel
+            </button>
+            <button 
+              className={`px-4 py-2 rounded-md transition-colors w-full sm:w-auto ${
+                modalIsDirty 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-gray-400 text-white cursor-not-allowed'
+              }`}
+              onClick={saveModalChanges}
+              disabled={!modalIsDirty || saving}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </>
+        }
+        className="w-[95%] sm:w-[90%] md:w-[85%] lg:w-[80%] max-w-4xl"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            {modalIsDirty && (
+              <span className="text-sm text-orange-600 bg-orange-100 px-2 py-1 rounded inline-block">
+                Unsaved changes
+              </span>
+            )}
+            {modalPreset?.is_default === 1 && (
+              <span className="text-sm text-yellow-600 bg-yellow-100 px-2 py-1 rounded inline-block">
+                Read-only (Default preset)
+              </span>
+            )}
+          </div>
+          
+          <div className="space-y-3">
+            <div>
+              <input
+                type="text"
+                value={modalTitle}
+                onChange={(e) => handleModalTitleChange(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                placeholder="Enter preset title..."
+                readOnly={modalPreset?.is_default === 1}
+              />
+            </div>
+            
+            <div>
+              <textarea
+                value={modalContent}
+                onChange={(e) => handleModalContentChange(e.target.value)}
+                className="w-full h-64 sm:h-72 md:h-80 lg:h-96 p-3 sm:p-4 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm leading-relaxed"
+                placeholder="Enter your prompt content here..."
+                readOnly={modalPreset?.is_default === 1}
+              />
+            </div>
+          </div>
+          
+          {modalPreset?.is_default === 1 && (
+            <div className="text-xs text-yellow-600">
+              Default presets cannot be modified
             </div>
           )}
-          <textarea
-            value={editorContent}
-            onChange={handleEditorChange}
-            className="w-full flex-1 text-sm text-gray-900 border-0 resize-none focus:outline-none bg-transparent font-mono leading-relaxed"
-            placeholder="Select a preset or type directly..."
-            readOnly={selectedPreset?.is_default === 1}
-          />
         </div>
-      </div>
+      </Modal>
+     
     </div>
   );
 } 
